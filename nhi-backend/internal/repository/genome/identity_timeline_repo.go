@@ -29,6 +29,7 @@ type TimelineAlertRow struct {
 	Dimension string
 	Reason    string
 	Status    string
+	WindowEnd time.Time // end of the detection window that raised it
 	CreatedAt time.Time
 }
 
@@ -40,7 +41,7 @@ func (r *IdentityTimelineRepository) Alerts(ctx context.Context, resolved *scope
 		return out, nil
 	}
 	types, names := keyArrays(keys)
-	q := `SELECT a.id, a.source_type, a.identity_name, a.dimension, a.reason, a.status, a.created_at
+	q := `SELECT a.id, a.source_type, a.identity_name, a.dimension, a.reason, a.status, a.window_end, a.created_at
 	      FROM ` + resolved.Table("alerts") + ` a` + keyJoin("a") + `
 	      ORDER BY a.created_at DESC, a.id DESC`
 	rows, err := resolved.DB.QueryContext(ctx, q, types, names)
@@ -50,10 +51,10 @@ func (r *IdentityTimelineRepository) Alerts(ctx context.Context, resolved *scope
 	defer rows.Close()
 	for rows.Next() {
 		var row TimelineAlertRow
-		if err := rows.Scan(&row.ID, &row.Key.SourceType, &row.Key.IdentityName, &row.Dimension, &row.Reason, &row.Status, &row.CreatedAt); err != nil {
+		if err := rows.Scan(&row.ID, &row.Key.SourceType, &row.Key.IdentityName, &row.Dimension, &row.Reason, &row.Status, &row.WindowEnd, &row.CreatedAt); err != nil {
 			return nil, wrapMonitoringErr("timeline alerts", err)
 		}
-		row.CreatedAt = row.CreatedAt.UTC()
+		row.CreatedAt, row.WindowEnd = row.CreatedAt.UTC(), row.WindowEnd.UTC()
 		out = append(out, row)
 	}
 	return out, wrapMonitoringErr("timeline alerts", rows.Err())

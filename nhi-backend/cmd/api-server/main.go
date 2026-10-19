@@ -154,13 +154,9 @@ func main() {
 	genomeIdentities := svcgenome.NewMonitoredIdentityLookup(repogenome.NewDashboardSummaryRepository(), resolver)
 	genomeHandlers := &routes.GenomeHandlers{
 		DashboardSummary: handlergenome.NewDashboardSummaryHandler(svcgenome.NewDashboardSummaryService(repogenome.NewDashboardSummaryRepository(), resolver)),
-		IdentityList:     handlergenome.NewIdentityListHandler(svcgenome.NewIdentityListService(genomeIdentities, repogenome.NewIdentityListRepository(), monitoringEvents)),
-		IdentitySummary:  handlergenome.NewIdentitySummaryHandler(svcgenome.NewIdentitySummaryService(genomeIdentities, repogenome.NewIdentitySummaryRepository(), monitoringEvents)),
 		IdentityActivity: handlergenome.NewIdentityActivityHandler(svcgenome.NewIdentityActivityService(genomeIdentities, monitoringEvents)),
 		IdentityGenome:   handlergenome.NewIdentityGenomeHandler(svcgenome.NewIdentityGenomeService(genomeIdentities, monitoringEvents)),
-		IdentityBaseline: handlergenome.NewIdentityBaselineHandler(svcgenome.NewIdentityBaselineService(genomeIdentities, repogenome.NewIdentityBaselineRepository())),
 		IdentityTimeline: handlergenome.NewIdentityTimelineHandler(svcgenome.NewIdentityTimelineService(genomeIdentities, repogenome.NewIdentityTimelineRepository())),
-		Anomalies:        handlergenome.NewAnomaliesHandler(svcgenome.NewAnomaliesService(genomeIdentities, repogenome.NewAnomaliesRepository(), monitoringEvents)),
 	}
 
 	// Connect AWS Account. The SDK's default chain supplies this process's

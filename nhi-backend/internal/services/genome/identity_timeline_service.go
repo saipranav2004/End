@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +19,9 @@ import (
 // (backend_api_contract.md §5.6 / §10.3) — the lifecycle timeline derived
 // from the current tables, newest first:
 //
-//   - anomaly                     one item per alerts row   (alerts.created_at)
+//   - anomaly                     one item per detection window, dimension and
+//                                 status (alerts grouped; occurred_at = window_end),
+//                                 titled "N active anomalies" while open
 //   - baseline_version_published  one item per version      (baseline_versions.published_at)
 //   - learning_started            baselines.first_seen_date
 //   - baseline_established        baselines.active_since
@@ -68,15 +71,7 @@ func (s *IdentityTimelineService) GetTimeline(ctx context.Context, userID, tenan
 
 	var entries []timelineEntry
 	if alerts, err := s.repo.Alerts(ctx, sc, keys); readOK("identity timeline alerts", err) {
-		for _, a := range alerts {
-			desc := "Dimension: " + a.Dimension + "; " + a.Reason
-			status := a.Status
-			entries = append(entries, timelineEntry{
-				key: timelineKey{At: a.CreatedAt.UnixMilli(), Type: models.TimelineTypeAnomaly, Ref: strconv.FormatInt(a.ID, 10)},
-				item: models.IdentityTimelineItem{Type: models.TimelineTypeAnomaly, Title: timelineTitles[models.TimelineTypeAnomaly],
-					Description: &desc, OccurredAt: a.CreatedAt, Status: &status},
-			})
-		}
+		entries = append(entries, anomalyEntries(alerts)...)
 	}
 	versionsKey := id.Key
 	if row, err := s.repo.BaselineMilestones(ctx, sc, keys); readOK("identity timeline baseline", err) && row != nil {
@@ -114,6 +109,70 @@ func (s *IdentityTimelineService) GetTimeline(ctx context.Context, userID, tenan
 		out.Items = append(out.Items, e.item)
 	}
 	return out, next, nil
+}
+
+// anomalyEntries groups alerts raised by the same detection window for the
+// same dimension and status into one item: one window usually raises several
+// alerts on one dimension, and the reviewer reads them as one departure.
+// alerts arrive newest first; the group's Ref is its newest alert id.
+func anomalyEntries(alerts []repo.TimelineAlertRow) []timelineEntry {
+	type groupKey struct {
+		at                int64
+		dimension, status string
+	}
+	type group struct {
+		first   repo.TimelineAlertRow
+		count   int
+		reasons map[string]struct{}
+	}
+	order := []groupKey{}
+	groups := map[groupKey]*group{}
+	for _, a := range alerts {
+		at := a.WindowEnd
+		if at.IsZero() {
+			at = a.CreatedAt
+		}
+		k := groupKey{at.UnixMilli(), a.Dimension, strings.ToLower(strings.TrimSpace(a.Status))}
+		g := groups[k]
+		if g == nil {
+			g = &group{first: a, reasons: map[string]struct{}{}}
+			groups[k] = g
+			order = append(order, k)
+		}
+		g.count++
+		g.reasons[a.Reason] = struct{}{}
+	}
+	out := make([]timelineEntry, 0, len(order))
+	for _, k := range order {
+		g := groups[k]
+		desc := "Dimension: " + g.first.Dimension + "; " + g.first.Reason
+		if extra := len(g.reasons) - 1; extra > 0 {
+			desc += fmt.Sprintf(" (and %d other %s)", extra, plural(extra, "reason", "reasons"))
+		}
+		status := g.first.Status
+		out = append(out, timelineEntry{
+			key: timelineKey{At: k.at, Type: models.TimelineTypeAnomaly, Ref: strconv.FormatInt(g.first.ID, 10)},
+			item: models.IdentityTimelineItem{Type: models.TimelineTypeAnomaly, Title: anomalyTitle(g.count, k.status),
+				Description: &desc, OccurredAt: time.UnixMilli(k.at).UTC(), Status: &status},
+		})
+	}
+	return out
+}
+
+// anomalyTitle: "1 active anomaly", "3 active anomalies", "2 resolved anomalies".
+func anomalyTitle(n int, status string) string {
+	state := "active"
+	if status != "" && status != "open" {
+		state = strings.ReplaceAll(status, "_", " ")
+	}
+	return fmt.Sprintf("%d %s %s", n, state, plural(n, "anomaly", "anomalies"))
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // milestone builds a baselines-derived item (no description, no status).

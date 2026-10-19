@@ -37,6 +37,7 @@ const (
 	MonitoringCodeUnauthorized     = "UNAUTHORIZED"
 	MonitoringCodeInternal         = "INTERNAL_ERROR"
 	MonitoringCodeStoreUnavailable = "STORE_UNAVAILABLE"
+	MonitoringCodeIdentityNotFound = "IDENTITY_NOT_FOUND" // 404: unknown (source_type, identity_name) in scope
 )
 
 // DashboardSummaryResponse is the data block of §4.1.

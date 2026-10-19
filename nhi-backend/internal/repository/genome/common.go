@@ -4,14 +4,13 @@ import (
 	"errors"
 	"fmt"
 
-	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
 )
 
 // Shared by every <api>_repo.go of this package: the normalized monitoring
 // key and the helpers that bind a list of keys into one PostgreSQL query
-// (unnest) or one ClickHouse query (has()).
+// (unnest).
 
 // ErrMonitoringTableMissing is returned when a pipeline table does not exist
 // in the tenant database (the monitoring migrations have not run there).
@@ -62,32 +61,3 @@ func keyJoin(alias string) string { return fmt.Sprintf(keyJoinSQL, alias) }
 // deterministic ORDER BY k.preference LIMIT 1.
 const keyPreferenceJoinSQL = ` JOIN unnest($1::text[], $2::text[]) WITH ORDINALITY AS k(source_type, identity_name, preference)
         ON k.source_type = %[1]s.source_type AND k.identity_name = %[1]s.identity_name `
-
-// keyFilterSQL restricts log_events rows to the requested identity keys. The
-// two has() tests form a superset (every requested source_type combined
-// with every requested identity_name); callers keep only exact pairs.
-const keyFilterSQL = ` has({types:Array(String)}, source_type)
-	  AND has({names:Array(String)}, identity_name) `
-
-func keyFilterArgs(keys []MonitoringKey) []any {
-	types := make([]string, 0, len(keys))
-	names := make([]string, 0, len(keys))
-	seenType := map[string]struct{}{}
-	for _, k := range keys {
-		if _, ok := seenType[k.SourceType]; !ok {
-			seenType[k.SourceType] = struct{}{}
-			types = append(types, k.SourceType)
-		}
-		names = append(names, k.IdentityName)
-	}
-	return []any{ch.Named("types", types), ch.Named("names", names)}
-}
-
-// keySet indexes the requested keys for the exact-pair filter.
-func keySet(keys []MonitoringKey) map[MonitoringKey]struct{} {
-	set := make(map[MonitoringKey]struct{}, len(keys))
-	for _, k := range keys {
-		set[k] = struct{}{}
-	}
-	return set
-}

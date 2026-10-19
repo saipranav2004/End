@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net/url"
 
-	models "nhi-backend-api/internal/models/genome"
 	repo "nhi-backend-api/internal/repository/genome"
 	"nhi-backend-api/internal/scope"
 )
@@ -110,18 +108,6 @@ func newerSnapshot(candidate repo.DiscoveryIdentityRow, current *repo.DiscoveryI
 // (routes.GenomeBasePath under /api/v1). Its /identities would otherwise
 // collide with the discovery API's /identities.
 const APIBasePath = "/api/v1/genome"
-
-// identityLinks builds the §5.2 links for one identity (identity_name is
-// path-escaped, as the contract requires for ARNs).
-func identityLinks(sourceType, identityName string) models.IdentityLinks {
-	base := APIBasePath + "/identities/" + url.PathEscape(sourceType) + "/" + url.PathEscape(identityName)
-	return models.IdentityLinks{
-		Activity: base + "/activity",
-		Genome:   base + "/genome",
-		Baseline: base + "/baseline",
-		Timeline: base + "/timeline",
-	}
-}
 
 // eventsReadOK reports whether a ClickHouse read succeeded; failures are
 // logged and leave the dependent fields null (graceful degradation, like

@@ -38,6 +38,7 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/001_user_settings.sql
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_regions_array.sql  # converts an old accounts table; no-op otherwise
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/002_register_global_region.sql  # after inventory data exists
+   psql "$DSN" -v schema=bimasugam -f migrations/tenant/005_register_discovered_regions.sql  # every scanned region selectable
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql  # connection columns on accounts
    ```
 
@@ -205,15 +206,10 @@ from it are raised as anomalies for review.
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/genome/dashboard/summary` | Baselines established, open anomalies, anomalies per day, what changed, most anomalous identities. |
-| GET | `/genome/identities` | Monitored identities with baseline and risk (`baseline=established\|learning`, filters, cursor). |
-| GET | `/genome/identities/{source_type}/{identity_name}` | One identity's header: baseline status, risk, last seen. |
-| GET | `/genome/identities/{source_type}/{identity_name}/activity` | Calls per day / hour and recent events. |
-| GET | `/genome/identities/{source_type}/{identity_name}/genome` | Its behaviour fingerprint: services, actions, resources, regions, IPs, hours. |
-| GET | `/genome/identities/{source_type}/{identity_name}/baseline` | The learned baseline and its versions. |
-| GET | `/genome/identities/{source_type}/{identity_name}/timeline` | Learning started, baseline established, versions, anomalies. |
-| GET | `/genome/anomalies` | Anomalies to review with the event behind each and the latest verdict (`review=pending\|reviewed`, filters, cursor). |
-| POST | `/genome/anomalies/{alert_id}/feedback` | Records a verdict (analyst or admin): `malicious` (real anomaly), `legitimate` (false positive, optionally learnt as normal) or `unknown`. |
+| GET | `/genome/dashboard/summary` | Identities watched, baselines established, still learning, recently baselined (plus the anomaly panels, empty until the pipeline writes alerts). |
+| GET | `/genome/identities/{source_type}/{identity_name}/genome` | Its behaviour fingerprint (`dimensions_json`), typical actions, typical resources and hour-of-week schedule. |
+| GET | `/genome/identities/{source_type}/{identity_name}/activity` | Calls per day / hour, recent calls (cursor) and the total. |
+| GET | `/genome/identities/{source_type}/{identity_name}/timeline` | Learning started, baseline established, versions published, and anomalies grouped per detection window ("1 active anomaly"). |
 
 `identity_name` is URL-encoded (an ARN's `/` as `%2F`).
 
@@ -602,30 +598,24 @@ Every response is `{ "data": ..., "meta": { "request_id", "generated_at", "next_
 monitoring ClickHouse `log_events`. Empty tables give `0` / empty lists / `null` (a legitimate
 "still learning" state), never invented values.
 
-Columns read from `log_events`: `event_id`, `source_type`, `identity_name`,
-`is_resolved`, `event_risk_score`, `risk_status`, `event_time`, `region`,
-`source_ip`, `event_name`, `event_source`, `resource_arns` (a comma-separated
-string), `dimensions_json`, `ingested_at`.
+Columns read from `log_events` (ReplacingMergeTree on `ingested_at`, so counts
+use `uniqExact(event_id)` and row reads use `FINAL`): `event_id`, `source_type`,
+`identity_name`, `event_time`, `region`, `source_ip`, `event_name`,
+`event_source`, `resource_arns` (a comma-separated string), `dimensions_json`,
+`risk_status`, `event_risk_score`.
 
+* An identity is addressed as `(source_type, identity_name)`: the discovery
+  identity's family (`ECS`, `EC2`, `LAMBDA`, ...) and its canonical ARN, the same
+  key the pipeline writes to `log_events` (an ECS task by its task ARN). The
+  console lists identities from the inventory (`/api/v1/identities`) and links
+  each monitored one to these endpoints. An identity outside the caller's
+  accounts/regions answers `404 IDENTITY_NOT_FOUND` - run
+  `005_register_discovered_regions.sql` so every scanned region can be selected.
 * `identity_name` must be URL-encoded (Postman: paste the ARN and let Postman encode it, or encode `/` as `%2F`).
 * `limit` default 25, max 100; `cursor` is opaque – copy `meta.next_cursor` into the next request unchanged.
 * `from` inclusive / `to` exclusive, ISO-8601 UTC; default window = last 14 days.
-* Unknown query parameters → `400 VALIDATION_ERROR`; unknown identity → `404 IDENTITY_NOT_FOUND`;
-  tenant scope/discovery failure → `503 STORE_UNAVAILABLE`; missing monitoring tables or ClickHouse → **200 with nulls**.
-* `baseline=established` keeps identities whose behaviour baseline is active (the
-  dashboard's "baselines established" count); `learning` keeps the rest.
-* Anomalies are the tenant's `alerts` rows for identities in scope, newest first, with the
-  triggering `log_events` row from ClickHouse and the latest reviewer verdict. `counts` gives
-  `needs_review` / `reviewed` / `real_anomaly` / `false_positive` for the same filters.
-* Feedback (analyst or admin; viewers get `403 FORBIDDEN`): the console's **Real anomaly** is
-  `malicious`, **False positive** is `legitimate`, **Not sure** is `unknown`.
-  `approved_for_baseline:true` (only with `legitimate`) asks the pipeline to learn the behaviour as
-  normal. A second verdict on the same alert replaces the first. The verdict is stored in
-  `alert_feedback` (keyed by source type and event id, reviewer = the signed-in email) and never
-  changes `alerts.status`. `alert_feedback` is owned by the genome pipeline; without it the list
-  reports `feedback_available:false` and a verdict returns `503 FEEDBACK_UNAVAILABLE`. Unknown
-  alert → `404 ANOMALY_NOT_FOUND`; alert with no event to key the verdict on →
-  `409 ANOMALY_NOT_REVIEWABLE`.
+* Unknown query parameters → `400 VALIDATION_ERROR`; tenant scope/discovery
+  failure → `503 STORE_UNAVAILABLE`; missing monitoring tables or ClickHouse → **200 with nulls / empty lists**.
 
 ### Scan change tracking in detail
 

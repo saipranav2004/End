@@ -231,21 +231,18 @@ func registerPostures(router *mux.Router, p *posturehandlers.Handlers) {
 // /identities/{id}/events. Keep in step with genome service APIBasePath.
 const GenomeBasePath = "/genome"
 
-// GenomeHandlers are the NHI Genome endpoints.
+// GenomeHandlers are the NHI Genome endpoints: the fleet summary and, per
+// identity, its behavioural genome, activity and timeline. Identities are
+// listed from the discovery inventory, not here.
 type GenomeHandlers struct {
 	DashboardSummary *genome.DashboardSummaryHandler
-	IdentityList     *genome.IdentityListHandler
-	IdentitySummary  *genome.IdentitySummaryHandler
 	IdentityActivity *genome.IdentityActivityHandler
 	IdentityGenome   *genome.IdentityGenomeHandler
-	IdentityBaseline *genome.IdentityBaselineHandler
 	IdentityTimeline *genome.IdentityTimelineHandler
-	Anomalies        *genome.AnomaliesHandler
 }
 
 // registerGenome mounts the genome endpoints. identity_name is an ARN (it
-// contains ':' and '/'), so the patterns use {identity_name:.+}, and the
-// sub-resource routes are registered before the plain identity route.
+// contains ':' and '/'), so the patterns use {identity_name:.+}.
 func registerGenome(router *mux.Router, g *GenomeHandlers) {
 	if g == nil {
 		return
@@ -256,27 +253,14 @@ func registerGenome(router *mux.Router, g *GenomeHandlers) {
 	if g.DashboardSummary != nil {
 		get("/dashboard/summary", g.DashboardSummary.Get)
 	}
-	if g.IdentityList != nil {
-		get("/identities", g.IdentityList.Get)
-	}
 	if g.IdentityActivity != nil {
 		get("/identities/{source_type}/{identity_name:.+}/activity", g.IdentityActivity.Get)
 	}
 	if g.IdentityGenome != nil {
 		get("/identities/{source_type}/{identity_name:.+}/genome", g.IdentityGenome.Get)
 	}
-	if g.IdentityBaseline != nil {
-		get("/identities/{source_type}/{identity_name:.+}/baseline", g.IdentityBaseline.Get)
-	}
 	if g.IdentityTimeline != nil {
 		get("/identities/{source_type}/{identity_name:.+}/timeline", g.IdentityTimeline.Get)
-	}
-	if g.IdentitySummary != nil {
-		get("/identities/{source_type}/{identity_name:.+}", g.IdentitySummary.Get)
-	}
-	if g.Anomalies != nil {
-		get("/anomalies", g.Anomalies.List)
-		r.HandleFunc("/anomalies/{alert_id:[0-9]+}/feedback", g.Anomalies.Feedback).Methods(http.MethodPost)
 	}
 }
 
