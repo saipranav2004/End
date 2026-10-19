@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Activity, AlertTriangle, DatabaseZap, Globe, Network } from 'lucide-react';
 import { fetchIdentity, fetchIdentityEvents } from '../../lib/api/inventory';
 import { useQuery } from '../../lib/hooks';
-import { rampColor } from '../../lib/domain';
+import { rampColor, SERIES_TOKENS } from '../../lib/domain';
 import { formatDate, formatDateTime, formatNumber, formatRelative, formatRelativeShort, percentValue } from '../../lib/format';
 import { Panel, PanelHeader } from '../../ui/Panel';
 import { MetricTile } from '../../ui/Stat';
@@ -608,6 +608,7 @@ export function SessionsSection({ identityId, range }) {
           range for a complete picture.
         </p>
       )}
+      {rows.length > 0 && <SessionLanes sessions={rows} />}
       <DataGrid
         caption="Sessions"
         rows={rows}
@@ -654,6 +655,76 @@ export function SessionsSection({ identityId, range }) {
         emptyState={<EmptyState compact icon={Activity} title="No sessions in this window" description="No call was recorded." />}
       />
     </SectionState>
+  );
+}
+
+/**
+ * Sessions as blocks on one time axis, one lane per credential: overlapping
+ * sessions, quiet gaps and an unusually long session read at a glance, which
+ * the table below cannot show. The table stays the record of each session.
+ */
+function SessionLanes({ sessions }) {
+  const view = useMemo(() => {
+    const parsed = sessions
+      .map((row) => {
+        const start = Date.parse(row.start_time);
+        const end = Date.parse(row.end_time || row.start_time);
+        return Number.isFinite(start) ? { row, start, end: Number.isFinite(end) && end > start ? end : start } : null;
+      })
+      .filter(Boolean);
+    if (parsed.length === 0) return null;
+    const from = Math.min(...parsed.map((s) => s.start));
+    const to = Math.max(...parsed.map((s) => s.end), from + 60000);
+    const lanes = new Map();
+    for (const item of parsed) {
+      const key = item.row.credential_name || item.row.credential_arn || item.row.session_name || 'Unknown credential';
+      if (!lanes.has(key)) lanes.set(key, []);
+      lanes.get(key).push(item);
+    }
+    const ticks = Array.from({ length: 5 }, (_, i) => from + ((to - from) * i) / 4);
+    return { from, to, lanes: [...lanes.entries()], ticks };
+  }, [sessions]);
+  if (!view) return null;
+  const span = view.to - view.from;
+  const at = (t) => `${((t - view.from) / span) * 100}%`;
+
+  return (
+    <div className="mb-5 rounded-[var(--radius-control)] border border-line bg-surface-2/50 p-3.5">
+      <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Session timeline</p>
+      <div className="mt-3 flex flex-col gap-2">
+        {view.lanes.map(([lane, items], index) => (
+          <div key={lane} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-3">
+            <span className="truncate font-mono text-[11.5px] text-ink-2" title={lane}>
+              {lane}
+            </span>
+            <div className="relative h-5 rounded bg-track">
+              {items.map((item) => (
+                <span
+                  key={`${item.start}-${item.row.session_name}`}
+                  className="absolute top-0.5 bottom-0.5 min-w-[4px] rounded-[3px] opacity-90 hover:opacity-100"
+                  style={{
+                    left: at(item.start),
+                    width: `max(4px, ${((item.end - item.start) / span) * 100}%)`,
+                    background: SERIES_TOKENS[index % SERIES_TOKENS.length],
+                  }}
+                  title={`${item.row.session_name || 'Session'} · ${formatDateTime(item.row.start_time)} · ${
+                    item.row.duration_minutes > 0 ? `${formatNumber(item.row.duration_minutes)} min` : 'under 1 min'
+                  } · ${formatNumber(item.row.event_count)} calls${item.row.actions?.length ? ` · ${item.row.actions.slice(0, 4).join(', ')}` : ''}`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-3">
+        <span />
+        <div className="flex justify-between text-[10.5px] text-ink-3">
+          {view.ticks.map((tick) => (
+            <span key={tick}>{new Date(tick).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

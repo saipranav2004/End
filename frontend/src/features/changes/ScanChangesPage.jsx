@@ -3,7 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, GitCompareArrows, History, SearchX } from 'lucide-react';
 import { fetchScanChanges, fetchScans, scanChangesRoute } from '../../lib/api/changes';
 import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
-import { SERIES_TOKENS } from '../../lib/domain';
+import { NEUTRAL_SERIES, SERIES_TOKENS } from '../../lib/domain';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { TooltipCard } from '../../charts/ChartTooltip';
 import { useQuery } from '../../lib/hooks';
 import { PageHeader } from '../../shell/PageHeader';
 import { Button } from '../../ui/Button';
@@ -159,6 +161,10 @@ export default function ScanChangesPage() {
           onChangeType={(value) => setParams({ change_type: value === changeType ? '' : value })}
           onEntityType={(value) => setParams({ entity_type: value === entityType ? '' : value })}
         />
+      )}
+
+      {(scansQuery.data?.length ?? 0) >= 2 && (
+        <ScanHistory scans={scansQuery.data} currentId={scan?.id} onOpen={(id) => navigate(scanChangesRoute(id))} />
       )}
 
       <Panel prominence="lead" flush className="overflow-hidden">
@@ -346,6 +352,65 @@ function SummaryPanel({ scan, summary, changeType, entityType, onChangeType, onE
             </ul>
           </div>
         </div>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Changes found by each recent scan, oldest to newest: a spike is drift worth
+ * opening. The scan on screen is the accent bar, the rest are context; a bar
+ * opens its scan.
+ */
+function ScanHistory({ scans, currentId, onOpen }) {
+  const data = useMemo(
+    () =>
+      [...scans].reverse().map((item) => ({
+        id: item.id,
+        label: item.completedAt
+          ? new Date(item.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : item.id,
+        at: item.completedAt,
+        changes: item.totalChanges,
+      })),
+    [scans],
+  );
+  const total = data.reduce((sum, row) => sum + row.changes, 0);
+  return (
+    <Panel prominence="quiet" className="animate-rise">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-[13px] font-semibold text-ink">Changes per scan</p>
+        <p className="text-[12px] text-ink-3" data-numeric="">
+          {formatNumber(total)} changes across the last {formatNumber(data.length)} scans · select a bar to open that scan
+        </p>
+      </div>
+      <div className="mt-3 h-[150px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="var(--t-chart-grid)" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: 'var(--t-chart-axis)', fontSize: 10.5 }} tickLine={false} axisLine={{ stroke: 'var(--t-chart-grid)' }} interval="preserveStartEnd" minTickGap={28} />
+            <YAxis tick={{ fill: 'var(--t-chart-axis)', fontSize: 10.5 }} tickLine={false} axisLine={false} width={34} allowDecimals={false} />
+            <Tooltip
+              cursor={{ fill: 'var(--t-chart-grid)', opacity: 0.5 }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const row = payload[0].payload;
+                return (
+                  <TooltipCard
+                    title={row.at ? formatDateTime(row.at) : row.id}
+                    subtitle={row.id === currentId ? 'Shown below' : 'Select to open'}
+                    rows={[{ label: 'Changes', value: formatNumber(row.changes), color: row.id === currentId ? SERIES_TOKENS[0] : NEUTRAL_SERIES }]}
+                  />
+                );
+              }}
+            />
+            <Bar dataKey="changes" radius={[3, 3, 0, 0]} maxBarSize={30} onClick={(row) => row?.id && row.id !== currentId && onOpen(row.id)} style={{ cursor: 'pointer' }}>
+              {data.map((row) => (
+                <Cell key={row.id} fill={row.id === currentId ? SERIES_TOKENS[0] : NEUTRAL_SERIES} fillOpacity={row.id === currentId ? 1 : 0.55} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </Panel>
   );
