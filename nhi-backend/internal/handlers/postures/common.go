@@ -105,6 +105,8 @@ func fail(w http.ResponseWriter, what string, err error) {
 		writeError(w, http.StatusForbidden, codeForbidden, "your role may not perform this action", "")
 	case errors.Is(err, svc.ErrFindingResolved):
 		writeError(w, http.StatusConflict, codeConflict, "the finding is resolved and can only be changed by the engine", "")
+	case errors.Is(err, svc.ErrConflict):
+		writeError(w, http.StatusConflict, codeConflict, "the finding was changed by someone else; reload it and try again", "If-Match")
 	default:
 		log.Printf("posture api: %s failed: %v", what, err)
 		writeError(w, http.StatusInternalServerError, codeInternal, "failed to "+what, "")

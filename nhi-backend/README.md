@@ -190,13 +190,13 @@ posture worker for the whole tenant.
 | GET | `/ispm/identities/{id}/posture` | Why the score is what it is: security areas, failed checks, what each fix is worth, peer group. |
 | GET | `/ispm/identities/{id}/checks` | Every check that applies, failed and passed (`status`, `pillar`). |
 | GET | `/ispm/identities/{id}/history` | Score over time and what moved it. |
-| GET | `/ispm/identities/{id}/credentials` | Its credentials and their posture. |
+| GET | `/ispm/identities/{id}/credentials` | Its credentials and their posture. Details come from the scanner's `credentials` and/or `dummy_credentials` (posture sample data), whichever the schema has; every field that applies to the kind (role: privilege; key: usage) is always present, null when unknown. |
 | GET | `/ispm/identities/{id}/role-use` | Roles it assumed and who assumed it. |
-| GET | `/ispm/identities/{id}/activity` | Its recent calls (CloudTrail). |
+| GET | `/ispm/identities/{id}/activity` | Its recent calls: from the posture worker's `ispm_identity_events` table when the tenant schema has it, else CloudTrail in ClickHouse. |
 | GET | `/ispm/identities/{id}/alerts` | Its findings, open or closed. |
 | GET | `/ispm/identities/{id}/graph` | Its access graph as posture sees it. |
 | GET | `/ispm/checks/{rule_id}` | One check: what it means, how to fix it, compliance mappings. |
-| PATCH | `/ispm/findings/{id}` | Accept, suppress, reopen, assign or note a finding (analyst or admin). Only the id and the change are needed. |
+| PATCH | `/ispm/findings/{id}` | Accept, suppress, reopen, assign or note a finding (analyst or admin). Only the id and the change are needed; an optional `If-Match: "<updated_at>"` makes it fail with 409 when someone changed the finding meanwhile. The response `ETag` is the new `updated_at`. |
 
 ### NHI Genome - `/genome/...`
 

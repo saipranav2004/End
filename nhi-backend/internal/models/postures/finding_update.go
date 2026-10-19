@@ -22,10 +22,13 @@ type FindingUpdateRequest struct {
 	Note            *string    `json:"note"`
 }
 
-// FindingUpdate carries the request plus the caller.
+// FindingUpdate carries the request plus the caller. IfMatch, when set, is
+// the updated_at the caller last saw (If-Match header); a finding changed
+// since then is refused with ErrConflict.
 type FindingUpdate struct {
 	FindingID string
 	Actor     string
+	IfMatch   time.Time
 	Request   FindingUpdateRequest
 }
 

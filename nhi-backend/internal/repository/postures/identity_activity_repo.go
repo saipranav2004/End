@@ -14,8 +14,10 @@ import (
 )
 
 // IdentityActivityRepository reads the identity's CloudTrail calls from the
-// scanner's event store (ClickHouse). When that store is not configured or
-// cannot be reached the endpoint answers "no data" instead of failing.
+// posture worker's ispm_identity_events table in the tenant schema when it
+// exists, else from the scanner's event store (ClickHouse). When neither is
+// available the endpoint answers "no data" (data_available = false) instead
+// of failing.
 type IdentityActivityRepository struct {
 	ch     *chrepo.Repository
 	lookup *repov1.IdentityLookupRepository
@@ -31,7 +33,7 @@ type activityCursor struct {
 }
 
 // Get implements GET /identities/{id}/activity. It returns the events, the
-// next cursor, and whether the event store could be read.
+// next cursor, and whether event data could be read.
 func (r *IdentityActivityRepository) Get(ctx context.Context, s *scope.DataScope, id string, f models.IdentityActivityFilter) ([]models.ActivityEvent, *string, bool, error) {
 	if err := need(s); err != nil {
 		return nil, nil, false, err
@@ -41,10 +43,14 @@ func (r *IdentityActivityRepository) Get(ctx context.Context, s *scope.DataScope
 		return nil, nil, false, err
 	}
 	empty := []models.ActivityEvent{}
+	limit := clampLimit(f.Limit)
+
+	if events, next, found, err := r.fromEventsTable(ctx, s, ref, f, limit); err != nil || found {
+		return events, next, found, err
+	}
 	if !r.ch.Enabled() {
 		return empty, nil, false, nil
 	}
-	limit := clampLimit(f.Limit)
 
 	pf := chrepo.ActivityPageFilter{Mutating: f.Mutating, Limit: limit + 1}
 	if strings.TrimSpace(f.Cursor) != "" {
@@ -128,4 +134,72 @@ func (r *IdentityActivityRepository) subjectKeys(ctx context.Context, s *scope.D
 		}
 	}
 	return keys, rows.Err()
+}
+
+// fromEventsTable reads the page from ispm_identity_events: newest first,
+// keyset paged on (event_time, event_id). found is false when the table (or a
+// column it needs) does not exist, so Get falls back to ClickHouse.
+func (r *IdentityActivityRepository) fromEventsTable(ctx context.Context, s *scope.DataScope, ref *identityRef, f models.IdentityActivityFilter, limit int) ([]models.ActivityEvent, *string, bool, error) {
+	args := []any{ref.ID, time.Now().UTC().Add(-f.Window.Duration)}
+	add := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+	where := "identity_id = $1 AND event_time >= $2"
+	if f.Mutating != nil {
+		where += " AND COALESCE(is_read_only, false) = " + add(!*f.Mutating)
+	}
+	if svc := strings.ToLower(strings.TrimSpace(f.Service)); svc != "" {
+		if !strings.Contains(svc, ".") {
+			svc += ".amazonaws.com"
+		}
+		where += " AND event_source = " + add(svc)
+	}
+	if strings.TrimSpace(f.Cursor) != "" {
+		var c activityCursor
+		if err := decodeCursor(f.Cursor, &c); err != nil || c.ID == "" || c.T.IsZero() {
+			return nil, nil, false, ErrInvalidCursor
+		}
+		t, id := add(c.T.UTC()), add(c.ID)
+		where += fmt.Sprintf(" AND (event_time < %s OR (event_time = %s AND event_id::text > %s))", t, t, id)
+	}
+	// source_ip may be inet, whose text form carries the /32 host mask.
+	q := fmt.Sprintf(`SELECT event_time, COALESCE(event_name, ''), COALESCE(event_source, ''), COALESCE(regexp_replace(source_ip::text, '/(32|128)$', ''), ''),
+			COALESCE(aws_region, ''), COALESCE(is_read_only, false), COALESCE(error_code, ''), COALESCE(event_id::text, '')
+		FROM %s WHERE %s
+		ORDER BY event_time DESC, event_id
+		LIMIT %d`, s.Table(tIdentityEvents), where, limit+1)
+	rows, err := s.DB.QueryContext(ctx, q, args...)
+	if err != nil {
+		if isUndefinedTable(err) || isUndefinedColumn(err) {
+			return nil, nil, false, nil
+		}
+		return nil, nil, false, fmt.Errorf("query identity events: %w", err)
+	}
+	defer rows.Close()
+	out := make([]models.ActivityEvent, 0, limit+1)
+	ids := make([]string, 0, limit+1)
+	for rows.Next() {
+		var ev models.ActivityEvent
+		var readOnly bool
+		var code, id string
+		if err := rows.Scan(&ev.EventTime, &ev.Action, &ev.Service, &ev.SourceIP, &ev.Region, &readOnly, &code, &id); err != nil {
+			return nil, nil, false, fmt.Errorf("scan identity event: %w", err)
+		}
+		ev.EventTime, ev.Mutating = ev.EventTime.UTC(), !readOnly
+		if code != "" {
+			ev.ErrorCode = &code
+		}
+		out, ids = append(out, ev), append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, false, err
+	}
+	var next *string
+	if len(out) > limit {
+		out = out[:limit]
+		c := encodeCursor(activityCursor{T: out[limit-1].EventTime, ID: ids[limit-1]})
+		next = &c
+	}
+	return out, next, true, nil
 }

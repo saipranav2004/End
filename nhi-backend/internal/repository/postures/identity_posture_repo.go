@@ -266,20 +266,18 @@ func standing(size, rank int, score sql.NullFloat64, avg float64) string {
 }
 
 // boundCredentials lists the credentials the identity is bound to (BOUND_TO
-// edges), with the latest known row of each credential.
+// edges), with the latest known row of each credential (see credentialSource).
 func (r *IdentityPostureRepository) boundCredentials(ctx context.Context, s *scope.DataScope, arn string) ([]models.BoundCredential, error) {
+	src, err := credentialSource(ctx, s)
+	if err != nil {
+		return nil, err
+	}
 	q := fmt.Sprintf(`SELECT e.target_arn, COALESCE(e.target_type, ''), COALESCE(c.credential_type, ''), COALESCE(c.name, ''),
 			c.created_at_aws, c.last_used_at
 		FROM %s e
-		LEFT JOIN LATERAL (
-			SELECT credential_type, name, created_at_aws, last_used_at
-			FROM %s cr
-			WHERE cr.arn = e.target_arn AND cr.deleted_at IS NULL
-			ORDER BY cr.last_seen_at DESC NULLS LAST, cr.updated_at DESC NULLS LAST
-			LIMIT 1
-		) c ON true
+		%s
 		WHERE e.tenant_id = $1 AND e.source_arn = $2 AND e.edge_type = 'BOUND_TO'
-		ORDER BY e.target_arn`, s.Table(tAccessEdges), s.Table("credentials"))
+		ORDER BY e.target_arn`, s.Table(tAccessEdges), latestCredential(src))
 	rows, err := s.DB.QueryContext(ctx, q, s.TenantID, arn)
 	if err != nil {
 		if isUndefinedTable(err) {

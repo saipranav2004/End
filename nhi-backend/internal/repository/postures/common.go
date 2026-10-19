@@ -52,7 +52,56 @@ const (
 	tRuleWeights     = "ispm_rule_weights"
 	tCategories      = "ispm_categories"
 	tPillars         = "ispm_pillars"
+	tIdentityEvents  = "ispm_identity_events"
+
+	// Credential details come from the scanner's credentials table and from
+	// dummy_credentials, which holds the posture sample data (tenant_demo has
+	// only the latter). See credentialSource.
+	tCredentials      = "credentials"
+	tDummyCredentials = "dummy_credentials"
 )
+
+// credentialColumns are what the posture pages read about a credential; both
+// credential tables have them with the same types.
+const credentialColumns = `arn, name, credential_type, status, created_at_aws, last_used_at,
+	permission_boundary_arn, max_session_duration, deleted_at, last_seen_at, updated_at`
+
+// credentialSource returns a relation (for FROM) over every credential table
+// the tenant schema has, with a src column: 0 for the scanner's credentials,
+// 1 for dummy_credentials, so callers prefer real data when both know an ARN.
+// When neither exists it is an empty relation of the same shape.
+func credentialSource(ctx context.Context, s *scope.DataScope) (string, error) {
+	var hasReal, hasDummy bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL, to_regclass($2) IS NOT NULL`,
+		s.Table(tCredentials), s.Table(tDummyCredentials)).Scan(&hasReal, &hasDummy); err != nil {
+		return "", fmt.Errorf("check credential tables: %w", err)
+	}
+	parts := make([]string, 0, 2)
+	if hasReal {
+		parts = append(parts, `SELECT `+credentialColumns+`, 0 AS src FROM `+s.Table(tCredentials))
+	}
+	if hasDummy {
+		parts = append(parts, `SELECT `+credentialColumns+`, 1 AS src FROM `+s.Table(tDummyCredentials))
+	}
+	if len(parts) == 0 {
+		return `(SELECT NULL::text AS arn, NULL::text AS name, NULL::text AS credential_type, NULL::text AS status,
+			NULL::timestamptz AS created_at_aws, NULL::timestamptz AS last_used_at, NULL::text AS permission_boundary_arn,
+			NULL::int AS max_session_duration, NULL::timestamptz AS deleted_at, NULL::timestamptz AS last_seen_at,
+			NULL::timestamptz AS updated_at, 0 AS src WHERE false)`, nil
+	}
+	return `(` + strings.Join(parts, ` UNION ALL `) + `)`, nil
+}
+
+// latestCredential is a LATERAL join (alias c) to the newest live row of the
+// credential at e.target_arn in src (from credentialSource).
+func latestCredential(src string) string {
+	return `LEFT JOIN LATERAL (
+			SELECT * FROM ` + src + ` cr
+			WHERE cr.arn = e.target_arn AND cr.deleted_at IS NULL
+			ORDER BY cr.src, cr.last_seen_at DESC NULLS LAST, cr.updated_at DESC NULLS LAST
+			LIMIT 1
+		) c ON true`
+}
 
 func need(s *scope.DataScope) error {
 	if s == nil || s.DB == nil || strings.TrimSpace(s.TenantID) == "" {
@@ -67,6 +116,13 @@ func need(s *scope.DataScope) error {
 func isUndefinedTable(err error) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == "42P01"
+}
+
+// isUndefinedColumn reports SQLSTATE 42703: an optional table exists but not
+// yet in the shape a query needs.
+func isUndefinedColumn(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "42703"
 }
 
 // ─────────────────────────────────────────────────────────────────────────

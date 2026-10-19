@@ -18,8 +18,12 @@ func NewFindingUpdateRepository() *FindingUpdateRepository {
 	return &FindingUpdateRepository{}
 }
 
-// ErrFindingResolved: a RESOLVED finding can only be changed by the engine.
-var ErrFindingResolved = errors.New("finding is resolved")
+var (
+	// ErrFindingResolved: a RESOLVED finding can only be changed by the engine.
+	ErrFindingResolved = errors.New("finding is resolved")
+	// ErrConflict: the finding changed since the caller read it (If-Match).
+	ErrConflict = errors.New("finding was modified by someone else")
+)
 
 type findingRow struct {
 	status          string
@@ -31,7 +35,8 @@ type findingRow struct {
 }
 
 // Update implements PATCH /findings/{id}. Inside one transaction it locks the
-// finding, applies the change, and writes
+// finding, checks the optional If-Match against updated_at, applies the
+// change, and writes
 // one ispm_finding_history row per change (actor from the JWT). The identity
 // score follows at the next scan, when the check's points become 0.
 func (r *FindingUpdateRepository) Update(ctx context.Context, s *scope.DataScope, u models.FindingUpdate) (*models.FindingState, error) {
@@ -55,6 +60,9 @@ func (r *FindingUpdateRepository) Update(ctx context.Context, s *scope.DataScope
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock finding: %w", err)
+	}
+	if !u.IfMatch.IsZero() && !cur.updatedAt.UTC().Truncate(time.Microsecond).Equal(u.IfMatch.UTC().Truncate(time.Microsecond)) {
+		return nil, ErrConflict
 	}
 
 	req := u.Request

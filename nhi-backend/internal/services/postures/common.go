@@ -17,6 +17,7 @@ var (
 	ErrNotFound        = repo.ErrNotFound
 	ErrInvalidCursor   = repo.ErrInvalidCursor
 	ErrFindingResolved = repo.ErrFindingResolved
+	ErrConflict        = repo.ErrConflict
 	// ErrForbidden: the caller's role may not perform the action.
 	ErrForbidden = errors.New("this role may not perform this action")
 )
