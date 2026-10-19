@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, BadgeCheck, Clock3, Info, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BadgeCheck, Clock3, Info, Lock, ShieldCheck, UserRound } from 'lucide-react';
 import { useAuth } from '../../app/AuthContext';
 import { Button } from '../../ui/Button';
 import { Field, Input, PasswordInput } from '../../ui/Field';
@@ -36,8 +36,9 @@ export default function LoginPage() {
      in one browser. */
   const switching = new URLSearchParams(location.search).get('switch') === '1';
 
-  /* Starts blank. Accounts are issued per workspace on its domain
-     (name@company.com); the API checks the pair. */
+  /* Starts blank. People sign in with their work email (name@company.com) or
+     their workspace username (name@workspace, e.g. cirm@bimasugam); both are
+     the same login id to the API, which checks the pair. */
   const [values, setValues] = useState({ email: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -60,8 +61,9 @@ export default function LoginPage() {
     setFormError(null);
 
     const errors = {};
-    if (!values.email.trim()) errors.email = 'Enter your work email.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) errors.email = 'Enter the email address you sign in with.';
+    const login = values.email.trim();
+    if (!login) errors.email = 'Enter your email or username.';
+    else if (/\s/.test(login)) errors.email = 'Your email or username has no spaces.';
     if (!values.password) errors.password = 'Enter your password.';
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -216,8 +218,8 @@ export default function LoginPage() {
               <Field
                 label={
                   <span className="inline-flex items-center gap-2 text-[clamp(12px,0.9vw,17px)]">
-                    <Mail aria-hidden="true" className="size-[1.05em] text-ink-3" />
-                    Work email
+                    <UserRound aria-hidden="true" className="size-[1.05em] text-ink-3" />
+                    Email or username
                   </span>
                 }
                 htmlFor="login-username"
@@ -227,12 +229,12 @@ export default function LoginPage() {
                   id="login-username"
                   ref={usernameRef}
                   size="auth"
-                  type="email"
+                  type="text"
                   inputMode="email"
                   autoComplete="username"
                   autoCapitalize="none"
                   spellCheck="false"
-                  placeholder="you@company.com"
+                  placeholder="you@company.com or name@workspace"
                   value={values.email}
                   invalid={Boolean(fieldErrors.email)}
                   onChange={(event) => setValues((v) => ({ ...v, email: event.target.value }))}

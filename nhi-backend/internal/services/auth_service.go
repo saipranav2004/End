@@ -37,9 +37,9 @@ func NewAuthService(userRepo *repository.UserRepository, jwtCfg config.JWTConfig
 // Login authenticates against the global database, resolves the tenant schema
 // from the trusted registry, and issues a token with the PDF's claim contract.
 func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*models.LoginResponse, error) {
-	email := strings.TrimSpace(req.Email)
+	email := req.Login()
 	if email == "" || req.Password == "" {
-		return nil, errors.New("email and password are required")
+		return nil, errors.New("email or username and password are required")
 	}
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {

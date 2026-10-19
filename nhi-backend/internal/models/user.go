@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type User struct {
 	ID          int        `json:"id"`
@@ -15,9 +18,21 @@ type User struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+// LoginRequest identifies the user by email or username. Both are the
+// nhi_users.email value (a username such as cirm@bimasugam is stored there);
+// "username" is accepted as an alias of "email".
 type LoginRequest struct {
 	Email    string `json:"email"`
+	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// Login is the identifier the user typed.
+func (r LoginRequest) Login() string {
+	if e := strings.TrimSpace(r.Email); e != "" {
+		return e
+	}
+	return strings.TrimSpace(r.Username)
 }
 
 type RefreshRequest struct {

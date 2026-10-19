@@ -40,10 +40,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" {
+	if req.Login() == "" || req.Password == "" {
 		sendJSON(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
-			Message: "Email and password are required",
+			Message: "Email or username and password are required",
 		})
 		return
 	}
@@ -53,7 +53,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		log.Printf("login failed: %v", err)
 		sendJSON(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
-			Message: "Invalid email or password",
+			Message: "Invalid email/username or password",
 			Error:   "AUTHENTICATION_FAILED",
 		})
 		return
