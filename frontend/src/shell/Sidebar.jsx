@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { useAccess } from '../app/useAccess';
@@ -52,15 +52,45 @@ function SidebarLink({ item, collapsed, onNavigate, badge }) {
 }
 
 
-const OPEN_KEY = 'dna.nav.openGroups';
+/* The group a fresh sign-in opens. Everything else starts closed so the rail
+   reads as a short table of contents rather than a wall of links. */
+const DEFAULT_OPEN = 'overview';
 
-function readOpenGroups() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OPEN_KEY) ?? 'null');
-    return Array.isArray(raw) ? new Set(raw) : null;
-  } catch {
-    return null;
-  }
+/**
+ * Scroll state for the nav: whether content hides above / below (drives the
+ * edge fades) and an overlay thumb's size and offset in px. The native
+ * scrollbar is hidden - with `scrollbar-width` set, Chrome ignores
+ * ::-webkit-scrollbar styling and draws its own track and arrow buttons,
+ * which is the heavy bar this replaces.
+ */
+function useScrollAffordance(ref) {
+  const [state, setState] = useState({ above: false, below: false, thumb: null });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const overflow = scrollHeight - clientHeight > 1;
+      const size = overflow ? Math.max(28, (clientHeight / scrollHeight) * clientHeight) : 0;
+      const offset = overflow ? (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - size) : 0;
+      setState({
+        above: scrollTop > 1,
+        below: overflow && scrollTop + clientHeight < scrollHeight - 1,
+        thumb: overflow ? { size, offset } : null,
+      });
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    /* Groups open and close inside it; their height change is the child's. */
+    for (const child of el.children) observer.observe(child);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      observer.disconnect();
+    };
+  }, [ref]);
+  return state;
 }
 
 function isActiveItem(item, pathname) {
@@ -76,28 +106,18 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
   const activeGroup = groups.find((group) => group.items.some((item) => isActiveItem(item, pathname)))?.key ?? null;
 
   /* Groups open and close on click, not hover: hover menus open by accident,
-     do nothing on touch screens and are hard to reach by keyboard. The group
-     holding the current screen is always opened when you arrive on it, and
-     the rest remember how you left them. */
-  const [openGroups, setOpenGroups] = useState(() => {
-    /* The remembered groups, plus the one holding the page loaded - a
-       reload or a deep link lands with its own group open too. */
-    const remembered = readOpenGroups() ?? new Set();
-    if (activeGroup) remembered.add(activeGroup);
-    return remembered;
-  });
+     do nothing on touch screens and are hard to reach by keyboard. A session
+     starts with only Overview open (plus the group of a deep-linked page);
+     the group holding the current screen opens when you arrive on it, and
+     the rest stay as you left them until you sign out. */
+  const [openGroups, setOpenGroups] = useState(() => new Set([DEFAULT_OPEN, activeGroup].filter(Boolean)));
   const [lastActive, setLastActive] = useState(activeGroup);
   if (activeGroup !== lastActive) {
     setLastActive(activeGroup);
     if (activeGroup && !openGroups.has(activeGroup)) setOpenGroups(new Set([...openGroups, activeGroup]));
   }
-  useEffect(() => {
-    try {
-      localStorage.setItem(OPEN_KEY, JSON.stringify([...openGroups]));
-    } catch {
-      /* A remembered layout is a convenience; losing it costs nothing. */
-    }
-  }, [openGroups]);
+  const navRef = useRef(null);
+  const scroll = useScrollAffordance(navRef);
   const toggleGroup = (key) =>
     setOpenGroups((current) => {
       const next = new Set(current);
@@ -142,7 +162,14 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
         </button>
       </div>
 
-      <nav aria-label="Primary" className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+      <div className="group/nav relative flex min-h-0 flex-1 flex-col">
+      <nav
+        ref={navRef}
+        aria-label="Primary"
+        data-above={scroll.above || undefined}
+        data-below={scroll.below || undefined}
+        className="nav-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2"
+      >
         {groups.map((group, groupIndex) => {
           /* Collapsed to an icon rail there are no headings to click, so every
              item shows; a rule stands in for the group label, but never above
@@ -208,7 +235,17 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
           );
         })}
       </nav>
-
+      {/* Overlay thumb: shown only while there is more to see and the pointer
+          is over the rail (or it has focus), so it never competes with the
+          links. Decorative - the list scrolls by wheel, touch and keyboard. */}
+      {scroll.thumb && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute right-[3px] w-[3px] rounded-full bg-ink-3/45 opacity-0 transition-opacity duration-300 group-focus-within/nav:opacity-100 group-hover/nav:opacity-100"
+          style={{ height: scroll.thumb.size, transform: `translateY(${scroll.thumb.offset}px)`, top: 0 }}
+        />
+      )}
+      </div>
     </>
   );
 

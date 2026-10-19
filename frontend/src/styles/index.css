@@ -37,6 +37,31 @@
     background-clip: content-box;
   }
 
+  /* Sidebar nav: no native scrollbar (see useScrollAffordance in
+     shell/Sidebar.jsx). Edges fade only where content is hidden, the cue
+     Linear, Notion and Vercel use instead of a permanent track. */
+  .nav-scroll {
+    scrollbar-width: none;
+    --fade-top: 0px;
+    --fade-bottom: 0px;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--fade-top),
+      #000 calc(100% - var(--fade-bottom)),
+      transparent 100%
+    );
+  }
+  .nav-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-scroll[data-above] {
+    --fade-top: 28px;
+  }
+  .nav-scroll[data-below] {
+    --fade-bottom: 36px;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
