@@ -165,7 +165,7 @@ export function PostureBody({ header, identity }) {
   const findingFor = (check) => {
     if (!check?.finding_id) return null;
     const alert = findingsById.get(check.finding_id);
-    return { finding_id: check.finding_id, title: check.title, status: alert?.status ?? null, row: alert };
+    return { finding_id: check.finding_id, title: check.title, status: alert?.status ?? null, row: alert, updated_at: check.finding_updated_at ?? null };
   };
 
   const reload = () => setRevision((value) => value + 1);

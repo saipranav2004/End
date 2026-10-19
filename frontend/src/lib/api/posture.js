@@ -244,10 +244,13 @@ export async function fetchIdentityAlerts(id, { window, status, limit = 50, curs
 /**
  * patch: any of { status: 'ACCEPTED'|'SUPPRESSED'|'OPEN', accepted_reason,
  * suppressed_until (future ISO), assigned_to, note }. Returns the FindingState.
+ * ifMatch: the finding's updated_at as last read; the API then answers 409
+ * (field "If-Match") when someone changed it in the meantime.
  */
-export async function updateFinding(findingId, patch) {
+export async function updateFinding(findingId, patch, { ifMatch } = {}) {
   const body = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-  const res = await client.patch(`${BASE}/findings/${encodeURIComponent(findingId)}`, body);
+  const headers = ifMatch ? { 'If-Match': `"${ifMatch}"` } : undefined;
+  const res = await client.patch(`${BASE}/findings/${encodeURIComponent(findingId)}`, body, { headers });
   const state = res?.data?.data;
   if (!state || typeof state !== 'object' || !state.finding_id) {
     throw new ApiError({ message: 'The posture service answered with an unexpected response.', status: res?.status ?? null });

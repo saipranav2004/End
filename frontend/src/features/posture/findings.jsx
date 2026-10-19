@@ -144,7 +144,8 @@ export function FindingDialog({ finding, mode, onClose, onDone, onConflict }) {
     if (!validate()) return;
     setBusy(true);
     try {
-      const state = await updateFinding(finding.finding_id, patch());
+      const seen = finding.row?.updated_at ?? finding.row?.finding_updated_at ?? finding.updated_at ?? null;
+      const state = await updateFinding(finding.finding_id, patch(), { ifMatch: seen });
       const status = FINDING_STATUS[state.status]?.label ?? state.status;
       notify({
         variant: 'success',
@@ -158,7 +159,10 @@ export function FindingDialog({ finding, mode, onClose, onDone, onConflict }) {
       onClose();
     } catch (error) {
       setBusy(false);
-      if (error?.status === 409) {
+      if (error?.status === 409 && error.field === 'If-Match') {
+        setFailure('Not saved: someone else changed this finding while you were looking at it. The page has been reloaded - check their change, then try again.');
+        onConflict?.();
+      } else if (error?.status === 409) {
         setFailure('Not saved: the latest scan already resolved this finding, so there is nothing left to change. The page has been reloaded.');
         onConflict?.();
       } else if (error?.status === 403) {
