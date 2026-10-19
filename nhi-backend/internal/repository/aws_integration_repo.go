@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,16 +18,19 @@ import (
 	modelsv1 "nhi-backend-api/internal/models/v1"
 )
 
-// Tables of the AWS integration. aws_accounts lives in each tenant schema
-// (migrations/tenant/003_aws_accounts.sql); accounts is the scope table in the
-// same schema (one row per account with a regions array).
+// The AWS integration lives in one table per tenant schema: accounts. It is
+// both the scope table every screen filters by (one row per account, regions
+// text[], is_default) and the connection record (client_role_arn,
+// external_id, is_connected, account_status, ...). The connection columns
+// beyond the scanner's are added by migrations/tenant/003_accounts_connection.sql.
 // globalRegion is the scanner's synthetic region for global resources (IAM).
 const globalRegion = "global"
 
-const (
-	awsAccountsTable   = "aws_accounts"
-	scopeAccountsTable = "accounts"
-)
+const accountsTable = "accounts"
+
+// connectionRow limits reads to accounts someone has connected through the
+// Integrations page; scanner-only scope rows carry no role.
+const connectionRow = `client_role_arn IS NOT NULL AND client_role_arn <> ''`
 
 var (
 	// ErrAWSAccountClaimed: the AWS account is connected to another tenant.
@@ -36,7 +40,7 @@ var (
 	// ErrAWSAccountNotConnected: the account has not passed all checks.
 	ErrAWSAccountNotConnected = errors.New("aws account is not connected")
 	// ErrAWSTablesMissing: a migration has not been applied.
-	ErrAWSTablesMissing = errors.New("aws integration schema is missing: apply migrations/global/004_tenant_collector.sql and, per tenant schema, migrations/tenant/003_aws_accounts.sql")
+	ErrAWSTablesMissing = errors.New("aws integration schema is missing: apply migrations/global/004_tenant_collector.sql and, per tenant schema, migrations/tenant/003_accounts_connection.sql")
 )
 
 // missingSchema maps undefined_table (42P01) and undefined_column (42703) to
@@ -50,8 +54,8 @@ func missingSchema(err error) error {
 }
 
 // AWSIntegrationRepository reads the tenant's collector values from
-// nhi_global.tenants and keeps <tenant schema>.aws_accounts, plus the scope
-// rows in <tenant schema>.accounts. Every tenant query is schema-qualified
+// nhi_global.tenants and keeps the connection columns of <tenant
+// schema>.accounts. Every tenant query is schema-qualified
 // with the schema from the caller's token.
 type AWSIntegrationRepository struct {
 	db           *PostgresDB
@@ -129,10 +133,14 @@ func parseRegionList(raw string) []string {
 	return out
 }
 
-const accountColumns = `client_aws_account_id, client_role_arn, regions, external_id, account_status, is_connected, checks,
-	last_verified_at, last_verified_by, connected_at,
-	github_connected, COALESCE(github_secret_arn, ''), github_checks, github_verified_at,
-	codecommit_connected, codecommit_checks, codecommit_verified_at, exposure_updated_by,
+// accountColumns reads one accounts row as an AWSAccountRecord. The scanner's
+// names are github_enabled / codecommit_enabled; regions carry 'global',
+// which is stripped in scanAccount (customers pick real regions only).
+const accountColumns = `account_id, COALESCE(client_role_arn, ''), COALESCE(regions, '{}'::text[]), COALESCE(external_id, ''),
+	account_status, is_connected, checks,
+	COALESCE(last_verified_at, updated_at), last_verified_by, connected_at,
+	github_enabled, COALESCE(github_secret_arn, ''), github_checks, github_verified_at,
+	codecommit_enabled, codecommit_checks, codecommit_verified_at, exposure_updated_by,
 	sync_status, sync_requested_at, sync_requested_by, sync_started_at, last_synced_at, last_sync_error`
 
 type rowScanner interface{ Scan(dest ...any) error }
@@ -160,10 +168,7 @@ func scanAccount(row rowScanner) (*modelsv1.AWSAccountRecord, error) {
 		&rec.SyncStatus, &requestedAt, &rec.SyncRequestedBy, &startedAt, &syncedAt, &rec.LastSyncError); err != nil {
 		return nil, err
 	}
-	rec.Regions = []string(regions)
-	if rec.Regions == nil {
-		rec.Regions = []string{}
-	}
+	rec.Regions = withoutGlobal(regions)
 	var err error
 	if rec.Checks, err = decodeChecks(checks); err != nil {
 		return nil, err
@@ -198,8 +203,9 @@ func (r *AWSIntegrationRepository) ListAccounts(ctx context.Context, schema stri
 	if err != nil {
 		return nil, err
 	}
-	q := `SELECT ` + accountColumns + ` FROM ` + database.Table(schema, awsAccountsTable) + `
-		ORDER BY is_connected DESC, created_at, client_aws_account_id`
+	q := `SELECT ` + accountColumns + ` FROM ` + database.Table(schema, accountsTable) + `
+		WHERE ` + connectionRow + `
+		ORDER BY is_connected DESC, created_at, account_id`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list aws accounts: %w", missingSchema(err))
@@ -225,8 +231,8 @@ func (r *AWSIntegrationRepository) GetAccount(ctx context.Context, schema, accou
 	if err != nil {
 		return nil, err
 	}
-	q := `SELECT ` + accountColumns + ` FROM ` + database.Table(schema, awsAccountsTable) + `
-		WHERE client_aws_account_id = $1`
+	q := `SELECT ` + accountColumns + ` FROM ` + database.Table(schema, accountsTable) + `
+		WHERE account_id = $1 AND ` + connectionRow
 	rec, err := scanAccount(db.QueryRowContext(ctx, q, accountID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -255,13 +261,15 @@ func (r *AWSIntegrationRepository) AccountClaimedByOther(ctx context.Context, te
 }
 
 func (r *AWSIntegrationRepository) claimedByOther(ctx context.Context, q queryer, tenantID, accountID string) (bool, error) {
-	// The other tenants' schemas that have the table (a schema not yet
-	// migrated cannot hold the account).
+	// The other tenants' schemas whose accounts table has the connection
+	// columns (a schema not yet migrated cannot hold a connection).
 	rows, err := q.QueryContext(ctx, `SELECT t.db_name
 		FROM `+database.Table(r.globalSchema, "tenants")+` t
 		JOIN pg_namespace n ON n.nspname = t.db_name
 		JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = $2 AND c.relkind IN ('r', 'p')
-		WHERE t.tenant_id <> $1::uuid`, tenantID, awsAccountsTable)
+		WHERE t.tenant_id <> $1::uuid
+		  AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'client_role_arn' AND NOT a.attisdropped)`,
+		tenantID, accountsTable)
 	if err != nil {
 		return false, fmt.Errorf("list tenant schemas: %w", missingSchema(err))
 	}
@@ -285,7 +293,7 @@ func (r *AWSIntegrationRepository) claimedByOther(ctx context.Context, q queryer
 	}
 	parts := make([]string, len(schemas))
 	for i, s := range schemas {
-		parts[i] = `SELECT 1 FROM ` + database.Table(s, awsAccountsTable) + ` WHERE client_aws_account_id = $1`
+		parts[i] = `SELECT 1 FROM ` + database.Table(s, accountsTable) + ` WHERE account_id = $1 AND ` + connectionRow
 	}
 	var one int
 	err = q.QueryRowContext(ctx, `SELECT 1 FROM (`+strings.Join(parts, " UNION ALL ")+`) owners LIMIT 1`, accountID).Scan(&one)
@@ -307,10 +315,10 @@ func lockAccount(ctx context.Context, tx *sql.Tx, accountID string) error {
 	return nil
 }
 
-// SaveVerification records the outcome of a verification. connected_at is set
-// the first time the account passes and kept afterwards; that first time a
-// sync is queued. An account that has ever connected is registered in the
-// scope table for its regions, in the same transaction.
+// SaveVerification records the outcome of a verification on the account's
+// accounts row (added when missing). connected_at is set the first time the
+// account passes and kept afterwards; that first time a sync is queued. The
+// row's regions always include 'global' so IAM identities stay in scope.
 func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantID, schema string, rec modelsv1.AWSAccountRecord) (saved *modelsv1.AWSAccountRecord, syncQueued bool, err error) {
 	db, err := r.tenantPool(schema)
 	if err != nil {
@@ -320,7 +328,7 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 	if err != nil {
 		return nil, false, fmt.Errorf("encode checks: %w", err)
 	}
-	table := database.Table(schema, awsAccountsTable)
+	table := database.Table(schema, accountsTable)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -341,7 +349,7 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 	var prevConnected sql.NullTime
 	var prevSync string
 	err = tx.QueryRowContext(ctx, `SELECT connected_at, sync_status FROM `+table+`
-		WHERE client_aws_account_id = $1 FOR UPDATE`, rec.AccountID).Scan(&prevConnected, &prevSync)
+		WHERE account_id = $1 FOR UPDATE`, rec.AccountID).Scan(&prevConnected, &prevSync)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, fmt.Errorf("lock aws account row: %w", missingSchema(err))
 	}
@@ -353,16 +361,18 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 	// connected when it passed; action_needed when it failed after having
 	// connected before; pending otherwise.
 	q := `INSERT INTO ` + table + ` AS a
-			(client_aws_account_id, client_role_arn, regions, external_id, is_connected, account_status, checks,
+			(tenant_id, account_id, is_default, client_aws_account_id, client_role_arn, regions, external_id,
+			 is_connected, account_status, checks,
 			 last_verified_at, last_verified_by, connected_at,
 			 sync_status, sync_requested_at, sync_requested_by, updated_at)
-		VALUES ($1, $2, $3::text[], $4, $5, CASE WHEN $5 THEN 'connected' ELSE 'pending' END, $6::jsonb, $7, $8,
+		VALUES ($10::uuid, $1::text, true, $1::text, $2::text, $3::text[], $4::text, $5, CASE WHEN $5 THEN 'connected' ELSE 'pending' END, $6::jsonb, $7, $8,
 			CASE WHEN $5 THEN $7::timestamptz END,
 			CASE WHEN $9 THEN 'queued' ELSE 'idle' END,
 			CASE WHEN $9 THEN $7::timestamptz END,
 			CASE WHEN $9 THEN $8 ELSE '' END,
 			now())
-		ON CONFLICT (client_aws_account_id) DO UPDATE SET
+		ON CONFLICT (account_id) DO UPDATE SET
+			client_aws_account_id = EXCLUDED.client_aws_account_id,
 			client_role_arn = EXCLUDED.client_role_arn,
 			regions = EXCLUDED.regions,
 			external_id = EXCLUDED.external_id,
@@ -380,15 +390,10 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 			last_sync_error = CASE WHEN $9 THEN '' ELSE a.last_sync_error END,
 			updated_at = now()
 		RETURNING ` + accountColumns
-	saved, err = scanAccount(tx.QueryRowContext(ctx, q, rec.AccountID, rec.RoleARN, pq.Array(nonNilStrings(rec.Regions)),
-		rec.ExternalID, passed, checks, rec.LastVerifiedAt, rec.LastVerifiedBy, queue))
+	saved, err = scanAccount(tx.QueryRowContext(ctx, q, rec.AccountID, rec.RoleARN, pq.Array(scopeRegions(rec.Regions)),
+		rec.ExternalID, passed, checks, rec.LastVerifiedAt, rec.LastVerifiedBy, queue, tenantID))
 	if err != nil {
 		return nil, false, fmt.Errorf("save aws account: %w", missingSchema(err))
-	}
-	if saved.ConnectedAt != nil {
-		if err := registerScope(ctx, tx, schema, tenantID, saved.AccountID, saved.Regions); err != nil {
-			return nil, false, err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, false, fmt.Errorf("commit aws account: %w", err)
@@ -396,8 +401,7 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 	return saved, queue, nil
 }
 
-// UpdateRegions replaces the regions an account is read in, and its scope
-// rows when it has connected.
+// UpdateRegions replaces the regions an account is read in ('global' kept).
 func (r *AWSIntegrationRepository) UpdateRegions(ctx context.Context, tenantID, schema, accountID string, regions []string) (*modelsv1.AWSAccountRecord, error) {
 	db, err := r.tenantPool(schema)
 	if err != nil {
@@ -411,21 +415,16 @@ func (r *AWSIntegrationRepository) UpdateRegions(ctx context.Context, tenantID, 
 	if err := lockAccount(ctx, tx, accountID); err != nil {
 		return nil, err
 	}
-	q := `UPDATE ` + database.Table(schema, awsAccountsTable) + `
+	q := `UPDATE ` + database.Table(schema, accountsTable) + `
 		SET regions = $2::text[], updated_at = now()
-		WHERE client_aws_account_id = $1
+		WHERE account_id = $1 AND tenant_id = $3::uuid AND ` + connectionRow + `
 		RETURNING ` + accountColumns
-	rec, err := scanAccount(tx.QueryRowContext(ctx, q, accountID, pq.Array(nonNilStrings(regions))))
+	rec, err := scanAccount(tx.QueryRowContext(ctx, q, accountID, pq.Array(scopeRegions(regions)), tenantID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAWSAccountNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update aws account regions: %w", missingSchema(err))
-	}
-	if rec.ConnectedAt != nil {
-		if err := registerScope(ctx, tx, schema, tenantID, accountID, rec.Regions); err != nil {
-			return nil, err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
@@ -466,7 +465,7 @@ func (r *AWSIntegrationRepository) SaveExposure(ctx context.Context, schema, acc
 		if err != nil {
 			return nil, fmt.Errorf("encode github checks: %w", err)
 		}
-		add("github_connected = $%d", p.Connected)
+		add("github_enabled = $%d", p.Connected)
 		add("github_checks = $%d::jsonb", checks)
 		add("github_secret_arn = NULLIF($%d, '')", p.SecretARN)
 		if len(p.Checks) > 0 {
@@ -480,7 +479,7 @@ func (r *AWSIntegrationRepository) SaveExposure(ctx context.Context, schema, acc
 		if err != nil {
 			return nil, fmt.Errorf("encode codecommit checks: %w", err)
 		}
-		add("codecommit_connected = $%d", p.Connected)
+		add("codecommit_enabled = $%d", p.Connected)
 		add("codecommit_checks = $%d::jsonb", checks)
 		if len(p.Checks) > 0 {
 			add("codecommit_verified_at = $%d", u.At)
@@ -488,8 +487,8 @@ func (r *AWSIntegrationRepository) SaveExposure(ctx context.Context, schema, acc
 			sets = append(sets, "codecommit_verified_at = NULL")
 		}
 	}
-	q := `UPDATE ` + database.Table(schema, awsAccountsTable) + ` SET ` + strings.Join(sets, ", ") + `
-		WHERE client_aws_account_id = $1 RETURNING ` + accountColumns
+	q := `UPDATE ` + database.Table(schema, accountsTable) + ` SET ` + strings.Join(sets, ", ") + `
+		WHERE account_id = $1 AND ` + connectionRow + ` RETURNING ` + accountColumns
 	rec, err := scanAccount(db.QueryRowContext(ctx, q, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAWSAccountNotFound
@@ -507,10 +506,10 @@ func (r *AWSIntegrationRepository) RequestSync(ctx context.Context, schema, acco
 	if err != nil {
 		return nil, false, err
 	}
-	q := `UPDATE ` + database.Table(schema, awsAccountsTable) + `
+	q := `UPDATE ` + database.Table(schema, accountsTable) + `
 		SET sync_status = 'queued', sync_requested_at = $2, sync_requested_by = $3,
 			last_sync_error = '', updated_at = now()
-		WHERE client_aws_account_id = $1
+		WHERE account_id = $1 AND ` + connectionRow + `
 		  AND is_connected AND sync_status NOT IN ('queued', 'running')
 		RETURNING ` + accountColumns
 	rec, err = scanAccount(db.QueryRowContext(ctx, q, accountID, at, actor))
@@ -535,8 +534,8 @@ func (r *AWSIntegrationRepository) RequestSync(ctx context.Context, schema, acco
 	}
 }
 
-// DeleteAccount removes the account and its scope rows. Records already
-// scanned stay in the tenant schema but leave every scope.
+// DeleteAccount removes the account's accounts row, which also takes it out
+// of every scope. Records already scanned stay in the tenant schema.
 func (r *AWSIntegrationRepository) DeleteAccount(ctx context.Context, tenantID, schema, accountID string) error {
 	db, err := r.tenantPool(schema)
 	if err != nil {
@@ -550,8 +549,8 @@ func (r *AWSIntegrationRepository) DeleteAccount(ctx context.Context, tenantID, 
 	if err := lockAccount(ctx, tx, accountID); err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM `+database.Table(schema, awsAccountsTable)+`
-		WHERE client_aws_account_id = $1`, accountID)
+	res, err := tx.ExecContext(ctx, `DELETE FROM `+database.Table(schema, accountsTable)+`
+		WHERE tenant_id = $1::uuid AND account_id = $2 AND `+connectionRow, tenantID, accountID)
 	if err != nil {
 		return fmt.Errorf("delete aws account: %w", missingSchema(err))
 	}
@@ -562,44 +561,38 @@ func (r *AWSIntegrationRepository) DeleteAccount(ctx context.Context, tenantID, 
 	if n == 0 {
 		return ErrAWSAccountNotFound
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM `+database.Table(schema, scopeAccountsTable)+`
-		WHERE tenant_id = $1::uuid AND account_id = $2`, tenantID, accountID); err != nil {
-		return fmt.Errorf("unregister account scope: %w", err)
-	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }
 
-// registerScope makes the account's entry in the scope table match its
-// regions. The table holds one row per account with a regions array
-// (tenant_id, account_id, regions[], is_default); a missing row is added in the
-// default scope. The synthetic "global" region is always included: IAM roles,
-// users and other global resources are recorded under it, and without it a
-// newly connected account would show none of its IAM identities.
-func registerScope(ctx context.Context, tx *sql.Tx, schema, tenantID, accountID string, regions []string) error {
-	table := database.Table(schema, scopeAccountsTable)
-	regions = append(append([]string{}, nonNilStrings(regions)...), globalRegion)
-	res, err := tx.ExecContext(ctx, `UPDATE `+table+` a
-		SET regions = ARRAY(
-			SELECT DISTINCT r FROM unnest(
-				$3::text[] || ARRAY(SELECT g FROM unnest(COALESCE(a.regions, '{}'::text[])) AS g WHERE lower(g) = 'global')
-			) AS r ORDER BY r)
-		WHERE a.tenant_id = $1::uuid AND a.account_id = $2`,
-		tenantID, accountID, pq.Array(regions))
-	if err != nil {
-		return fmt.Errorf("update account regions: %w", err)
+// scopeRegions is what accounts.regions stores: the chosen regions plus the
+// synthetic "global" region (IAM roles, users and other global resources are
+// recorded under it; without it a connected account would show none of its
+// IAM identities), de-duplicated and sorted.
+func scopeRegions(regions []string) []string {
+	seen := map[string]bool{globalRegion: true}
+	out := []string{globalRegion}
+	for _, r := range regions {
+		if r = strings.TrimSpace(r); r != "" && !seen[strings.ToLower(r)] {
+			seen[strings.ToLower(r)] = true
+			out = append(out, r)
+		}
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		return nil
+	sort.Strings(out)
+	return out
+}
+
+// withoutGlobal is the inverse for the API: the regions a customer chose.
+func withoutGlobal(regions []string) []string {
+	out := make([]string, 0, len(regions))
+	for _, r := range regions {
+		if !strings.EqualFold(strings.TrimSpace(r), globalRegion) && strings.TrimSpace(r) != "" {
+			out = append(out, r)
+		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO `+table+` (tenant_id, account_id, regions, is_default)
-		VALUES ($1::uuid, $2, ARRAY(SELECT DISTINCT r FROM unnest($3::text[]) AS r ORDER BY r), true)`,
-		tenantID, accountID, pq.Array(regions)); err != nil {
-		return fmt.Errorf("add account scope: %w", err)
-	}
-	return nil
+	return out
 }
 
 func nonNil(c []modelsv1.AWSCheck) []modelsv1.AWSCheck {
@@ -607,11 +600,4 @@ func nonNil(c []modelsv1.AWSCheck) []modelsv1.AWSCheck {
 		return []modelsv1.AWSCheck{}
 	}
 	return c
-}
-
-func nonNilStrings(s []string) []string {
-	if s == nil {
-		return []string{}
-	}
-	return s
 }

@@ -5,7 +5,8 @@ import (
 	"time"
 )
 
-// Scan change tracking (migrations/tenant/005_scan_changes.sql).
+// Scan change tracking, read from the scanner's nhi_scans_aws and
+// scan_changes tables.
 
 // Change and entity types, as stored.
 const (
@@ -77,7 +78,7 @@ type CloudTrailEvidence struct {
 
 // ScanChange is one change.
 type ScanChange struct {
-	ChangeID     int64           `json:"change_id"`
+	ChangeID     string          `json:"change_id"`
 	ScanID       string          `json:"scan_id"`
 	ScanAt       *time.Time      `json:"scan_at"`
 	ChangeType   string          `json:"change_type"`

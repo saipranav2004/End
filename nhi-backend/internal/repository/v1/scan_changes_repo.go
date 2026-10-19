@@ -17,16 +17,25 @@ import (
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Scan change tracking: <schema>.discovery_scans and <schema>.scan_changes
-// (migrations/tenant/005_scan_changes.sql), written by the discovery worker.
+// Scan change tracking, read from the discovery scanner's own tables:
+//   <schema>.nhi_scans_aws   one row per run (scan_id text, account_id,
+//                            status 'COMPLETED', scan_end)
+//   <schema>.scan_changes    one row per difference (id uuid, scan_id,
+//                            previous_scan_id, change_type, entity_type,
+//                            entity_arn, entity_id, summary, details, detected_at)
+//
+// A scan's previous scan is the account's preceding completed run (so a run
+// that found nothing still points at its predecessor). scan_changes has no
+// account or region column: both come from the entity ARN (IAM ARNs carry
+// no region and are 'global', as in identities), the account falling back to
+// the scan's.
 //
 // Scope, as everywhere in the inventory API:
-//   - a scan is visible when it completed and covered every account (account_id
-//     NULL) or an account in the caller's selection;
+//   - a scan is visible when it completed for an account in the selection;
 //   - a change is visible when its account and region are in the selection.
 //
-// Before the migration has been applied every read answers "no scans yet"
-// rather than failing: change tracking is optional for a workspace.
+// When the tables do not exist every read answers "no scans yet" rather than
+// failing: change tracking is optional for a workspace.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ErrScanNotFound: no completed scan with that id is visible to the caller.
@@ -49,16 +58,25 @@ func isMissingRelation(err error) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "42P01"
 }
 
-// scanSelect reads a scan joined to its previous scan. $1 is the caller's
-// accounts.
-func scanSelect(sc *scope.DataScope) string {
-	return fmt.Sprintf(`SELECT s.scan_id::text, s.status, s.account_id, s.started_at, s.completed_at,
-		       s.previous_scan_id::text, p.completed_at
-		FROM %[1]s s
-		LEFT JOIN %[1]s p ON p.scan_id = s.previous_scan_id
-		WHERE s.status = 'completed'
-		  AND (s.account_id IS NULL OR s.account_id = ANY($1::text[]))`, sc.Table("discovery_scans"))
+// completedScans is every visible completed run with its predecessor; $1 is
+// the caller's accounts. nhi_scans_aws has no start time; scan_end stands in.
+func completedScans(sc *scope.DataScope) string {
+	return fmt.Sprintf(`SELECT s.id, s.scan_id::text AS scan_id, s.account_id::text AS account_id, s.scan_end,
+		       LAG(s.scan_id::text) OVER w AS previous_scan_id, LAG(s.scan_end) OVER w AS previous_at
+		FROM %s s
+		WHERE upper(s.status) = 'COMPLETED' AND s.scan_end IS NOT NULL
+		  AND s.account_id = ANY($1::text[])
+		WINDOW w AS (PARTITION BY s.account_id ORDER BY s.scan_end, s.id)`, sc.Table("nhi_scans_aws"))
 }
+
+// scanSelect reads visible scans in ScanInfo column order.
+func scanSelect(sc *scope.DataScope) string {
+	return `SELECT s.scan_id, 'completed', s.account_id, s.scan_end, s.scan_end, s.previous_scan_id, s.previous_at
+		FROM (` + completedScans(sc) + `) s WHERE true`
+}
+
+// scanOrder is newest first.
+const scanOrder = ` ORDER BY s.scan_end DESC, s.id DESC`
 
 func scanScan(row interface{ Scan(...any) error }) (*models.ScanInfo, error) {
 	var info models.ScanInfo
@@ -98,7 +116,7 @@ func (r *ScanChangesRepository) LatestScan(ctx context.Context, sc *scope.DataSc
 	if err := requireScope(sc); err != nil {
 		return nil, err
 	}
-	q := scanSelect(sc) + ` ORDER BY s.completed_at DESC, s.started_at DESC LIMIT 1`
+	q := scanSelect(sc) + scanOrder + ` LIMIT 1`
 	info, err := scanScan(sc.DB.QueryRowContext(ctx, q, pq.Array(sc.AccountIDs)))
 	switch {
 	case errors.Is(err, sql.ErrNoRows), err != nil && isMissingRelation(err):
@@ -124,7 +142,7 @@ func (r *ScanChangesRepository) Scan(ctx context.Context, sc *scope.DataScope, s
 	if err := requireScope(sc); err != nil {
 		return nil, err
 	}
-	q := scanSelect(sc) + ` AND s.scan_id = $2::uuid`
+	q := scanSelect(sc) + ` AND s.scan_id = $2`
 	info, err := scanScan(sc.DB.QueryRowContext(ctx, q, pq.Array(sc.AccountIDs), scanID))
 	switch {
 	case errors.Is(err, sql.ErrNoRows), err != nil && isMissingRelation(err):
@@ -143,9 +161,9 @@ func (r *ScanChangesRepository) ListScans(ctx context.Context, sc *scope.DataSco
 	}
 	q := fmt.Sprintf(`SELECT x.scan_id, x.status, x.account_id, x.started_at, x.completed_at, x.previous_scan_id, x.previous_at,
 		       (SELECT count(*) FROM %[1]s c
-		         WHERE c.scan_id = x.scan_id::uuid AND c.account_id = ANY($1::text[]) AND c.region = ANY($2::text[]))
-		FROM (%[2]s ORDER BY s.completed_at DESC, s.started_at DESC LIMIT $3) AS x (scan_id, status, account_id, started_at, completed_at, previous_scan_id, previous_at)
-		ORDER BY x.completed_at DESC, x.started_at DESC`, sc.Table("scan_changes"), scanSelect(sc))
+		         WHERE c.scan_id = x.scan_id AND %[3]s)
+		FROM (%[2]s%[4]s LIMIT $3) AS x (scan_id, status, account_id, started_at, completed_at, previous_scan_id, previous_at)
+		ORDER BY x.completed_at DESC`, sc.Table("scan_changes"), scanSelect(sc), changeScopeFor("x.account_id"), scanOrder)
 	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), limit)
 	if err != nil {
 		if isMissingRelation(err) {
@@ -175,8 +193,21 @@ type scanRow struct {
 
 func (s scanRow) Scan(dest ...any) error { return s.rows.Scan(append(dest, s.extra...)...) }
 
-// changeScope is the change-level scope predicate ($1 accounts, $2 regions).
-const changeScope = `c.account_id = ANY($1::text[]) AND c.region = ANY($2::text[])`
+// changeAccount and changeRegion read a change's account and region from its
+// ARN (arn:partition:service:region:account:resource).
+const (
+	changeRegion = `COALESCE(NULLIF(split_part(c.entity_arn, ':', 4), ''), 'global')`
+	changeAccountARN = `NULLIF(split_part(c.entity_arn, ':', 5), '')`
+)
+
+// changeScopeFor is the change-level scope predicate ($1 accounts, $2
+// regions); scanAccount is the SQL for the change's scan account.
+func changeScopeFor(scanAccount string) string {
+	return `COALESCE(` + changeAccountARN + `, ` + scanAccount + `) = ANY($1::text[]) AND ` + changeRegion + ` = ANY($2::text[])`
+}
+
+// changeScope is changeScopeFor joined to the scan as s.
+var changeScope = changeScopeFor("s.account_id")
 
 // Summary counts a scan's in-scope changes by change type and entity type.
 func (r *ScanChangesRepository) Summary(ctx context.Context, sc *scope.DataScope, scanID string) (models.ScanChangeSummary, error) {
@@ -198,16 +229,32 @@ func emptySummary() models.ScanChangeSummary {
 	return s
 }
 
-const changeColumns = `c.change_id, c.scan_id::text, COALESCE(s.completed_at, s.started_at), c.change_type, c.entity_type,
-	c.entity_arn, c.entity_name, c.identity_id::text, c.credential_id::text, c.account_id, c.region,
-	c.summary, c.details, c.detected_at`
+// changeColumns reads one change in scanChange order. The name comes from
+// the inventory row (by entity_id, else ARN); a deleted entity may have none.
+func changeColumns(sc *scope.DataScope) string {
+	return fmt.Sprintf(`c.id::text, c.scan_id::text, s.scan_end, upper(c.change_type), lower(c.entity_type),
+	c.entity_arn,
+	COALESCE(CASE lower(c.entity_type)
+		WHEN 'credential' THEN (SELECT cr.name FROM %[2]s cr WHERE cr.id = c.entity_id OR cr.arn = c.entity_arn ORDER BY (cr.id = c.entity_id) DESC LIMIT 1)
+		ELSE (SELECT i.name FROM %[1]s i WHERE i.id = c.entity_id OR i.arn = c.entity_arn ORDER BY (i.id = c.entity_id) DESC LIMIT 1)
+	END, ''),
+	CASE WHEN lower(c.entity_type) <> 'credential' THEN c.entity_id::text END,
+	CASE WHEN lower(c.entity_type) = 'credential' THEN c.entity_id::text END,
+	COALESCE(%[3]s, s.account_id, ''), %[4]s,
+	COALESCE(c.summary, ''), c.details, c.detected_at`, sc.Table("identities"), sc.Table("credentials"), changeAccountARN, changeRegion)
+}
 
 // changeOrder lists a scan's changes the way a reviewer reads them: who and
 // what first (identities, credentials, trust), then the permission detail.
-const changeOrder = `CASE c.entity_type WHEN 'identity' THEN 0 WHEN 'credential' THEN 1 WHEN 'trust_edge' THEN 2
+const changeOrder = `CASE lower(c.entity_type) WHEN 'identity' THEN 0 WHEN 'credential' THEN 1 WHEN 'trust_edge' THEN 2
 	WHEN 'permission' THEN 3 ELSE 4 END,
-	CASE c.change_type WHEN 'CREATED' THEN 0 WHEN 'DELETED' THEN 1 ELSE 2 END,
-	c.entity_name, c.change_id`
+	CASE upper(c.change_type) WHEN 'CREATED' THEN 0 WHEN 'DELETED' THEN 1 ELSE 2 END,
+	c.entity_arn, c.id`
+
+// changesFrom joins changes to their visible scans ($1 = accounts).
+func changesFrom(sc *scope.DataScope) string {
+	return fmt.Sprintf(`%s c JOIN (%s) s ON s.scan_id = c.scan_id`, sc.Table("scan_changes"), completedScans(sc))
+}
 
 func scanChange(rows *sql.Rows) (models.ScanChange, error) {
 	var ch models.ScanChange
@@ -245,16 +292,16 @@ func (r *ScanChangesRepository) Changes(ctx context.Context, sc *scope.DataScope
 		return nil, 0, err
 	}
 	args := []any{pq.Array(sc.AccountIDs), pq.Array(sc.Regions), f.ScanID}
-	where := "c.scan_id = $3::uuid AND " + changeScope
+	where := "c.scan_id = $3 AND " + changeScope
 	if f.ChangeType != "" {
 		args = append(args, f.ChangeType)
-		where += fmt.Sprintf(" AND c.change_type = $%d", len(args))
+		where += fmt.Sprintf(" AND upper(c.change_type) = $%d", len(args))
 	}
 	if f.EntityType != "" {
 		args = append(args, f.EntityType)
-		where += fmt.Sprintf(" AND c.entity_type = $%d", len(args))
+		where += fmt.Sprintf(" AND lower(c.entity_type) = $%d", len(args))
 	}
-	from := fmt.Sprintf(`%s c JOIN %s s ON s.scan_id = c.scan_id`, sc.Table("scan_changes"), sc.Table("discovery_scans"))
+	from := changesFrom(sc)
 
 	var total int
 	if err := sc.DB.QueryRowContext(ctx, `SELECT count(*) FROM `+from+` WHERE `+where, args...).Scan(&total); err != nil {
@@ -265,7 +312,7 @@ func (r *ScanChangesRepository) Changes(ctx context.Context, sc *scope.DataScope
 	}
 	args = append(args, f.Limit, (f.Page-1)*f.Limit)
 	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT $%d OFFSET $%d`,
-		changeColumns, from, where, changeOrder, len(args)-1, len(args))
+		changeColumns(sc), from, where, changeOrder, len(args)-1, len(args))
 	rows, err := sc.DB.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list scan changes: %w", err)
@@ -283,8 +330,9 @@ func (r *ScanChangesRepository) Changes(ctx context.Context, sc *scope.DataScope
 }
 
 // EntityChanges returns the changes of one identity (column identity_id) or
-// credential (credential_id), matched by id or ARN, newest first, across every
-// visible completed scan. available is false when the tables do not exist.
+// credential (credential_id), matched by entity_id or ARN, newest first,
+// across every visible completed scan. available is false when the tables do
+// not exist.
 func (r *ScanChangesRepository) EntityChanges(ctx context.Context, sc *scope.DataScope, column, id, arn string, limit int) (changes []models.ScanChange, truncated, available bool, err error) {
 	if err := requireScope(sc); err != nil {
 		return nil, false, false, err
@@ -292,12 +340,21 @@ func (r *ScanChangesRepository) EntityChanges(ctx context.Context, sc *scope.Dat
 	if column != "identity_id" && column != "credential_id" {
 		return nil, false, false, fmt.Errorf("entity changes: unsupported column %q", column)
 	}
-	q := fmt.Sprintf(`SELECT %s FROM %s c JOIN %s s ON s.scan_id = c.scan_id
-		WHERE s.status = 'completed' AND (s.account_id IS NULL OR s.account_id = ANY($1::text[]))
-		  AND %s AND (c.%s = $3::uuid OR c.entity_arn = $4)
-		ORDER BY COALESCE(s.completed_at, s.started_at) DESC, c.detected_at DESC, c.change_id DESC
-		LIMIT $5`, changeColumns, sc.Table("scan_changes"), sc.Table("discovery_scans"), changeScope, column)
-	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), id, arn, limit+1)
+	// entity_id is shared by both kinds; the kind keeps an identity's tab
+	// from matching a credential that happens to share its ARN.
+	kind := "lower(c.entity_type) <> 'credential'"
+	if column == "credential_id" {
+		kind = "lower(c.entity_type) = 'credential'"
+	}
+	var idArg any
+	if uuidLike(id) {
+		idArg = id
+	}
+	q := fmt.Sprintf(`SELECT %s FROM %s
+		WHERE %s AND %s AND (c.entity_id = $3::uuid OR c.entity_arn = $4)
+		ORDER BY s.scan_end DESC, c.detected_at DESC, c.id DESC
+		LIMIT $5`, changeColumns(sc), changesFrom(sc), changeScope, kind)
+	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), idArg, arn, limit+1)
 	if err != nil {
 		if isMissingRelation(err) {
 			return []models.ScanChange{}, false, false, nil
@@ -336,21 +393,17 @@ func (r *ScanChangesRepository) RecentChangeFlags(ctx context.Context, sc *scope
 	if err != nil || latest == nil {
 		return out, err
 	}
-	column := "identity_id"
-	if kind == models.EntityCredential {
-		column = "credential_id"
-	}
-	q := fmt.Sprintf(`SELECT COALESCE(c.%[1]s::text, ''), c.entity_arn, c.entity_type, c.change_type
-		FROM %[2]s c
-		WHERE c.scan_id = $3::uuid AND %[3]s
-		  AND (c.%[1]s = ANY($4::uuid[]) OR c.entity_arn = ANY($5::text[]))`, column, sc.Table("scan_changes"), changeScope)
+	q := fmt.Sprintf(`SELECT COALESCE(c.entity_id::text, ''), c.entity_arn, lower(c.entity_type), upper(c.change_type)
+		FROM %[1]s c
+		WHERE c.scan_id = $3 AND %[2]s
+		  AND (c.entity_id = ANY($4::uuid[]) OR c.entity_arn = ANY($5::text[]))`, sc.Table("scan_changes"), changeScopeFor("$6::text"))
 	validIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if uuidLike(id) {
 			validIDs = append(validIDs, id)
 		}
 	}
-	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), latest.ScanID, pq.Array(validIDs), pq.Array(arns))
+	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), latest.ScanID, pq.Array(validIDs), pq.Array(arns), scanAccountID(latest))
 	if err != nil {
 		if isMissingRelation(err) {
 			return out, nil
@@ -378,12 +431,20 @@ func (r *ScanChangesRepository) RecentChangeFlags(ctx context.Context, sc *scope
 		case entityType == kind && changeType == models.ChangeDeleted:
 			continue // a deleted row is not in the list
 		}
-		mark(id, flag)
+		// entity_id belongs to the change's own entity type.
 		if entityType == kind {
+			mark(id, flag)
 			mark(arn, flag)
 		}
 	}
 	return out, rows.Err()
+}
+
+func scanAccountID(s *models.ScanInfo) string {
+	if s == nil || s.AccountID == nil {
+		return ""
+	}
+	return *s.AccountID
 }
 
 func uuidLike(s string) bool {
@@ -434,9 +495,9 @@ type changePair struct{ changeType, entityType string }
 func (r *ScanChangesRepository) countsByPair(ctx context.Context, sc *scope.DataScope, scanID string) (models.ScanChangeSummary, map[changePair]int, error) {
 	summary := emptySummary()
 	counts := map[changePair]int{}
-	q := fmt.Sprintf(`SELECT c.change_type, c.entity_type, count(*)
-		FROM %s c WHERE c.scan_id = $3::uuid AND %s
-		GROUP BY c.change_type, c.entity_type`, sc.Table("scan_changes"), changeScope)
+	q := fmt.Sprintf(`SELECT upper(c.change_type), lower(c.entity_type), count(*)
+		FROM %s WHERE c.scan_id = $3 AND %s
+		GROUP BY 1, 2`, changesFrom(sc), changeScope)
 	rows, err := sc.DB.QueryContext(ctx, q, pq.Array(sc.AccountIDs), pq.Array(sc.Regions), scanID)
 	if err != nil {
 		if isMissingRelation(err) {

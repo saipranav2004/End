@@ -19,6 +19,10 @@ ALTER TABLE nhi_global.tenants ADD COLUMN IF NOT EXISTS collector_regions       
 -- Never change an External ID once a customer's role trusts it.
 ALTER TABLE nhi_global.tenants ADD COLUMN IF NOT EXISTS collector_external_id text
     DEFAULT ('ext-' || replace(gen_random_uuid()::text, '-', ''));
+-- ADD COLUMN IF NOT EXISTS skips the DEFAULT when the column already exists
+-- (as in nhi_db), so set it explicitly.
+ALTER TABLE nhi_global.tenants ALTER COLUMN collector_external_id
+    SET DEFAULT ('ext-' || replace(gen_random_uuid()::text, '-', ''));
 
 UPDATE nhi_global.tenants
    SET collector_external_id = 'ext-' || replace(gen_random_uuid()::text, '-', '')

@@ -38,13 +38,13 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/001_user_settings.sql
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_regions_array.sql  # converts an old accounts table; no-op otherwise
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/002_register_global_region.sql  # after inventory data exists
-   psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_aws_accounts.sql
-   psql "$DSN" -v schema=bimasugam -f migrations/tenant/005_scan_changes.sql           # change tracking
+   psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql  # connection columns on accounts
    ```
 
    The inventory tables (`identities`, `credentials`, ...), posture (`ispm_*`)
-   and genome (`baselines`, `alerts`, `alert_feedback`, ...) tables are written
-   by their workers, not created here.
+   and genome (`baselines`, `alerts`, `alert_feedback`, ...) tables, and the
+   scanner's `nhi_scans_aws` / `scan_changes`, are written by their workers,
+   not created here.
 
 2. **Configuration** - `configs/config.yaml`, overridden by `NHI_*` environment
    variables (see `.env.example`): database, JWT secret, CloudTrail ClickHouse
@@ -103,8 +103,8 @@ Response shapes: inventory, integrations and change tracking answer
 ### Scan change tracking
 
 What each discovery scan found had changed since the scan before it. The
-discovery worker writes `discovery_scans` and `scan_changes`
-(`migrations/tenant/005_scan_changes.sql`); these endpoints only read them.
+discovery scanner writes `nhi_scans_aws` (one row per run) and `scan_changes`
+(one row per difference); these endpoints only read them.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -233,7 +233,7 @@ Shared by everything: `cmd/api-server/main.go` (wiring), `internal/routes/routes
 | Sign-in and session | `handlers/auth.go`, `services/auth_service.go`, `repository/user_repo.go`, `repository/refresh_token_repo.go`, `models/user.go`, `pkg/jwt`, `middleware/auth.go`, `migrations/global/001-003` |
 | Workspace scope | `handlers/v1/settings_handler.go`, `filters_handler.go` · `services/v1/settings_service.go`, `filters_service.go` · `repository/v1/settings_repo.go`, `filters_repo.go` · `models/v1/settings.go`, `filters.go` · `scope/` · `migrations/tenant/001, 002, 004` |
 | Dashboard | `handlers/v1/dashboard_overview_handler.go` · `services/v1/dashboard_overview_service.go` · `repository/v1/dashboard_overview_repo.go` · `models/v1/dashboard_overview.go` |
-| Scan change tracking | `handlers/v1/scan_changes_handler.go` · `services/v1/scan_changes_service.go` (+ `AttachChangeEvidence` in `activity_service.go`) · `repository/v1/scan_changes_repo.go` · `repository/clickhouse/lookups.go` (`ChangeEvidenceByARNs`) · `models/v1/scan_changes.go` · `migrations/tenant/005_scan_changes.sql` |
+| Scan change tracking | `handlers/v1/scan_changes_handler.go` · `services/v1/scan_changes_service.go` (+ `AttachChangeEvidence` in `activity_service.go`) · `repository/v1/scan_changes_repo.go` · `repository/clickhouse/lookups.go` (`ChangeEvidenceByARNs`) · `models/v1/scan_changes.go` |
 | Identities | `handlers/v1/identities_list_handler.go`, `identity_detail_handler.go`, `identity_events_handler.go` · `services/v1/identities_list_service.go`, `identity_detail_service.go`, `identity_events_service.go`, `identity_resolver.go` · `repository/v1/identities_list_repo.go`, `identity_detail_repo.go`, `identity_events_repo.go`, `identity_lookup_repo.go` · `models/v1/identities_list.go`, `identity_detail.go`, `identity_events.go` |
 | Credentials | `handlers/v1/credentials_list_handler.go`, `credential_detail_handler.go` · `services/v1/credentials_service.go`, `credential_detail_service.go` · `repository/v1/credentials_list_repo.go`, `credential_detail_repo.go`, `trust_policy_parser.go` · `models/v1/credentials_list.go`, `credential_detail.go` |
 | Relationship graph (access graph) | `repository/v1/graph_scope.go` (scope rules), `relationship_activity.go` (CloudTrail edges), `credential_detail_repo.go` / `identity_detail_repo.go` (`GetRelationships`) |
@@ -439,7 +439,7 @@ above for the full list):
 
 ```sh
 psql "$DSN" -f migrations/global/004_tenant_collector.sql            # nhi_global.tenants columns
-psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_aws_accounts.sql   # per tenant schema
+psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql   # per tenant schema
 ```
 
 `nhi_global.tenants` gains `domain_name`, `collector_aws_account_id` (our
@@ -447,22 +447,25 @@ account the customer's role trusts), `collector_external_id` (generated, unique,
 never change it once used), `collector_event_bridge_arn` (our central bus) and
 `collector_regions` (regions customers may choose; empty means all).
 
-`<tenant schema>.aws_accounts` holds one row per customer AWS account:
-`client_aws_account_id`, `client_role_arn`, `regions`, `external_id`,
-`is_connected`, `account_status` (`pending` / `connected` / `action_needed`),
-`github_connected`, `codecommit_connected`, plus check results, the GitHub
-secret ARN, and the sync queue columns. An AWS account can belong to one tenant
+`<tenant schema>.accounts` is one table for both the scope and the
+connection (one row per AWS account, keyed by the unique `account_id`). The
+scanner's columns are used as they are: `tenant_id`, `account_id`,
+`regions text[]`, `is_default`, `client_aws_account_id`, `client_role_arn`,
+`external_id`, `is_connected`, `account_status` (`pending` / `connected` /
+`action_needed`), `github_enabled`, `codecommit_enabled`. Migration 003 adds
+only what the page needs on top: check results (`checks`, `last_verified_at`,
+`last_verified_by`, `connected_at`), the GitHub secret ARN and per-platform
+checks, and the sync queue columns. An AWS account can belong to one tenant
 only (checked across schemas under an advisory lock).
 
-The scope table `<tenant schema>.accounts` (one row per account:
-`tenant_id, account_id, regions text[], is_default`) is kept in step: a
-connected account gets a row whose `regions` are the allowed regions plus
-`global` (in the default scope; IAM roles and users are recorded under the
-synthetic `global` region, so they show as soon as the account connects),
-editing regions rewrites that array (keeping `global`), and removing the
-account deletes the row. Dashboards, filters,
-settings and ClickHouse isolation read that table, so a connected account shows
-up everywhere.
+Verify writes the customer's role, External ID and regions onto the
+account's row (adding it when missing, in the default scope). `regions` always
+includes the synthetic `global` region (IAM roles and users are recorded under
+it, so they show as soon as the account connects); the API strips it from what
+it returns. Editing regions rewrites the array (keeping `global`); removing
+the account deletes the row. Rows the scanner wrote without a role are scope
+only and are not listed on the Integrations page. Dashboards, filters,
+settings and ClickHouse isolation read the same table.
 
 Without the migrations the page answers 503 `AWS_PLATFORM_NOT_CONFIGURED`.
 
@@ -501,8 +504,8 @@ A platform is switched on only when its checks pass. `exposure_enabled` is
 true when any account has one on; the console shows the exposed-credential
 screens only then.
 
-Secret scanner contract: scan CodeCommit where `codecommit_connected`, and the
-GitHub token at `github_secret_arn` where `github_connected`, by assuming
+Secret scanner contract: scan CodeCommit where `codecommit_enabled`, and the
+GitHub token at `github_secret_arn` where `github_enabled`, by assuming
 `client_role_arn` with `external_id`.
 
 #### Sync contract (discovery worker)
@@ -511,12 +514,12 @@ The API only queues (`sync_status = 'queued'`). The worker claims one account
 at a time per tenant schema:
 
 ```sql
-UPDATE <schema>.aws_accounts SET sync_status = 'running', sync_started_at = now()
- WHERE client_aws_account_id = (
-       SELECT client_aws_account_id FROM <schema>.aws_accounts
+UPDATE <schema>.accounts SET sync_status = 'running', sync_started_at = now()
+ WHERE account_id = (
+       SELECT account_id FROM <schema>.accounts
         WHERE sync_status = 'queued' ORDER BY sync_requested_at
         FOR UPDATE SKIP LOCKED LIMIT 1)
-RETURNING client_aws_account_id, client_role_arn, external_id, regions;
+RETURNING account_id, client_role_arn, external_id, regions;
 ```
 
 It reads only `regions`, then sets `sync_status = 'succeeded', last_synced_at =
@@ -626,23 +629,23 @@ string), `dimensions_json`, `ingested_at`.
 
 ### Scan change tracking in detail
 
-- **Tables** (`migrations/tenant/005_scan_changes.sql`, written by the discovery
-  worker): `discovery_scans` (one row per run: `previous_scan_id` - NULL for the
-  first run -, `account_id` - NULL when the run covered every account -, `status`,
-  `started_at`, `completed_at`) and `scan_changes` (one row per difference:
-  `change_type`, `entity_type`, `entity_arn`, `entity_name`, `identity_id`,
-  `credential_id`, `account_id`, `region`, `summary`, `details` jsonb,
-  `detected_at`). Only completed runs are shown, so the worker writes the
-  changes before it sets `status = 'completed'`.
+- **Tables** (written by the discovery scanner): `nhi_scans_aws` (one row per
+  run: `scan_id` text such as `scan-20261016-201642`, `account_id`, `status`
+  `COMPLETED`, `scan_end`) and `scan_changes` (one row per difference: `id`,
+  `scan_id`, `previous_scan_id`, `change_type`, `entity_type`, `entity_arn`,
+  `entity_id`, `summary`, `details` jsonb, `detected_at`). A scan's previous
+  scan is the account's preceding completed run. `scan_changes` has no
+  account/region columns: they are read from the entity ARN (no region =
+  `global`), and the entity name from the inventory row.
 - **`details`** is an object the console renders as text, never as raw JSON:
   CREATED / DELETED carry facts (`type`, `name`, `account_id`, `region`, ...);
   MODIFIED carries `fields_changed: [{field, old, new}]` and, for permissions,
   `actions_added` / `actions_removed`; a trust edge carries `source`, `target`,
   `edge_type`, `external`.
-- **Ownership**: a permission, binding or trust-edge change sets `identity_id`
-  (and a binding its `credential_id`) so it appears on that identity's Changes tab
-  and marks it CHANGED in the list.
-- **Scope**: a scan is visible when it covered every account or one the user
+- **Ownership**: a change belongs to the inventory row in `entity_id` (an
+  identity, or a credential when `entity_type = 'credential'`) or with the same
+  ARN; that drives the Changes tabs and the NEW / CHANGED list badges.
+- **Scope**: a scan is visible when it ran for an account the user
   selected; a change when its account and region are selected (IAM is `global`).
 - **CloudTrail evidence** is not stored: for CREATED / DELETED identity and
   credential changes the API looks up the creating / deleting call

@@ -54,33 +54,27 @@ Per-tenant setup values shown on the page.
 | `collector_event_bridge_arn` | **our** central event bus |
 | `collector_regions` | `text[]` — regions customers may choose (empty = all) |
 
-### `<tenant schema>.aws_accounts` (one row per connected AWS account) — migration `tenant/003_aws_accounts.sql`
-**Source of truth for the connection.** `<tenant schema>` = JWT `db_name`.
+### `<tenant schema>.accounts` (one row per AWS account) — connection columns added by `tenant/003_accounts_connection.sql`
+**Source of truth for both the scope and the connection.** `<tenant schema>` = JWT `db_name`.
+Keyed by the unique `account_id`. Scanner columns used as they are:
 
 | Column | Meaning |
 |---|---|
-| `client_aws_account_id` | **PK** — customer's 12-digit account |
-| `client_role_arn` | read-only role they created for us |
-| `regions` | `text[]` — regions a sync may read |
+| `tenant_id`, `account_id`, `is_default` | scope row (account_id = the customer's 12-digit account) |
+| `regions` | `text[]` — regions a sync may read, plus `global` (IAM); the API hides `global` |
+| `client_aws_account_id` | same as `account_id`, written on verify |
+| `client_role_arn` | read-only role they created for us (NULL = scanner-only row, not listed on Integrations) |
 | `external_id` | the External ID the role was verified with |
 | `is_connected` | true while the latest check passed every step |
 | `account_status` | `pending` / `connected` / `action_needed` |
-| `checks` | `jsonb` — last connection-check results (shown on page) |
-| `last_verified_at`, `last_verified_by`, `connected_at` | verify metadata |
-| `github_connected`, `codecommit_connected` | exposed-cred scanning on + verified |
-| `github_secret_arn` | where the customer stored the GitHub token (ARN only; token never stored) |
-| `github_checks`, `github_verified_at`, `codecommit_checks`, `codecommit_verified_at`, `exposure_updated_by` | code-scanning check state |
-| `sync_status` | `idle` / `queued` / `running` / `succeeded` / `failed` |
-| `sync_requested_at`, `sync_requested_by`, `sync_started_at`, `last_synced_at`, `last_sync_error` | sync queue + result |
-| `created_at`, `updated_at` | row timestamps |
+| `github_enabled`, `codecommit_enabled` | exposed-cred scanning on + verified |
 
-Index `aws_accounts_sync_queue` on `sync_requested_at WHERE sync_status='queued'` = the worker's queue.
-
-### `<tenant schema>.accounts` (scope table, one row per account)
-Kept in step by the API. Columns: `tenant_id`, `account_id`, `regions text[]`,
-`is_default`. On connect, a row is written with the allowed regions **plus
-`global`** (IAM roles/users live under the synthetic `global` region).
-Edit-regions rewrites this array (keeping `global`); remove deletes the row.
+Added by migration 003: `checks`, `last_verified_at`, `last_verified_by`,
+`connected_at`, `github_secret_arn`, `github_checks`, `github_verified_at`,
+`codecommit_checks`, `codecommit_verified_at`, `exposure_updated_by`,
+`sync_status`, `sync_requested_at`, `sync_requested_by`, `sync_started_at`,
+`last_synced_at`, `last_sync_error`. Index `accounts_sync_queue` on
+`sync_requested_at WHERE sync_status='queued'` = the worker's queue.
 
 ---
 
@@ -88,17 +82,17 @@ Edit-regions rewrites this array (keeping `global`); remove deletes the row.
 
 The API **only queues** work — it never scans AWS itself.
 
-- **Verify success / Sync now** → sets `aws_accounts.sync_status = 'queued'`,
+- **Verify success / Sync now** → sets `accounts.sync_status = 'queued'`,
   `sync_requested_at = now()`. (`POST /integrations/aws/accounts/{id}/sync`.)
 - **The discovery worker** (separate process, not in this repo) claims one
   queued account per tenant:
   ```sql
-  UPDATE <schema>.aws_accounts SET sync_status='running', sync_started_at=now()
-   WHERE client_aws_account_id = (
-     SELECT client_aws_account_id FROM <schema>.aws_accounts
+  UPDATE <schema>.accounts SET sync_status='running', sync_started_at=now()
+   WHERE account_id = (
+     SELECT account_id FROM <schema>.accounts
       WHERE sync_status='queued' ORDER BY sync_requested_at
       FOR UPDATE SKIP LOCKED LIMIT 1)
-  RETURNING client_aws_account_id, client_role_arn, external_id, regions;
+  RETURNING account_id, client_role_arn, external_id, regions;
   ```
   It assumes `client_role_arn` with `external_id`, reads the `regions`, writes
   the inventory (`identities`, `credentials`, `trust_edges`, …) in the tenant
@@ -109,8 +103,8 @@ The API **only queues** work — it never scans AWS itself.
   Settings, filters, the dashboard, and every scoped query — so discovered
   identities/credentials for that account show up across the console.
 - **Code scanning:** the secret scanner scans CodeCommit where
-  `codecommit_connected`, and the GitHub token at `github_secret_arn` where
-  `github_connected`, by assuming `client_role_arn` with `external_id`.
+  `codecommit_enabled`, and the GitHub token at `github_secret_arn` where
+  `github_enabled`, by assuming `client_role_arn` with `external_id`.
 
 **AWS identity of our service:** no keys in config. Production runs as
 `NHIPlatformAssumer` (ECS/EC2 role). Locally, `AWS_PROFILE` + 
@@ -150,7 +144,7 @@ Error codes and local AWS-cred setup: backend `README.md`.
 
 **Not in this repo / next steps:**
 - **The discovery worker itself** (the process that claims `sync_status='queued'`
-  rows and writes the inventory) — contract is in `tenant/003_aws_accounts.sql`
+  rows and writes the inventory) — contract is in `tenant/003_accounts_connection.sql`
   and §3 above, but the worker is external.
 - **Real-AWS run:** verify + code scanning were tested only against local
   stand-ins. One run against a real test account (role + EventBridge rule +

@@ -14,9 +14,9 @@ import "time"
 //
 // Tables (one nhi_db): nhi_global.tenants holds the tenant's collector values
 // (migrations/global/004_tenant_collector.sql); each tenant schema holds
-// aws_accounts (migrations/tenant/003_aws_accounts.sql). Connected accounts
-// are also registered, one row per region, in the tenant schema's accounts
-// table - the list every other screen scopes by.
+// accounts, one row per AWS account, which is both the connection record and
+// the scope every other screen filters by (connection columns added by
+// migrations/tenant/003_accounts_connection.sql).
 // ─────────────────────────────────────────────────────────────────────────
 
 // Connection status of a tenant, and of one AWS account (account_status).
@@ -157,8 +157,8 @@ type AWSExposure struct {
 }
 
 type ExposurePlatformState struct {
-	// Connected: enabled and the latest check passed (github_connected /
-	// codecommit_connected).
+	// Connected: enabled and the latest check passed (accounts.github_enabled /
+	// codecommit_enabled).
 	Connected  bool       `json:"connected"`
 	Checks     []AWSCheck `json:"checks"`
 	VerifiedAt *time.Time `json:"verified_at"`
@@ -240,7 +240,7 @@ type AWSTenantSettings struct {
 	Regions []string
 }
 
-// AWSAccountRecord is one row of <tenant schema>.aws_accounts.
+// AWSAccountRecord is the connection part of one <tenant schema>.accounts row.
 type AWSAccountRecord struct {
 	AccountID           string
 	RoleARN             string

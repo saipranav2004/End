@@ -30,7 +30,7 @@ import (
 //	  go test ./internal/repository -run AWSIntegration -v
 //
 // The test creates two throwaway tenants with their own schemas (applying
-// migrations/tenant/003_aws_accounts.sql to them), uses random account IDs,
+// migrations/tenant/003_accounts_connection.sql to them), uses random account IDs,
 // and drops all of it afterwards. Existing tenants and data are untouched.
 func randomHex(t *testing.T, n int) string {
 	t.Helper()
@@ -65,16 +65,25 @@ func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {
 // applyTenantMigration runs the real tenant migration for schema.
 func applyTenantMigration(t *testing.T, db *sql.DB, schema string) {
 	t.Helper()
-	raw, err := os.ReadFile("../../migrations/tenant/003_aws_accounts.sql")
+	// The scanner's accounts table as it exists in nhi_db (owned by the
+	// discovery pipeline); the migration only adds the connection columns.
+	mustExec(t, db, `CREATE SCHEMA `+`"`+schema+`"`)
+	mustExec(t, db, `CREATE TABLE `+database.Table(schema, "accounts")+` (
+		id uuid DEFAULT gen_random_uuid() PRIMARY KEY, tenant_id uuid NOT NULL, account_id text NOT NULL,
+		is_default boolean DEFAULT false NOT NULL, created_at timestamptz DEFAULT now() NOT NULL,
+		updated_at timestamptz DEFAULT now() NOT NULL, regions text[], client_role_arn varchar(512),
+		client_aws_account_id varchar(12), external_id varchar(255), is_connected boolean DEFAULT false NOT NULL,
+		account_status varchar(20) DEFAULT 'pending' NOT NULL, codecommit_enabled boolean DEFAULT false NOT NULL,
+		github_enabled boolean DEFAULT false NOT NULL, CONSTRAINT account_account_id_unique UNIQUE (account_id))`)
+	raw, err := os.ReadFile("../../migrations/tenant/003_accounts_connection.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sqlText := strings.ReplaceAll(string(raw), `:"schema"`, `"`+schema+`"`)
+	sqlText = strings.ReplaceAll(sqlText, `:'schema'`, `'`+schema+`'`)
 	if _, err := db.Exec(sqlText); err != nil {
 		t.Fatalf("tenant migration: %v", err)
 	}
-	// The scanner's scope table (owned by the discovery pipeline).
-	mustExec(t, db, `CREATE TABLE `+database.Table(schema, "accounts")+` (tenant_id uuid, account_id text, regions text[], is_default boolean DEFAULT false)`)
 }
 
 func TestAWSIntegrationRepositoryAgainstPostgres(t *testing.T) {
@@ -152,9 +161,11 @@ func TestAWSIntegrationRepositoryAgainstPostgres(t *testing.T) {
 		Checks:         []modelsv1.AWSCheck{{Key: "assume_role", Label: "Assume your role", State: "pass"}},
 		LastVerifiedAt: now, LastVerifiedBy: "alice",
 	}
-	// Failing checks: pending, not queued, not in scope.
+	// Failing checks: pending, not queued. The row is saved (AssumeRole
+	// passed, so the tenant owns the account) and carries 'global'.
 	saved, queued, err := repo.SaveVerification(ctx, tenantA, schemaA, rec)
-	if err != nil || queued || saved.Status != "pending" || saved.IsConnected || saved.ConnectedAt != nil || len(scope(schemaA, acct)) != 0 {
+	if err != nil || queued || saved.Status != "pending" || saved.IsConnected || saved.ConnectedAt != nil ||
+		!reflect.DeepEqual(saved.Regions, []string{"us-east-1"}) || !reflect.DeepEqual(scope(schemaA, acct), []string{"global", "us-east-1"}) {
 		t.Fatalf("pending: %+v %v %v", saved, queued, err)
 	}
 	// Passing: connected, queued, in scope.
@@ -234,7 +245,7 @@ func TestAWSIntegrationRepositoryAgainstPostgres(t *testing.T) {
 	if _, _, err := repo.SaveVerification(ctx, tenantA, schemaA, rec); err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, db, `UPDATE `+database.Table(schemaA, "aws_accounts")+` SET sync_status = 'succeeded' WHERE client_aws_account_id = $1`, acct)
+	mustExec(t, db, `UPDATE `+database.Table(schemaA, "accounts")+` SET sync_status = 'succeeded' WHERE account_id = $1`, acct)
 	if r, already, err := repo.RequestSync(ctx, schemaA, acct, "bob", now); err != nil || already || r.SyncStatus != "queued" || r.SyncRequestedBy != "bob" {
 		t.Fatalf("sync: %+v %v %v", r, already, err)
 	}

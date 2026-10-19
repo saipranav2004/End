@@ -52,7 +52,7 @@ SQL
 for schema in tenant_a tenant_b; do
   psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/scripts/test_schema.sql"
   psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/001_user_settings.sql"
-  psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/003_aws_accounts.sql"
+  psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/003_accounts_connection.sql"
 done
 
 psql -q -d "$DB" -v ON_ERROR_STOP=1 <<SQL

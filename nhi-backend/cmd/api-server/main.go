@@ -116,7 +116,7 @@ func main() {
 
 	filterHandler := handlerv1.NewFilterHandler(svcv1.NewFilterService(repov1.NewFilterRepository(), resolver))
 	settingsHandler := handlerv1.NewSettingsHandler(svcv1.NewSettingsService(repov1.NewSettingsRepository(), db, resolver))
-	// Scan change tracking (migrations/tenant/005_scan_changes.sql).
+	// Scan change tracking (the scanner's nhi_scans_aws + scan_changes).
 	scanChangesRepo := repov1.NewScanChangesRepository()
 	scanChangesHandler := handlerv1.NewScanChangesHandler(svcv1.NewScanChangesService(scanChangesRepo, resolver))
 	dashboardHandler := handlerv1.NewDashboardOverviewHandler(svcv1.NewDashboardOverviewService(repov1.NewDashboardOverviewRepository(), scanChangesRepo, resolver, activityService))
