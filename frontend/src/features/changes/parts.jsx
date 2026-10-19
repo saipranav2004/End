@@ -15,6 +15,7 @@ import {
 import { formatDateTime, formatRelative, humanizeToken } from '../../lib/format';
 import { CopyableValue } from '../../ui/Copyable';
 import { cn, TONE_BG } from '../../ui/cn';
+import { DIFF_LIMIT, diffValues, isPlainObject, parseJsonish } from '../../lib/jsonDiff';
 
 /* ── Vocabulary ──────────────────────────────────────────────────────────── */
 
@@ -109,6 +110,9 @@ const FIELD_LABELS = {
   policy_type: 'Policy type',
   edge_type: 'Relationship',
   binding: 'Bound through',
+  credential_type: 'Credential type',
+  identity_type: 'Identity type',
+  type_attributes: 'Attributes',
 };
 
 export function fieldLabel(field) {
@@ -139,16 +143,55 @@ function Value({ value, mono = false }) {
   return <span className={cn((mono || looksLikeId) && 'font-mono text-[11.5px] break-all')}>{text}</span>;
 }
 
-function FieldDiff({ field, before, after }) {
+/* ── Field diffs ─────────────────────────────────────────────────────────── */
+
+function pathLabel(path) {
+  return path.map((part) => (typeof part === 'number' ? `#${part + 1}` : fieldLabel(String(part)))).join(' › ');
+}
+
+/** One changed field: the plain before / after, or the changed paths inside it. */
+function FieldChange({ field, before, after }) {
+  const a = parseJsonish(before);
+  const b = parseJsonish(after);
+  const structured = (isPlainObject(a) || Array.isArray(a)) && (isPlainObject(b) || Array.isArray(b));
+  if (!structured) return <FieldDiff field={field} before={a} after={b} />;
+  const leaves = diffValues(a, b);
+  if (leaves.length === 0) {
+    return (
+      <li className="grid gap-1 py-2 @min-[34rem]:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] @min-[34rem]:gap-4">
+        <span className="text-[12px] font-medium text-ink-2">{fieldLabel(field)}</span>
+        <span className="text-[12.5px] text-ink-3">Same content, stored differently (key order or formatting only).</span>
+      </li>
+    );
+  }
+  return (
+    <>
+      {leaves.map((leaf) => (
+        <FieldDiff
+          key={`${field}-${leaf.path.join('.')}`}
+          field={field}
+          label={leaf.path.length ? `${fieldLabel(field)} › ${pathLabel(leaf.path)}` : undefined}
+          before={leaf.before}
+          after={leaf.after}
+        />
+      ))}
+      {leaves.length >= DIFF_LIMIT && (
+        <li className="py-2 text-[12px] text-ink-3">Showing the first {DIFF_LIMIT} differences in {fieldLabel(field)}.</li>
+      )}
+    </>
+  );
+}
+
+function FieldDiff({ field, label, before, after }) {
   return (
     <li className="grid gap-1 py-2 @min-[34rem]:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] @min-[34rem]:gap-4">
-      <span className="text-[12px] font-medium text-ink-2">{fieldLabel(field)}</span>
+      <span className="text-[12px] font-medium break-words text-ink-2">{label ?? fieldLabel(field)}</span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-        <span className="rounded bg-critical-soft px-1.5 py-0.5 text-critical line-through decoration-critical/60" title="Before">
+        <span className="max-w-full rounded bg-critical-soft px-1.5 py-0.5 break-words text-critical line-through decoration-critical/60" title="Before">
           <Value value={before} />
         </span>
         <ArrowRight aria-hidden="true" className="size-3.5 shrink-0 text-ink-3" />
-        <span className="rounded bg-low-soft px-1.5 py-0.5 font-medium text-low" title="After">
+        <span className="max-w-full rounded bg-low-soft px-1.5 py-0.5 font-medium break-words text-low" title="After">
           <Value value={after} />
         </span>
       </span>
@@ -181,6 +224,8 @@ function ActionList({ title, actions, tone }) {
   );
 }
 
+const HUMANIZED_FACTS = new Set(['type', 'policy_type', 'edge_type', 'binding', 'credential_type', 'identity_type']);
+
 const SHOWN_ELSEWHERE = new Set(['fields_changed', 'actions_added', 'actions_removed', 'source', 'target', 'external']);
 
 /**
@@ -203,7 +248,14 @@ export function ChangeDetails({ change }) {
           <p className="text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase">What changed</p>
           <ul className="mt-1 divide-y divide-line">
             {fields.map((entry, index) => (
-              <FieldDiff key={`${entry.field}-${index}`} field={String(entry.field ?? '')} before={entry.old} after={entry.new} />
+              /* The API documents {field, old, new}; the scanner writes
+                 {field, old_value, new_value}. Both are read. */
+              <FieldChange
+                key={`${entry.field}-${index}`}
+                field={String(entry.field ?? '')}
+                before={entry.old ?? entry.old_value}
+                after={entry.new ?? entry.new_value}
+              />
             ))}
           </ul>
         </div>
@@ -238,7 +290,7 @@ export function ChangeDetails({ change }) {
             <div key={key} className="min-w-0">
               <dt className="text-[11px] text-ink-3">{fieldLabel(key)}</dt>
               <dd className="mt-0.5 text-[12.5px] text-ink">
-                <Value value={key === 'type' || key === 'policy_type' || key === 'edge_type' || key === 'binding' ? humanizeToken(String(value)) : value} />
+                <Value value={HUMANIZED_FACTS.has(key) ? humanizeToken(String(value)) : value} />
               </dd>
             </div>
           ))}
