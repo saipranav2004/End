@@ -12,7 +12,7 @@ import { ApiError, unwrapGenome, unwrapMain, unwrapPosture } from './http';
  *            PUT /api/v1/settings               { selected_account_ids, selected_regions }
  *            GET /api/v1/filters                every account / region that has data
  *   POSTURE  GET /api/v1/ispm/posture/overview  fleet score, pillars, quick wins
- *   GENOME   GET /api/v1/genome/dashboard/summary  baselines, anomalies (nulls when not monitored)
+ *   GENOME   GET /api/v1/genome/dashboard/summary  watched, established, learning, recently baselined
  */
 
 const list = (value) => (Array.isArray(value) ? value : []);
@@ -159,22 +159,14 @@ export async function fetchGenomeSummary(signal) {
       watched: numOrNull(cards.identities_watched),
       established: numOrNull(cards.baselines_established),
       learning: numOrNull(cards.still_learning),
-      openAnomalies: numOrNull(cards.open_anomalies),
-      coveragePercent: numOrNull(cards.baseline_coverage_percent),
-      windowHours: numOrNull(cards.window_hours),
     },
-    anomaliesByDay: list(data?.anomalies_by_day).map((r) => ({ day: r.day, count: num(r.count) })),
-    mostAnomalous: list(data?.most_anomalous_identities).map((r) => ({
+    recentlyBaselined: list(data?.recently_baselined).map((r) => ({
       sourceType: r.source_type,
       identityName: r.identity_name,
       displayName: r.display_name || r.identity_name,
-      accountId: r.account_id,
       region: r.region,
-      riskScore: numOrNull(r.risk_score),
-      severity: r.severity || '',
-      anomalousEvents: num(r.anomalous_event_count),
-      events: num(r.event_count),
+      occurredAt: r.occurred_at,
+      version: r.version ?? null,
     })),
-    departures: list(data?.departures_by_dimension).map((r) => ({ key: r.dimension, value: num(r.count) })),
   };
 }

@@ -3,8 +3,6 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Boxes, Dna, Fingerprint as FingerprintIcon, History, Network, SearchX } from 'lucide-react';
 import {
   fetchGenomeActivity,
-  fetchGenomeBaseline,
-  fetchGenomeIdentity,
   fetchGenomeProfile,
   fetchGenomeTimeline,
   resolveDiscoveryIdentity,
@@ -13,30 +11,25 @@ import {
 import { accessGraphRoute, identityRoute, parseGenomeId } from '../../lib/identityLinks';
 import { useQuery } from '../../lib/hooks';
 import { severityMeta } from '../../lib/domain';
-import { formatDate, formatDateTime, formatNumber, formatRelative, titleCaseEnum } from '../../lib/format';
+import { formatDateTime, formatNumber, formatRelative, titleCaseEnum } from '../../lib/format';
 import { PageHeader } from '../../shell/PageHeader';
 import { Button } from '../../ui/Button';
 import { CopyableValue } from '../../ui/Copyable';
 import { DataGrid } from '../../ui/DataGrid';
-import { Meter } from '../../ui/Meter';
 import { Panel, PanelHeader, SectionLabel } from '../../ui/Panel';
-import { ChartSkeleton, DetailSkeleton, ListSkeleton } from '../../ui/Skeleton';
+import { ChartSkeleton, ListSkeleton } from '../../ui/Skeleton';
 import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { SegmentedControl, Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { TrendChart } from '../../charts/TrendChart';
 import { ApiShareList, Fingerprint, formatShare, ScheduleGrid } from './visuals';
-import { AnomalyList, NoAnomalies, useAnomalyList } from './AnomalyReview';
 import {
   anomalyStatusMeta,
-  baselineMeta,
   CursorPager,
   dimensionLabel,
   dimensionValueLabel,
-  learningPercent,
   Measured,
   parseAnomaly,
-  Row,
   sourceTypeLabel,
   useCursorPager,
 } from './meta';
@@ -50,7 +43,7 @@ const WINDOWS = [
 const WINDOW_WORDS = { '24h': '24 hours', '7d': '7 days', '14d': '14 days', '30d': '30 days' };
 const DEFAULT_WINDOW = '14d';
 
-const TAB_KEYS = ['genome', 'anomalies', 'activity', 'baseline', 'timeline'];
+const TAB_KEYS = ['genome', 'activity', 'timeline'];
 const TIMELINE_PAGE = 50;
 const RECENT_PAGE = 25;
 
@@ -69,8 +62,8 @@ function readId(raw) {
 
 /**
  * The identity's history in pages, newest first. The first page is a query;
- * older pages are appended on request. The Anomalies tab, the open-departure
- * banner and the Timeline tab all read the same list.
+ * older pages are appended on request. The baseline state in the header, the
+ * open-departure banner and the Timeline tab all read the same list.
  */
 function useTimeline(sourceType, identityName) {
   const key = `${sourceType}:${identityName}`;
@@ -118,12 +111,11 @@ function useTimeline(sourceType, identityName) {
 /**
  * One identity's genome.
  *
- * Five read-only views of the same record, in the order an investigation runs:
- * what is normal for this identity (Genome), what departed (Anomalies), the
- * calls behind it (Activity), what the baseline is built from (Baseline) and
- * how it got here (Timeline).
- * The genome service changes nothing, so there are no disposition or
- * containment controls here.
+ * Three read-only views of the same record, in the order an investigation
+ * runs: what is normal for this identity (Genome), the calls behind it
+ * (Activity) and how it got here (Timeline: learning, baseline versions,
+ * anomalies). The genome service changes nothing, so there are no
+ * disposition or containment controls here.
  */
 export default function GenomeDetailPage() {
   const { id } = useParams();
@@ -152,6 +144,21 @@ export default function GenomeDetailPage() {
   return <GenomeIdentity key={`${parsed.sourceType}:${parsed.identityName}`} {...parsed} />;
 }
 
+/** Where the baseline stands, read from the timeline's milestones. */
+function baselineFromTimeline(items) {
+  const established = items.find((item) => item.type === 'baseline_established');
+  if (established) return { key: 'active', label: 'Baseline established', tone: 'low', at: established.occurred_at };
+  const learning = items.find((item) => item.type === 'learning_started');
+  if (learning) return { key: 'learning', label: 'Learning', tone: 'medium', at: learning.occurred_at };
+  return { key: 'none', label: 'No baseline yet', tone: 'neutral', at: null };
+}
+
+/** A readable name from an ARN when the inventory has no row for it. */
+function arnName(arn) {
+  const tail = String(arn ?? '').split(':').slice(5).join(':');
+  return tail.split('/').pop() || arn;
+}
+
 function GenomeIdentity({ sourceType, identityName }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = TAB_KEYS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'genome';
@@ -170,28 +177,24 @@ function GenomeIdentity({ sourceType, identityName }) {
   );
   const setTab = (value) => setParam('tab', value === 'genome' ? '' : value);
 
-  const summary = useQuery(
-    (signal) => fetchGenomeIdentity(sourceType, identityName, { window }, signal),
-    [sourceType, identityName, window],
-  );
-  const baseline = useQuery((signal) => fetchGenomeBaseline(sourceType, identityName, { limit: 25 }, signal), [
-    sourceType,
-    identityName,
-  ]);
   const timeline = useTimeline(sourceType, identityName);
-  /* The inventory record behind this identity, for the cross-links. A failure
-     only costs the direct links; the search link still works. */
+  /* The inventory record behind this identity: its name and scope for the
+     header, and the cross-links. A failure only costs those; the genome views
+     still load. */
   const discovery = useQuery((signal) => resolveDiscoveryIdentity(identityName, signal).catch(() => null), [identityName]);
 
-  const record = summary.data;
-  const openCount = record?.headline_metrics?.open_anomalies;
   const openAnomalies = useMemo(
     () => timeline.items.filter((item) => item.type === 'anomaly' && String(item.status).toLowerCase() === 'open'),
     [timeline.items],
   );
+  const openCount = useMemo(
+    () => openAnomalies.reduce((sum, item) => sum + (Number(/^(\d+)/.exec(item.title ?? '')?.[1]) || 1), 0),
+    [openAnomalies],
+  );
 
-  if (summary.isError && !record) {
-    const notFound = summary.error?.status === 404;
+  /* Every genome endpoint resolves the identity in the caller's scope first,
+     so a 404 from the timeline means the identity is not monitored here. */
+  if (timeline.isError && timeline.error?.status === 404) {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
@@ -203,55 +206,37 @@ function GenomeIdentity({ sourceType, identityName }) {
           }
         />
         <Panel prominence="lead">
-          {notFound ? (
-            <EmptyState
-              icon={SearchX}
-              title="This identity is not monitored in your scope"
-              description="It is not in the genome's fleet for your selected accounts and regions, or discovery no longer sees it."
-              action={
-                <Button variant="secondary" size="sm" as={Link} to={`/identities?search=${encodeURIComponent(identityName)}`} icon={Boxes}>
-                  Look it up in the inventory
-                </Button>
-              }
-            />
-          ) : (
-            <ErrorState error={summary.error} onRetry={summary.refetch} />
-          )}
+          <EmptyState
+            icon={SearchX}
+            title="This identity is not monitored in your scope"
+            description="It is outside the accounts and regions you selected, or discovery no longer sees it. Change the scope from the dashboard to include its region."
+            action={
+              <Button variant="secondary" size="sm" as={Link} to={`/identities?search=${encodeURIComponent(identityName)}`} icon={Boxes}>
+                Look it up in the inventory
+              </Button>
+            }
+          />
         </Panel>
       </div>
     );
   }
 
-  if (!record) {
-    return (
-      <div className="flex flex-col gap-6">
-        <PageHeader title="Genome" />
-        <Panel prominence="lead">
-          <DetailSkeleton rows={8} />
-        </Panel>
-      </div>
-    );
-  }
-
-  const { identity, risk, baseline_summary: baselineSummary, headline_metrics: metrics } = record;
-  const state = baselineMeta(baselineSummary?.status);
-  const severity = severityMeta(risk?.severity);
-  const progress = learningPercent(baselineSummary?.built_days, baselineSummary?.required_days);
-  const discoveryId = discovery.data?.id ?? null;
+  const record = discovery.data;
+  const state = baselineFromTimeline(timeline.items);
+  const discoveryId = record?.id ?? null;
+  const title = record?.name || arnName(identityName);
 
   const tabs = [
     { value: 'genome', label: 'Genome' },
-    { value: 'anomalies', label: 'Anomalies', count: openCount || undefined },
     { value: 'activity', label: 'Activity' },
-    { value: 'baseline', label: 'Baseline' },
-    { value: 'timeline', label: 'Timeline' },
+    { value: 'timeline', label: 'Timeline', count: openCount || undefined },
   ];
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={identity.display_name || identity.identity_name}
-        lede={[sourceTypeLabel(identity.source_type), identity.account_id, identity.region].filter(Boolean).join(' · ')}
+        title={title}
+        lede={[sourceTypeLabel(sourceType), record?.account_id, record?.region].filter(Boolean).join(' · ')}
         actions={
           <>
             <SegmentedControl
@@ -273,7 +258,7 @@ function GenomeIdentity({ sourceType, identityName }) {
                 </Button>
               </>
             ) : (
-              <Button variant="ghost" as={Link} to={`/identities?search=${encodeURIComponent(identity.identity_name)}`} icon={Boxes}>
+              <Button variant="ghost" as={Link} to={`/identities?search=${encodeURIComponent(identityName)}`} icon={Boxes}>
                 Open in inventory
               </Button>
             )}
@@ -284,34 +269,22 @@ function GenomeIdentity({ sourceType, identityName }) {
             <Tag tone={state.tone} size="sm" dot>
               {state.label}
             </Tag>
-            {state.key !== 'active' && progress !== null && (
-              <span className="text-[11.5px] text-ink-3">
-                {formatNumber(baselineSummary.built_days)} of {formatNumber(baselineSummary.required_days)} learning days
+            {state.at && (
+              <span className="text-[11.5px] text-ink-3" title={formatDateTime(state.at)}>
+                {state.key === 'active' ? 'since' : 'started'} {formatRelative(state.at)}
               </span>
             )}
-            {risk?.score !== null && risk?.score !== undefined ? (
-              <Tag tone={risk.severity ? severity.tone : 'neutral'} size="sm">
-                Risk {risk.score}/100{risk.severity ? ` · ${severity.label}` : ''} · last {window}
-              </Tag>
-            ) : (
+            {record?.status && (
               <Tag tone="neutral" size="sm">
-                Not scored yet
+                {record.status}
               </Tag>
             )}
-            {identity.service_name && (
-              <Tag tone="neutral" size="sm">
-                {identity.service_name}
-              </Tag>
+            <CopyableValue value={identityName} className="max-w-full text-[11.5px] text-ink-3" />
+            {record?.last_activity_at && (
+              <span className="text-[11.5px] text-ink-3" title={formatDateTime(record.last_activity_at)}>
+                Last activity {formatRelative(record.last_activity_at)}
+              </span>
             )}
-            {identity.status && (
-              <Tag tone="neutral" size="sm">
-                {identity.status}
-              </Tag>
-            )}
-            <CopyableValue value={identity.identity_name} className="max-w-full text-[11.5px] text-ink-3" />
-            <span className="text-[11.5px] text-ink-3" title={metrics?.last_seen ? formatDateTime(metrics.last_seen) : undefined}>
-              {metrics?.last_seen ? `Last seen ${formatRelative(metrics.last_seen)}` : 'No calls seen yet'}
-            </span>
           </div>
         }
         tabs={<Tabs size="sm" tabs={tabs} value={tab} onChange={setTab} />}
@@ -319,14 +292,15 @@ function GenomeIdentity({ sourceType, identityName }) {
 
       {/* An open departure is the reason anyone opened this record, so it is
           stated above the tabs rather than hidden inside one of them. */}
-      {openAnomalies.length > 0 && tab !== 'anomalies' && (
+      {openAnomalies.length > 0 && tab !== 'timeline' && (
         <Panel prominence="lead" className="animate-rise border-critical/30">
           <PanelHeader
             prominence="lead"
-            title={`${formatNumber(openCount ?? openAnomalies.length)} open ${(openCount ?? openAnomalies.length) === 1 ? 'anomaly' : 'anomalies'} to review`}
+            title={`${formatNumber(openCount)} open ${openCount === 1 ? 'anomaly' : 'anomalies'}`}
+            subtitle="This identity behaved outside its own baseline."
             actions={
-              <Button variant="secondary" size="sm" onClick={() => setTab('anomalies')}>
-                Review them
+              <Button variant="secondary" size="sm" onClick={() => setTab('timeline')}>
+                See the timeline
               </Button>
             }
           />
@@ -353,18 +327,14 @@ function GenomeIdentity({ sourceType, identityName }) {
           </ul>
           {openAnomalies.length > 4 && (
             <p className="mt-2 text-[11.5px] text-ink-3">
-              And {formatNumber(openAnomalies.length - 4)} more in the Anomalies tab.
+              And {formatNumber(openAnomalies.length - 4)} more in the timeline.
             </p>
           )}
         </Panel>
       )}
 
-      {tab === 'genome' && (
-        <GenomeTab sourceType={sourceType} identityName={identityName} window={window} baseline={baseline} />
-      )}
-      {tab === 'anomalies' && <AnomaliesTab sourceType={sourceType} identityName={identityName} baselineState={state} />}
+      {tab === 'genome' && <GenomeTab sourceType={sourceType} identityName={identityName} window={window} />}
       {tab === 'activity' && <ActivityTab sourceType={sourceType} identityName={identityName} window={window} />}
-      {tab === 'baseline' && <BaselineTab baseline={baseline} />}
       {tab === 'timeline' && <TimelineTab timeline={timeline} />}
     </div>
   );
@@ -375,7 +345,7 @@ function GenomeIdentity({ sourceType, identityName }) {
 const RADAR_AXES = 8;
 const RESOURCES_SHOWN = 10;
 
-function GenomeTab({ sourceType, identityName, window, baseline }) {
+function GenomeTab({ sourceType, identityName, window }) {
   const [showAllResources, setShowAllResources] = useState(false);
   const profile = useQuery(
     (signal) => fetchGenomeProfile(sourceType, identityName, { window, limit: 25 }, signal),
@@ -485,54 +455,20 @@ function GenomeTab({ sourceType, identityName, window, baseline }) {
         </div>
       )}
 
-      <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        {!empty && (
-          <Panel prominence="quiet" className="animate-rise">
-            <PanelHeader
-              prominence="quiet"
-              title="Activity schedule"
-              subtitle="Seven days by hour, UTC. Darker means busier; activity outside these usual hours is flagged."
-            />
-            {activitySchedule.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
-            ) : (
-              <ScheduleGrid className="mt-3" cells={activitySchedule} />
-            )}
-          </Panel>
-        )}
-
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
-          <PanelHeader prominence="quiet" title="How the baseline was built" subtitle="The data the anomaly checks for this identity compare against." />
-          {baseline.isError && !baseline.data ? (
-            <div className="mt-3">
-              <InlineError error={baseline.error} onRetry={baseline.refetch} label="Baseline failed to load" />
-            </div>
-          ) : !baseline.data ? (
-            <div className="mt-3">
-              <ListSkeleton rows={4} />
-            </div>
+      {!empty && (
+        <Panel prominence="quiet" className="animate-rise">
+          <PanelHeader
+            prominence="quiet"
+            title="Activity schedule"
+            subtitle="Seven days by hour, UTC. Darker means busier; activity outside these usual hours is what a departure looks like."
+          />
+          {activitySchedule.length === 0 ? (
+            <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
           ) : (
-            <dl className="mt-3 flex flex-col">
-              <Row label="State">{baselineMeta(baseline.data.status).label}</Row>
-              <Row label="Learning period">
-                <Measured value={baseline.data.required_days}>{formatNumber(baseline.data.required_days)} days</Measured>
-              </Row>
-              <Row label="Data points">
-                <Measured value={baseline.data.data_points}>{formatNumber(baseline.data.data_points)} events</Measured>
-              </Row>
-              <Row label="Baseline established">
-                {baseline.data.active_since ? formatDateTime(baseline.data.active_since) : 'Still learning'}
-              </Row>
-              <Row label="Last model update">
-                {baseline.data.updated_at ? formatRelative(baseline.data.updated_at) : <span className="text-ink-3">Not yet</span>}
-              </Row>
-              <Row label="Model confidence">
-                <span className="text-ink-3">Not measured yet</span>
-              </Row>
-            </dl>
+            <ScheduleGrid className="mt-3" cells={activitySchedule} />
           )}
         </Panel>
-      </div>
+      )}
 
       {!empty && (
         <div className="grid gap-4 @min-[52rem]:grid-cols-2">
@@ -610,42 +546,6 @@ function GenomeTab({ sourceType, identityName, window, baseline }) {
         </div>
       )}
     </div>
-  );
-}
-
-/* ── Anomalies ────────────────────────────────────────────────────────────── */
-
-function AnomaliesTab({ sourceType, identityName, baselineState }) {
-  const [view, setView] = useState('all');
-  const list = useAnomalyList({ identity: { sourceType, identityName }, review: view === 'all' ? '' : view });
-  const counts = list.counts;
-  const learning = baselineState.key !== 'active' && (counts?.total ?? 0) === 0;
-  return (
-    <Panel prominence="lead" flush className="animate-rise overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5">
-        <PanelHeader
-          title="Anomalies"
-          subtitle="Each time this identity behaved outside its own baseline. Say whether it is a real anomaly or a false positive."
-        />
-        {!learning && (
-          <SegmentedControl
-            label="Which anomalies"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: 'all', label: counts ? `All (${formatNumber(counts.total)})` : 'All' },
-              { value: 'pending', label: counts ? `Needs review (${formatNumber(counts.needs_review)})` : 'Needs review' },
-              { value: 'reviewed', label: counts ? `Reviewed (${formatNumber(counts.reviewed)})` : 'Reviewed' },
-            ]}
-          />
-        )}
-      </div>
-      <AnomalyList
-        list={list}
-        showIdentity={false}
-        empty={<NoAnomalies identityPage learning={learning} review={view === 'all' ? '' : view} total={list.counts?.total} />}
-      />
-    </Panel>
   );
 }
 
@@ -752,7 +652,7 @@ function ActivityTab({ sourceType, identityName, window }) {
         ) : volume.length === 0 ? (
           <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
         ) : (
-          <TrendChart className="mt-3" data={volume} dataKey="calls" label="API calls" height={150} />
+          <TrendChart className="mt-3" variant="bar" data={volume} dataKey="calls" label="API calls" height={170} />
         )}
       </Panel>
 
@@ -872,194 +772,6 @@ function CallRisk({ status, score }) {
         </Tag>
       )}
     </span>
-  );
-}
-
-/* ── Baseline ─────────────────────────────────────────────────────────────── */
-
-function BaselineTab({ baseline }) {
-  if (baseline.isError && !baseline.data) {
-    return (
-      <Panel prominence="lead">
-        <ErrorState error={baseline.error} onRetry={baseline.refetch} />
-      </Panel>
-    );
-  }
-  if (!baseline.data) {
-    return (
-      <Panel prominence="lead">
-        <DetailSkeleton rows={6} />
-      </Panel>
-    );
-  }
-
-  const data = baseline.data;
-  const state = baselineMeta(data.status);
-  const pct = learningPercent(data.built_days, data.required_days);
-  const ready = data.dimensions.filter((dimension) => dimension.ready === true).length;
-  const readyStated = data.dimensions.some((dimension) => dimension.ready !== null && dimension.ready !== undefined);
-
-  if (!data.status && data.dimensions.length === 0 && data.versions.length === 0) {
-    return (
-      <Panel prominence="lead">
-        <EmptyState
-          icon={Dna}
-          title="No baseline yet"
-          description="Learning has not started for this identity. A baseline is built from its own calls over the learning period, and no anomaly can be raised before it exists."
-        />
-      </Panel>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Panel prominence="lead" className="animate-rise">
-        <PanelHeader
-          prominence="lead"
-          title={state.key === 'active' ? 'Baseline established' : 'Baseline still learning'}
-          subtitle="A baseline is this identity's own normal, learned from its calls over the learning period."
-          actions={
-            <Tag tone={state.tone} size="sm" dot>
-              {state.label}
-            </Tag>
-          }
-        />
-        {pct !== null && (
-          <div className="mt-4 flex items-center gap-3">
-            <Meter value={pct} tone={state.key === 'active' ? 'low' : 'medium'} height={6} className="min-w-0 flex-1" label="Learning progress" />
-            <span data-numeric="" className="shrink-0 text-[13px] font-semibold text-ink">
-              {formatNumber(data.built_days)} of {formatNumber(data.required_days)} days
-            </span>
-          </div>
-        )}
-        <dl className="mt-4 grid gap-x-6 @min-[46rem]:grid-cols-2">
-          <div className="flex flex-col">
-            <Row label="Days remaining">
-              <Measured value={data.days_remaining}>
-                {data.days_remaining === 0 ? 'None' : `${formatNumber(data.days_remaining)} days`}
-              </Measured>
-            </Row>
-            <Row label="Learning started">{data.first_seen_date ? formatDate(`${data.first_seen_date}T00:00:00Z`) : '-'}</Row>
-            <Row label="Established">{data.active_since ? formatDateTime(data.active_since) : 'Not yet'}</Row>
-          </div>
-          <div className="flex flex-col">
-            <Row label="Data points">
-              <Measured value={data.data_points}>{formatNumber(data.data_points)} events</Measured>
-            </Row>
-            <Row label="Last updated">{data.updated_at ? formatDateTime(data.updated_at) : '-'}</Row>
-            <Row label="Model confidence">
-              <span className="text-ink-3">Not measured yet</span>
-            </Row>
-          </div>
-        </dl>
-      </Panel>
-
-      <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Panel prominence="quiet" flush className="animate-rise overflow-hidden">
-          <div className="border-b border-line px-4 py-3">
-            <PanelHeader
-              prominence="quiet"
-              title="Dimensions"
-              subtitle={
-                data.dimensions.length && readyStated
-                  ? `${formatNumber(ready)} of ${formatNumber(data.dimensions.length)} ready to judge departures.`
-                  : `${formatNumber(data.dimensions.length)} modelled. Readiness is not stated by this profile.`
-              }
-            />
-          </div>
-          <DataGrid
-            caption="Baseline dimensions"
-            columns={[
-              {
-                key: 'dimension',
-                header: 'Dimension',
-                primary: true,
-                width: '50%',
-                cell: (row) => (
-                  <span className="block truncate text-[12.5px] text-ink-2" title={row.dimension}>
-                    {dimensionLabel(row.dimension)}
-                  </span>
-                ),
-              },
-              {
-                key: 'ready',
-                header: 'Ready',
-                width: '25%',
-                cell: (row) =>
-                  row.ready === true ? (
-                    <Tag tone="low" size="sm" dot>
-                      Ready
-                    </Tag>
-                  ) : row.ready === false ? (
-                    <Tag tone="medium" size="sm" dot>
-                      Learning
-                    </Tag>
-                  ) : (
-                    <span className="text-[11.5px] text-ink-3">Not stated</span>
-                  ),
-              },
-              {
-                key: 'values',
-                header: 'Distinct values',
-                width: '25%',
-                cell: (row) => (
-                  <span data-numeric="" className="text-[12.5px] text-ink-2">
-                    {row.value_count === null || row.value_count === undefined ? '-' : formatNumber(row.value_count)}
-                  </span>
-                ),
-              },
-            ]}
-            rows={data.dimensions}
-            rowKey={(row) => row.dimension}
-            density="compact"
-            emptyState={<EmptyState compact icon={Dna} title="No dimensions yet" description="The baseline has not modelled any dimension yet." />}
-          />
-        </Panel>
-
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
-          <PanelHeader prominence="quiet" title="Published versions" subtitle="Newest first. Each retrain publishes a new version." />
-          {data.versions.length === 0 ? (
-            <p className="mt-3 text-[12.5px] text-ink-3">No version has been published yet.</p>
-          ) : (
-            <ul className="mt-3 flex flex-col">
-              {data.versions.map((version) => {
-                const meta = Object.entries(version.profile?.meta ?? {}).filter(
-                  ([key, value]) =>
-                    key !== 'version' && value !== null && ['string', 'number', 'boolean'].includes(typeof value),
-                );
-                const dims = version.profile?.dimensions ?? [];
-                return (
-                  <li key={version.version} className="border-b border-line py-2.5 last:border-0">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-[13px] font-semibold text-ink">Version {version.version}</span>
-                      <span className="shrink-0 text-[11.5px] text-ink-3" title={formatDateTime(version.published_at)}>
-                        {formatRelative(version.published_at)}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-[11.5px] text-ink-3">
-                      {formatNumber(dims.length)} {dims.length === 1 ? 'dimension' : 'dimensions'}
-                      {dims.some((d) => d.ready !== null && d.ready !== undefined)
-                        ? `, ${formatNumber(dims.filter((d) => d.ready === true).length)} ready`
-                        : ''}
-                    </p>
-                    {meta.length > 0 && (
-                      <dl className="mt-1.5 flex flex-wrap gap-1.5">
-                        {meta.slice(0, 8).map(([key, value]) => (
-                          <div key={key} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[11px]">
-                            <dt className="text-ink-3">{titleCaseEnum(key)}</dt>
-                            <dd className="truncate font-medium text-ink-2">{String(value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Panel>
-      </div>
-    </div>
   );
 }
 

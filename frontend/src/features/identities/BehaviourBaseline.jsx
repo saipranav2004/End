@@ -1,75 +1,79 @@
 import { Link } from 'react-router-dom';
 import { Dna } from 'lucide-react';
-import { fetchGenomeIdentity } from '../../lib/api/genome';
+import { fetchGenomeTimeline } from '../../lib/api/genome';
 import { canonicalGenomeName, genomeRoute, genomeSourceType } from '../../lib/identityLinks';
 import { useQuery } from '../../lib/hooks';
-import { formatNumber } from '../../lib/format';
+import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { Button } from '../../ui/Button';
-import { Meter } from '../../ui/Meter';
 import { Tag } from '../../ui/Tag';
-import { baselineMeta, learningPercent } from '../genome/meta';
 
 /**
- * Where this identity is in NHI Genome: still learning its normal behaviour
- * (with progress), or watched against an established baseline (with its open
- * anomalies). Identities still learning are not listed on the NHI Genome page,
- * so this is where their progress is shown. Hidden for identity types the
- * genome does not watch, and when the genome does not know the identity.
+ * Where this identity is in NHI Genome, read from its genome timeline:
+ * baseline established (with any open anomalies), learning since a date, or
+ * not learning yet. Hidden for identity types the genome does not watch, and
+ * when the genome does not know the identity in this scope.
  */
 export function BehaviourBaseline({ identity }) {
   const sourceType = genomeSourceType(identity.identity_type);
   const identityName = sourceType && identity.arn ? canonicalGenomeName(identity.identity_type, identity.arn) : null;
-  const record = useQuery(
-    (signal) => (identityName ? fetchGenomeIdentity(sourceType, identityName, {}, signal).catch(() => null) : Promise.resolve(null)),
+  const timeline = useQuery(
+    (signal) =>
+      identityName
+        ? fetchGenomeTimeline(sourceType, identityName, { limit: 50 }, signal).catch(() => null)
+        : Promise.resolve(null),
     [sourceType, identityName],
   );
-  const data = record.data;
-  if (!identityName || !data) return null;
+  const items = timeline.data?.items;
+  if (!identityName || !items) return null;
 
-  const summary = data.baseline_summary ?? {};
-  const meta = baselineMeta(summary.status);
   const route = genomeRoute(sourceType, identityName);
-  const open = data.headline_metrics?.open_anomalies;
+  const established = items.find((item) => item.type === 'baseline_established');
+  const learning = items.find((item) => item.type === 'learning_started');
+  const open = items
+    .filter((item) => item.type === 'anomaly' && String(item.status).toLowerCase() === 'open')
+    .reduce((sum, item) => sum + (Number(/^(\d+)/.exec(item.title ?? '')?.[1]) || 1), 0);
 
-  if (meta.key === 'active') {
+  if (established) {
     return (
       <Strip>
         <Tag tone="low" size="sm" dot>
           Baseline established
         </Tag>
         <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
-          NHI Genome knows this identity's normal behaviour and raises an anomaly when it departs from it.
+          NHI Genome has known this identity’s normal behaviour since{' '}
+          <span title={formatDateTime(established.occurred_at)}>{formatRelative(established.occurred_at)}</span> and flags
+          departures from it.
           {open ? (
-            <span className="font-medium text-high"> {formatNumber(open)} open {open === 1 ? 'anomaly' : 'anomalies'} to review.</span>
+            <span className="font-medium text-high"> {formatNumber(open)} open {open === 1 ? 'anomaly' : 'anomalies'}.</span>
           ) : (
             ' Nothing is open.'
           )}
         </span>
-        <Button variant="secondary" size="sm" as={Link} to={open ? `${route}?tab=anomalies` : route} icon={Dna}>
-          {open ? 'Review anomalies' : 'Open in NHI Genome'}
+        <Button variant="secondary" size="sm" as={Link} to={open ? `${route}?tab=timeline` : route} icon={Dna}>
+          {open ? 'See the anomalies' : 'Open in NHI Genome'}
         </Button>
       </Strip>
     );
   }
 
-  const pct = learningPercent(summary.built_days, summary.required_days);
-  const remaining = Number(summary.required_days) - Number(summary.built_days);
-  const ready = Number.isFinite(remaining) && remaining > 0 ? remaining : null;
   return (
     <Strip>
-      <Tag tone="medium" size="sm" dot>
-        {meta.key === 'none' ? 'Not learning yet' : 'Learning its baseline'}
+      <Tag tone={learning ? 'medium' : 'neutral'} size="sm" dot>
+        {learning ? 'Learning its baseline' : 'Not learning yet'}
       </Tag>
       <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
-        <span className="block">
-          {meta.key === 'none'
-            ? 'NHI Genome has not started learning this identity’s normal behaviour - it starts once the identity makes calls. No anomaly can be raised until then.'
-            : `NHI Genome is learning this identity’s normal behaviour: ${formatNumber(summary.built_days)} of ${formatNumber(summary.required_days)} days.${ready ? ` Anomalies can be raised in about ${formatNumber(ready)} ${ready === 1 ? 'day' : 'days'}.` : ''}`}
-        </span>
-        {pct !== null && <Meter value={pct} tone="medium" height={4} className="mt-2 max-w-xs" label="Learning progress" />}
+        {learning ? (
+          <>
+            NHI Genome started learning this identity’s normal behaviour{' '}
+            <span title={formatDateTime(learning.occurred_at)}>{formatRelative(learning.occurred_at)}</span>. Nothing is
+            flagged until the baseline is established.
+          </>
+        ) : (
+          'NHI Genome reads this identity’s calls; its baseline starts once the behaviour pipeline has learned from them. You can already see its fingerprint and calls.'
+        )}
       </span>
       <Button variant="ghost" size="sm" as={Link} to={route} icon={Dna}>
-        Details
+        Open in NHI Genome
       </Button>
     </Strip>
   );

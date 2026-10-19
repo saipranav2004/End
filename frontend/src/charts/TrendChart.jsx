@@ -1,6 +1,8 @@
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -12,7 +14,10 @@ import { TooltipCard } from './ChartTooltip';
 import { cn } from '../ui/cn';
 
 /**
- * One measure over the sequence of completed scans.
+ * One measure over time. `variant="area"` (default) for a level that moves
+ * between points (a trend); `variant="bar"` for counts per period (calls per
+ * day or hour), where every bucket is its own total and a smoothed line
+ * would invent values between them.
  *
  * Deliberately one series per chart: identities, events and credentials differ by
  * orders of magnitude, and a shared axis would flatten two of them while a
@@ -31,14 +36,17 @@ export function TrendChart({
   valueFormatter = formatNumber,
   /** Y-axis range; recharts' automatic range when omitted. */
   yDomain,
+  variant = 'area',
   className,
 }) {
   const gradientId = `trend-${dataKey}`;
+  const bars = variant === 'bar';
+  const Chart = bars ? BarChart : AreaChart;
 
   return (
     <div className={cn('w-full', className)} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} syncId={syncId} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+        <Chart data={data} syncId={syncId} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity={0.24} />
@@ -67,7 +75,7 @@ export function TrendChart({
             tickFormatter={(value) => formatNumber(value)}
           />
           <Tooltip
-            cursor={{ stroke: 'var(--t-chart-axis)', strokeWidth: 1, strokeDasharray: '3 3' }}
+            cursor={bars ? { fill: 'var(--t-chart-grid)', opacity: 0.5 } : { stroke: 'var(--t-chart-axis)', strokeWidth: 1, strokeDasharray: '3 3' }}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const point = payload[0].payload;
@@ -80,18 +88,22 @@ export function TrendChart({
               );
             }}
           />
-          <Area
-            type="monotone"
-            dataKey={dataKey}
-            stroke={color}
-            strokeWidth={2}
-            fill={`url(#${gradientId})`}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--t-surface)' }}
-            isAnimationActive
-            animationDuration={760}
-          />
-        </AreaChart>
+          {bars ? (
+            <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive animationDuration={600} />
+          ) : (
+            <Area
+              type="monotone"
+              dataKey={dataKey}
+              stroke={color}
+              strokeWidth={2}
+              fill={`url(#${gradientId})`}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--t-surface)' }}
+              isAnimationActive
+              animationDuration={760}
+            />
+          )}
+        </Chart>
       </ResponsiveContainer>
     </div>
   );

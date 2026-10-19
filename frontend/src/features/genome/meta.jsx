@@ -1,10 +1,8 @@
 import { useCallback, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { severityMeta } from '../../lib/domain';
 import { formatNumber, titleCaseEnum } from '../../lib/format';
 import { IconButton } from '../../ui/Button';
 import { Select } from '../../ui/Field';
-import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 
 /* ── Vocabulary ───────────────────────────────────────────────────────────── */
@@ -46,27 +44,6 @@ export function sourceTypeLabel(value) {
   return SOURCE_TYPES[String(value).toUpperCase()] ?? titleCaseEnum(value);
 }
 
-/**
- * Baseline state. The service stores `active` once the learning period is
- * complete and `inactive` while it is still learning; no row at all means
- * learning has not started for this identity.
- */
-export function baselineMeta(status) {
-  const key = String(status ?? '').toLowerCase();
-  if (key === 'active') return { key, label: 'Established', tone: 'low' };
-  if (key === 'inactive') return { key, label: 'Learning', tone: 'medium' };
-  if (!key) return { key: 'none', label: 'No baseline', tone: 'neutral' };
-  return { key, label: titleCaseEnum(key), tone: 'neutral' };
-}
-
-/** Learning progress as a 0-100 share, or null when either side is unknown. */
-export function learningPercent(built, required) {
-  const b = Number(built);
-  const r = Number(required);
-  if (built === null || built === undefined || !Number.isFinite(b) || !Number.isFinite(r) || r <= 0) return null;
-  return Math.max(0, Math.min(100, (b / r) * 100));
-}
-
 /** Readable name for a fingerprint / anomaly dimension key. */
 const DIMENSIONS = {
   api_operation: 'API operation',
@@ -79,7 +56,7 @@ const DIMENSIONS = {
   source_network_class: 'Source network',
   user_agent_family: 'User agent',
   hour_of_week_utc: 'Hour of week (UTC)',
-  timing: 'Timing',
+  timing: 'Hour of day (UTC)',
   cluster_name: 'ECS cluster',
   launch_type: 'Launch type',
   task_definition_family: 'Task definition',
@@ -92,12 +69,16 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 /**
  * A fingerprint value as people read it. `hour_of_week_utc` is an hour index
  * from Monday 00:00 UTC (0-167, the weekday convention the schedule also uses);
+ * `timing` is the hour of day (0-23 UTC);
  * anything else is shown as recorded.
  */
 export function dimensionValueLabel(dimension, value) {
   if (dimension === 'hour_of_week_utc' && /^\d{1,3}$/.test(String(value))) {
     const n = Number(value);
     if (n < 168) return `${WEEKDAYS[Math.floor(n / 24)]} ${String(n % 24).padStart(2, '0')}:00`;
+  }
+  if (dimension === 'timing' && /^\d{1,2}$/.test(String(value)) && Number(value) < 24) {
+    return `${String(value).padStart(2, '0')}:00 UTC`;
   }
   return value === '' || value === null || value === undefined ? '(empty)' : String(value);
 }
@@ -130,26 +111,6 @@ export function anomalyStatusMeta(status) {
   if (ANOMALY_STATUSES[key]) return ANOMALY_STATUSES[key];
   if (!key) return { label: 'Unknown', tone: 'neutral' };
   return { label: titleCaseEnum(key), tone: 'neutral' };
-}
-
-/** Score + severity, or a quiet "not scored" when the identity has no snapshot. */
-export function RiskCell({ score, severity, compact = false }) {
-  const meta = severityMeta(severity);
-  if (score === null || score === undefined) {
-    return <span className="text-[12px] text-ink-3">Not scored</span>;
-  }
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span data-numeric="" className="w-7 shrink-0 text-[13px] font-semibold text-ink">
-        {formatNumber(score)}
-      </span>
-      {severity && !compact && (
-        <Tag tone={meta.tone} size="sm" dot>
-          {meta.label}
-        </Tag>
-      )}
-    </span>
-  );
 }
 
 /** A number the service may not have measured: null reads as "not measured". */
@@ -227,16 +188,6 @@ export function CursorPager({ page, shown, pageSize, hasNext, onPrev, onNext, on
           <IconButton icon={ChevronRight} label="Next page" variant="secondary" disabled={!hasNext} onClick={onNext} />
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Label/value row used by the genome panels and the quick view. */
-export function Row({ label, children }) {
-  return (
-    <div className="grid gap-0.5 border-b border-line py-2 last:border-0 @min-[26rem]:grid-cols-[minmax(0,160px)_minmax(0,1fr)] @min-[26rem]:gap-4">
-      <dt className="text-[11.5px] text-ink-3">{label}</dt>
-      <dd className="min-w-0 text-[12.5px] leading-relaxed break-words text-ink-2">{children}</dd>
     </div>
   );
 }

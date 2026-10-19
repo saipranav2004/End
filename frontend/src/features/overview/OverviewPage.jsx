@@ -712,23 +712,19 @@ function BehaviourPanel({ query, wide }) {
     );
   }
 
-  const { cards, anomaliesByDay, mostAnomalous } = data;
-  const nothingMeasured =
-    cards.established === null && cards.learning === null && cards.openAnomalies === null && mostAnomalous.length === 0;
-
+  const { cards, recentlyBaselined } = data;
   const stats = [
-    { label: 'Watched', value: cards.watched, hint: cards.windowHours ? `seen in ${cards.windowHours}h` : null },
-    { label: 'Established', value: cards.established },
+    { label: 'Watched', value: cards.watched },
+    { label: 'Established', value: cards.established, tone: 'text-low' },
     { label: 'Still learning', value: cards.learning },
-    { label: 'Open anomalies', value: cards.openAnomalies, tone: cards.openAnomalies > 0 ? 'text-high' : null },
   ];
-
-  const trend = anomaliesByDay.map((point) => ({ label: formatDate(point.day), anomalies: point.count }));
+  const coverage =
+    cards.watched > 0 && cards.established !== null ? Math.round((cards.established / cards.watched) * 100) : null;
 
   return (
     <>
       {header}
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 rounded-[var(--radius-control)] border border-line bg-inset px-3.5 py-3 @min-[34rem]:grid-cols-4">
+      <dl className="mt-4 grid grid-cols-3 gap-x-4 gap-y-3 rounded-[var(--radius-control)] border border-line bg-inset px-3.5 py-3">
         {stats.map((stat) => (
           <div key={stat.label} className="min-w-0">
             <dt className="truncate text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">{stat.label}</dt>
@@ -740,70 +736,52 @@ function BehaviourPanel({ query, wide }) {
                   {formatNumber(stat.value)}
                 </span>
               )}
-              {stat.hint && stat.value !== null && <span className="ml-1.5 text-[11px] text-ink-3">{stat.hint}</span>}
             </dd>
           </div>
         ))}
       </dl>
-
-      {nothingMeasured ? (
-        <EmptyState
-          compact
-          icon={ScanEye}
-          title="No baselines to report yet"
-          description="Baselines and anomalies appear once the behaviour service has enough activity history for the identities it watches."
-        />
-      ) : (
-        <div className={cn('mt-4 grid gap-5', wide && '@min-[52rem]:grid-cols-2')}>
-          {trend.length > 1 && (
-            <div>
-              <p className="text-[12px] font-semibold text-ink-2">Anomalies per day</p>
-              <TrendChart data={trend} dataKey="anomalies" label="Anomalies" color="var(--t-series-5)" height={120} />
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="text-[12px] font-semibold text-ink-2">Most anomalous identities</p>
-            {mostAnomalous.length === 0 ? (
-              <p className="mt-2 text-[12.5px] text-ink-3">No identity departed from its baseline in this window.</p>
-            ) : (
-              <ul className="mt-1 flex flex-col divide-y divide-line">
-                {mostAnomalous.slice(0, 5).map((row) => {
-                  const severity = row.severity ? severityMeta(row.severity) : null;
-                  return (
-                    <li key={`${row.sourceType}:${row.identityName}`}>
-                      <Link
-                        to={genomeRoute(row.sourceType, row.identityName)}
-                        className="group flex items-center gap-3 py-2.5"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12.5px] font-medium text-ink group-hover:text-brand" title={row.identityName}>
-                            {row.displayName}
-                          </span>
-                          <span className="block truncate text-[11px] text-ink-3">
-                            {sourceTypeLabel(row.sourceType)}
-                            {row.accountId ? ` · ${row.accountId}` : ''}
-                            {row.anomalousEvents
-                              ? ` · ${formatNumber(row.anomalousEvents)} anomalous call${row.anomalousEvents === 1 ? '' : 's'}`
-                              : ''}
-                          </span>
-                        </span>
-                        {severity && (
-                          <Tag tone={severity.tone} size="sm" dot>
-                            {severity.label}
-                          </Tag>
-                        )}
-                        <span data-numeric="" className="w-10 shrink-0 text-right font-display text-[15px] font-bold text-ink">
-                          {row.riskScore === null ? '-' : Math.round(row.riskScore)}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+      {coverage !== null && (
+        <div className="mt-3 flex items-center gap-3">
+          <Meter value={coverage} tone="low" height={6} className="min-w-0 flex-1" label="Baseline coverage" />
+          <span data-numeric="" className="shrink-0 text-[12px] text-ink-3">
+            {coverage}% baselined
+          </span>
         </div>
       )}
+
+      <div className={cn('mt-4 min-w-0', wide && '@min-[52rem]:max-w-none')}>
+        <p className="text-[12px] font-semibold text-ink-2">Recently baselined</p>
+        {recentlyBaselined.length === 0 ? (
+          <EmptyState
+            compact
+            icon={ScanEye}
+            title="No baseline established yet"
+            description="Each workload identity learns its normal behaviour first. Baselines appear here as learning completes."
+          />
+        ) : (
+          <ul className="mt-1 flex flex-col divide-y divide-line">
+            {recentlyBaselined.slice(0, 5).map((row) => (
+              <li key={`${row.sourceType}:${row.identityName}:${row.occurredAt}`}>
+                <Link to={genomeRoute(row.sourceType, row.identityName)} className="group flex items-center gap-3 py-2.5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] font-medium text-ink group-hover:text-brand" title={row.identityName}>
+                      {row.displayName}
+                    </span>
+                    <span className="block truncate text-[11px] text-ink-3">
+                      {sourceTypeLabel(row.sourceType)}
+                      {row.region ? ` · ${row.region}` : ''}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px] text-ink-3">{formatRelative(row.occurredAt)}</span>
+                  <Tag tone={row.version ? 'info' : 'low'} size="sm">
+                    {row.version ? `Version ${row.version}` : 'Established'}
+                  </Tag>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </>
   );
 }

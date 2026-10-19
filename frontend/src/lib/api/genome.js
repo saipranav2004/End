@@ -1,22 +1,20 @@
 import client from './client';
 import { ApiError, params, unwrapGenome, unwrapMain } from './http';
-import { canonicalGenomeName } from '../identityLinks';
+import { canonicalGenomeName, genomeSourceType } from '../identityLinks';
 
 /*
- * NHI Genome (behaviour monitoring) API, served by the NHI backend under
- * `/api/v1/genome/*` (its /identities is a different list from the discovery
- * API's /api/v1/identities). The one write is a reviewer's verdict on an
- * anomaly; there is no disposition, suppression or containment in this API.
+ * NHI Genome (behaviour monitoring), served by the NHI backend under
+ * `/api/v1/genome/*` from the pipeline's ClickHouse log_events (plus the
+ * baselines / baseline_versions / alerts tables for the timeline):
  *
- *   GET /dashboard/summary                       ?from &to &source_type &account_id &region
- *   GET /identities                              ?source_type &search &account_id &region &status &baseline &sort &limit &cursor
- *   GET /anomalies                               ?source_type &identity_name &search &dimension &state &review &from &to &limit &cursor
- *   POST /anomalies/{id}/feedback                { decision, approved_for_baseline, reason }
- *   GET /identities/{source_type}/{identity_name}            ?from &to
+ *   GET /dashboard/summary                                   ?from &to
+ *   GET /identities/{source_type}/{identity_name}/genome     ?from &to &limit
  *   GET .../activity                                         ?from &to &bucket &recent_limit &recent_cursor
- *   GET .../genome                                           ?from &to &limit
- *   GET .../baseline                                         ?limit
  *   GET .../timeline                                         ?limit &cursor
+ *
+ * The genome has no list of its own: the monitored fleet is the discovery
+ * inventory's workload identities (see fetchMonitoredFleet), addressed by
+ * the (source_type, identity_name) key in lib/identityLinks.js.
  *
  * Envelope { data, meta: { request_id, generated_at, next_cursor } }. Unknown
  * params are rejected, so only set values are sent. Missing monitoring data is
@@ -24,7 +22,7 @@ import { canonicalGenomeName } from '../identityLinks';
  * those as "not measured yet" rather than as zero.
  */
 const BASE = '/api/v1/genome';
-const FLEET_PAGE = 100;
+const FLEET_PAGE = 100; // the inventory list's page-size cap
 const FLEET_MAX_PAGES = 10;
 
 const HOUR = 3600 * 1000;
@@ -58,8 +56,9 @@ function list(value) {
 }
 
 /**
- * Fleet dashboard. With no window the service answers cards for the last 24
- * hours and charts for the last 14 days; with a window both use it.
+ * Fleet dashboard: identities watched, baselines established, still learning
+ * and the recently baselined feed. With no window the service answers cards
+ * for the last 24 hours; with a window it uses that.
  */
 export async function fetchGenomeSummary({ window, sourceType, accountId, region } = {}, signal) {
   const range = window && window !== '24h' ? windowRange(window) : {};
@@ -72,64 +71,34 @@ export async function fetchGenomeSummary({ window, sourceType, accountId, region
   if (!data || typeof data !== 'object' || !data.cards) throw unexpected();
   return {
     cards: data.cards,
-    departuresByDimension: list(data.departures_by_dimension),
-    anomaliesByDay: list(data.anomalies_by_day),
-    mostAnomalous: list(data.most_anomalous_identities),
     recentlyBaselined: list(data.recently_baselined),
-    chartsFrom: range.from ?? null,
     generatedAt: meta.generated_at ?? null,
   };
 }
 
-/** One page of the monitored fleet. */
-export async function fetchGenomeIdentities(
-  { sourceType, search, accountId, region, status, baseline, sort, limit, cursor } = {},
-  signal,
-) {
-  const { data, meta } = unwrapGenome(
-    await client.get(`${BASE}/identities`, {
-      params: params({
-        source_type: sourceType,
-        search,
-        account_id: accountId,
-        region,
-        status,
-        baseline,
-        sort,
-        limit,
-        cursor,
-      }),
-      signal,
-    }),
-  );
-  if (!data || !Array.isArray(data.items)) throw unexpected();
-  return { items: data.items, nextCursor: meta.next_cursor || null };
-}
-
 /**
- * The whole fleet, unfiltered, for the facet rail's options and counts. Read
- * in pages of 100 up to 1,000 identities; `complete` is false beyond that, and
- * the rail then stops claiming counts it does not have.
+ * The monitored fleet: every discovery identity of a type the genome watches,
+ * with its genome key. Read in pages of 100 up to 1,000 identities;
+ * `complete` is false beyond that. Rows keep the inventory fields (id, name,
+ * arn, identity_type, account_id, region, status, last_activity_at);
+ * `activityAvailable` is false when CloudTrail could not be read, so a
+ * missing last_activity_at is unknown rather than "never".
  */
-export async function fetchGenomeFleetIndex({ baseline } = {}, signal) {
+export async function fetchMonitoredFleet(signal) {
   const items = [];
-  let cursor;
-  for (let page = 0; page < FLEET_MAX_PAGES; page += 1) {
-    const result = await fetchGenomeIdentities({ baseline, sort: 'name_asc', limit: FLEET_PAGE, cursor }, signal);
-    items.push(...result.items);
-    if (!result.nextCursor) return { items, complete: true };
-    cursor = result.nextCursor;
+  let activityAvailable = true;
+  for (let page = 1; page <= FLEET_MAX_PAGES; page += 1) {
+    const data = unwrapMain(
+      await client.get('/api/v1/identities', { params: { page, page_size: FLEET_PAGE, sort_by: 'name', sort_order: 'asc' }, signal }),
+    );
+    if (data?.activity_data_available === false) activityAvailable = false;
+    for (const row of list(data?.data)) {
+      const sourceType = genomeSourceType(row.identity_type);
+      if (sourceType && row.arn) items.push({ ...row, sourceType, identityName: canonicalGenomeName(row.identity_type, row.arn) });
+    }
+    if (page >= (Number(data?.pagination?.total_pages) || 0)) return { items, complete: true, activityAvailable };
   }
-  return { items, complete: false };
-}
-
-/** Header record: identity, risk, baseline summary, headline metrics. */
-export async function fetchGenomeIdentity(sourceType, identityName, { window } = {}, signal) {
-  const { data } = unwrapGenome(
-    await client.get(identityPath(sourceType, identityName), { params: params(windowRange(window)), signal }),
-  );
-  if (!data || typeof data !== 'object' || !data.identity) throw unexpected();
-  return data;
+  return { items, complete: false, activityAvailable };
 }
 
 /** Call volume per bucket plus one page of recent calls. */
@@ -172,15 +141,6 @@ export async function fetchGenomeProfile(sourceType, identityName, { window, lim
   };
 }
 
-/** Baseline status, progress, dimensions and published versions. */
-export async function fetchGenomeBaseline(sourceType, identityName, { limit } = {}, signal) {
-  const { data } = unwrapGenome(
-    await client.get(identityPath(sourceType, identityName, '/baseline'), { params: params({ limit }), signal }),
-  );
-  if (!data || typeof data !== 'object') throw unexpected();
-  return { ...data, dimensions: list(data.dimensions), versions: list(data.versions) };
-}
-
 /** One page of the identity's history, newest first. */
 export async function fetchGenomeTimeline(sourceType, identityName, { limit, cursor } = {}, signal) {
   const { data, meta } = unwrapGenome(
@@ -210,56 +170,4 @@ export async function resolveDiscoveryIdentity(identityName, signal) {
     rows.find((row) => canonicalGenomeName(row.identity_type, row.arn) === arn) ??
     null
   );
-}
-
-/**
- * One page of anomalies, newest first, with the review counts of every
- * anomaly matching the filters (review aside). `review` is 'pending',
- * 'reviewed' or empty for both; `identity` narrows to one identity.
- */
-export async function fetchAnomalies({ review, identity, search, limit = 25, cursor } = {}, signal) {
-  const { data, meta } = unwrapGenome(
-    await client.get(`${BASE}/anomalies`, {
-      params: params({
-        review,
-        source_type: identity?.sourceType,
-        identity_name: identity?.identityName,
-        search,
-        limit,
-        cursor,
-      }),
-      signal,
-    }),
-  );
-  if (!data || !Array.isArray(data.items) || !data.counts) throw unexpected();
-  return {
-    items: data.items,
-    counts: data.counts,
-    feedbackAvailable: data.feedback_available !== false,
-    nextCursor: meta.next_cursor || null,
-  };
-}
-
-/** Reviewer verdicts, as stored and as the console names them. */
-export const ANOMALY_VERDICTS = {
-  malicious: { label: 'Real anomaly', tone: 'critical' },
-  legitimate: { label: 'False positive', tone: 'low' },
-  unknown: { label: 'Not sure', tone: 'neutral' },
-};
-
-/**
- * Records a reviewer's verdict on one anomaly. It does not close the anomaly
- * or change the baseline; `approvedForBaseline` asks the pipeline to treat
- * the behaviour as normal at its next baseline update.
- */
-export async function submitAnomalyFeedback(alertId, { decision, approvedForBaseline = false, reason } = {}) {
-  const { data } = unwrapGenome(
-    await client.post(`${BASE}/anomalies/${encodeURIComponent(alertId)}/feedback`, {
-      decision,
-      approved_for_baseline: approvedForBaseline,
-      ...(reason?.trim() ? { reason: reason.trim() } : {}),
-    }),
-  );
-  if (!data?.feedback) throw unexpected();
-  return data.feedback;
 }
