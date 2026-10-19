@@ -1,0 +1,52 @@
+# Everything the image does not need, kept out of the build context.
+#
+# The context is what gets shipped to the daemon before the first instruction
+# runs, so anything listed here is both faster to build and impossible to leak
+# into a layer by accident. `.env` is the one that matters: local
+# configuration must never enter an image.
+
+# Dependencies - reinstalled inside the build stage from the lockfile, so the
+# host's copy (which may carry platform-specific binaries) is not wanted.
+node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output - produced inside the image.
+dist
+build
+
+# Secrets and local configuration. `.env.example` is deliberately NOT ignored:
+# it documents the variables without holding any of their values.
+.env
+.env.*
+!.env.example
+!.env.integrations-preview
+*.local
+
+# Version control and CI metadata.
+.git
+.gitignore
+.github
+.gitlab-ci.yml
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# Tests, docs and design material - none of it is served by the container.
+docs
+coverage
+playwright-report
+test-results
+*.md
+!README.md
+
+# Docker's own files: changing the compose file should not invalidate the
+# dependency layer.
+Dockerfile
+.dockerignore
+docker-compose*.yml

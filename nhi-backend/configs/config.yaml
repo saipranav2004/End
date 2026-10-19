@@ -1,0 +1,41 @@
+server:
+  host: 0.0.0.0
+  port: 8085
+
+# Single PostgreSQL database (nhi_db). The global schema (nhi_global) holds
+# nhi_user + tenant (tenant_id -> tenant schema name). Each tenant's data lives
+# in its own schema of this same database; the schema name comes from
+# nhi_global.tenant.db_name and travels in the signed JWT as db_name.
+# Port 5432 and sslmode=require are fixed in code (see GetConnectionString).
+database:
+  host: "psql-database-1.ciojqma6hzc8.ap-south-1.rds.amazonaws.com"
+  database_name: nhi_db
+  user: postgres
+  password: ""          # or NHI_DB_PASSWORD
+  schema: nhi_global    # global/auth schema (NHI_GLOBAL_SCHEMA)
+
+# secret coming from .env
+jwt:
+  secret: ""
+  access_ttl_minutes: 60   # access token: 1 hour
+  refresh_ttl_hours: 168   # refresh token: 7 days
+
+cors:
+  allowed_origins:
+    - http://localhost:3000
+    - http://localhost:5173
+
+# Connect AWS Account + exposed-credential enablement (Integrations page).
+# No AWS keys here: the SDK default chain supplies the identity (ECS task role /
+# EC2 instance profile running as NHIPlatformAssumer in production). Per-tenant
+# values (our account, External ID, event bus, allowed regions) live in
+# nhi_global.tenants. Every key has an NHI_AWS_* override (see .env.example).
+aws_integration:
+  assume_assumer_role: false          # true locally, when AWS_PROFILE is not the assumer role
+  assumer_role_name: NHIPlatformAssumer
+  collector_role_name: NHIPlatformCollector
+  forward_rule_name: nhi-forward-events
+  github_secret_prefix: nhi/github     # customers' GitHub token secret name must start with this
+  github_api_url: https://api.github.com
+  event_log_group: ""                 # only when ClickHouse is not configured
+  event_lookback_hours: 24

@@ -1,0 +1,9 @@
+{
+  "plugins": ["react", "import"],
+  "env": { "browser": true, "es2024": true },
+  "rules": {
+    "no-unused-vars": "error",
+    "no-undef": "error",
+    "no-console": ["warn", { "allow": ["warn", "error"] }]
+  }
+}

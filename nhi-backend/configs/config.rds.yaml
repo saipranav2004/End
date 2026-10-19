@@ -1,0 +1,47 @@
+# AWS RDS PostgreSQL — copy this over configs/config.yaml and fill in the blanks,
+# or run with NHI_CONFIG_FILE=configs/config.rds.yaml
+#
+# The important bit: RDS listens on 5432, NOT 5433. A wrong port shows up as
+# "dial error: timeout", not "connection refused", because the security group
+# silently drops the packet. See scripts/check_rds.sh
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+# ── Single database (nhi_db) ───────────────────────────────────────────────
+# nhi_global holds nhi_user + tenant (tenant_id -> tenant schema name). Each
+# tenant's data lives in its own schema of this same database; the schema name
+# travels in the signed JWT as db_name.
+database:
+  host: "psql-database-1.ciojqma6hzc8.ap-south-1.rds.amazonaws.com"
+  database_name: nhi_db
+  user: postgres
+  password: ""   # prefer the NHI_DB_PASSWORD env var; do not commit secrets
+  schema: nhi_global
+
+jwt:
+  secret: ""                  # REQUIRED, >= 32 chars. Or set NHI_JWT_SECRET env var.
+  access_ttl_minutes: 60   # access token: 1 hour
+  refresh_ttl_hours: 168   # refresh token: 7 days
+
+cors:
+  allowed_origins:
+    - http://localhost:3000
+    - http://localhost:5173
+
+
+# Connect AWS Account + exposed-credential enablement (Integrations page).
+# No AWS keys here: the SDK default chain supplies the identity (ECS task role /
+# EC2 instance profile running as NHIPlatformAssumer in production). Per-tenant
+# values (our account, External ID, event bus, allowed regions) live in
+# nhi_global.tenants. Every key has an NHI_AWS_* override (see .env.example).
+aws_integration:
+  assume_assumer_role: false          # true locally, when AWS_PROFILE is not the assumer role
+  assumer_role_name: NHIPlatformAssumer
+  collector_role_name: NHIPlatformCollector
+  forward_rule_name: nhi-forward-events
+  github_secret_prefix: nhi/github     # customers' GitHub token secret name must start with this
+  github_api_url: https://api.github.com
+  event_log_group: ""                 # only when ClickHouse is not configured
+  event_lookback_hours: 24

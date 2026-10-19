@@ -1,0 +1,3948 @@
+{
+  "info": {
+    "name": "NHI Backend API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "All routes from internal/routes/routes.go: discovery under /api/v1, AWS integrations under /api/v1/integrations/aws, ISPM posture under /api/v1/ispm, NHI Genome under /api/v1/genome. Every protected route is also served under /api/... (without /v1; /me is /api/auth/me). Run Login first; it stores access_token/refresh_token. Optional query params are disabled by default; enable as needed. Unknown query params return 400 INVALID_QUERY_PARAM."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8085"
+    },
+    {
+      "key": "email",
+      "value": "user@example.com"
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "identity_id",
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "key": "credential_id",
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "key": "client_id",
+      "value": ""
+    },
+    {
+      "key": "repository",
+      "value": ""
+    },
+    {
+      "key": "aws_account_id",
+      "value": "111111111111"
+    },
+    {
+      "key": "posture_identity_id",
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "key": "rule_id",
+      "value": "NHI-LP-001"
+    },
+    {
+      "key": "finding_id",
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "key": "genome_source_type",
+      "value": "LAMBDA"
+    },
+    {
+      "key": "genome_identity_name",
+      "value": "arn%3Aaws%3Alambda%3Aus-east-1%3A123456789012%3Afunction%3Aexample"
+    },
+    {
+      "key": "genome_alert_id",
+      "value": ""
+    },
+    {
+      "key": "scan_id",
+      "value": "latest"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Auth",
+      "description": "",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "No auth. Returns {status, service}.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Login (v1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "login"
+              ]
+            },
+            "description": "Body: email*, password*. 401 AUTHENTICATION_FAILED on bad credentials. Stores tokens in collection variables.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j && j.data) {",
+                  "  pm.collectionVariables.set('access_token', j.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', j.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (/api/auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Alias of /api/v1/login.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j && j.data) {",
+                  "  pm.collectionVariables.set('access_token', j.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', j.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (v1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "refresh"
+              ]
+            },
+            "description": "Body: refresh_token*. Single-use; rotated on every call.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j && j.data) {",
+                  "  pm.collectionVariables.set('access_token', j.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', j.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (/api/auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Alias of /api/v1/refresh.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j && j.data) {",
+                  "  pm.collectionVariables.set('access_token', j.data.token);",
+                  "  pm.collectionVariables.set('refresh_token', j.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout (v1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "logout"
+              ]
+            },
+            "description": "Body: refresh_token*.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Logout (/api/auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Alias of /api/v1/logout.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Me (v1)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Returns {user_id, tenant_id, db_name, role}."
+          }
+        },
+        {
+          "name": "Me (/api/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Alias of /api/v1/me."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filters, Settings & Dashboard",
+      "description": "",
+      "item": [
+        {
+          "name": "Get Filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/filters",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "filters"
+              ]
+            },
+            "description": "No query params."
+          }
+        },
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/settings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "settings"
+              ]
+            },
+            "description": "No query params."
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/settings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "settings"
+              ]
+            },
+            "description": "selected_account_ids: <=200, each ^\\d{12}$. selected_regions: <=200, 'global' or AWS region. Duplicates removed. 400 INVALID_SETTINGS if not tenant's own.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"selected_account_ids\": [\n    \"123456789012\"\n  ],\n  \"selected_regions\": [\n    \"us-east-1\",\n    \"global\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Dashboard Overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/dashboard/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "overview"
+              ]
+            },
+            "description": "No query params."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan change tracking",
+      "item": [
+        {
+          "name": "Recent changes (dashboard overview)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/dashboard/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "overview"
+              ],
+              "query": []
+            },
+            "description": "recent_changes: the latest scan's totals and highlights; null before the first scan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const rc = j && j.data && j.data.recent_changes;",
+                  "if (rc) pm.collectionVariables.set('scan_id', rc.last_scan_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List scans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/scans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "scans"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "max 50",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest completed scans with change counts."
+          }
+        },
+        {
+          "name": "Scan changes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/scans/{{scan_id}}/changes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "scans",
+                "{{scan_id}}",
+                "changes"
+              ],
+              "query": [
+                {
+                  "key": "change_type",
+                  "value": "CREATED",
+                  "description": "CREATED | DELETED | MODIFIED",
+                  "disabled": true
+                },
+                {
+                  "key": "entity_type",
+                  "value": "identity",
+                  "description": "identity | credential | permission | binding | trust_edge",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "max 100",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One scan's summary and a page of its changes. scan_id may be 'latest'. 404 SCAN_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Identity changes tab",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=changes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "changes",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Every change of one identity (max 50) with CloudTrail evidence on creations and deletions."
+          }
+        },
+        {
+          "name": "Credential changes tab",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=changes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "changes",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Every change of one credential (max 50)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Identities",
+      "description": "",
+      "item": [
+        {
+          "name": "List Identities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities?page=1&page_size=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": false
+                },
+                {
+                  "key": "page_size",
+                  "value": "25",
+                  "description": "Default 25, clamped to 100",
+                  "disabled": false
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "free text",
+                  "disabled": true
+                },
+                {
+                  "key": "identity_type",
+                  "value": "iam_role,lambda_function",
+                  "description": "CSV: ec2_instance, lambda_function, ecs_task, eks_pod, batch_job, iam_user, iam_role, rds_instance, s3_bucket, ebs_volume, eni, vpc, subnet, security_group, emr_cluster, sagemaker_notebook, glue_job, step_function, api_gateway, cloudformation_stack, codebuild_project, codepipeline, ecs_service, eks_cluster, elasticache_cluster, redshift_cluster, dynamodb_table, kinesis_stream, sqs_queue, sns_topic, cloudfront_distribution",
+                  "disabled": true
+                },
+                {
+                  "key": "functional_class",
+                  "value": "service",
+                  "description": "CSV: service, application, infrastructure, data, security, compute, storage, network",
+                  "disabled": true
+                },
+                {
+                  "key": "environment",
+                  "value": "production",
+                  "description": "CSV: production, staging, development, testing, sandbox, prod, dev, qa, uat",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "CSV: active, inactive, stopped, terminated, running, pending, deleted, available, creating, failed",
+                  "disabled": true
+                },
+                {
+                  "key": "owner",
+                  "value": "",
+                  "description": "free text",
+                  "disabled": true
+                },
+                {
+                  "key": "vpc_id",
+                  "value": "",
+                  "description": "free text",
+                  "disabled": true
+                },
+                {
+                  "key": "is_publicly_accessible",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                },
+                {
+                  "key": "min_idle_days",
+                  "value": "30",
+                  "description": "int",
+                  "disabled": true
+                },
+                {
+                  "key": "sort_by",
+                  "value": "last_activity_at",
+                  "description": "name, arn, identity_type, functional_class, account_id, region, environment, owner, status, last_activity_at (default), created_at_aws, age_days, idle_days, bound_credentials_count, permission_utilization_pct",
+                  "disabled": true
+                },
+                {
+                  "key": "sort_order",
+                  "value": "desc",
+                  "description": "asc | desc (default)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Identity Detail - overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "overview",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Detail - permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=permissions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "permissions",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "text filter",
+                  "disabled": true
+                },
+                {
+                  "key": "used_only",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Detail - activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=activity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "activity",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "90d",
+                  "description": "Integer days with optional 'd' (1-36500), 'all', or 'custom'. Default 90d.",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "YYYY-MM-DD or RFC3339. Required with time_range=custom, forbidden otherwise.",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-03-31",
+                  "description": "Same format; end is clamped to now.",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "text filter",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "50",
+                  "description": "1-100 (rejected outside range). page*page_size <= 1000. Default 50.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Detail - relationships",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=relationships",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "relationships",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                },
+                {
+                  "key": "depth",
+                  "value": "1",
+                  "description": "1-3, default 1",
+                  "disabled": true
+                },
+                {
+                  "key": "edge_type",
+                  "value": "assume_role",
+                  "description": "One of: assume_role, bound_to, accesses, trusts, contains, manages, attached_to, uses, service_trust, cross_account, federated_oidc, federated_saml, created_by",
+                  "disabled": true
+                },
+                {
+                  "key": "time_range",
+                  "value": "90d",
+                  "description": "Integer days with optional 'd' (1-36500), 'all', or 'custom'. Default 90d.",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "YYYY-MM-DD or RFC3339. Required with time_range=custom, forbidden otherwise.",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-03-31",
+                  "description": "Same format; end is clamped to now.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Detail - credentials",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=credentials",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "credentials",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Detail - raw",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}?tab=raw",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+          }
+        },
+        {
+          "name": "Identity Events - timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=timeline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "timeline",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=detail&event_id=REPLACE_ME",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "detail",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "event_id",
+                  "value": "REPLACE_ME",
+                  "description": "Required when section=detail. ^[A-Za-z0-9-]{1,64}$. 404 EVENT_NOT_FOUND if absent.",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - credentials",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=credentials",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "credentials",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=resources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "resources",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - heatmap",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=heatmap",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "heatmap",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "sessions",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - errors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=errors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "errors",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - cross_account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=cross_account",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "cross_account",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        },
+        {
+          "name": "Identity Events - ips",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/identities/{{identity_id}}/events?section=ips",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identities",
+                "{{identity_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "section",
+                  "value": "ips",
+                  "description": "timeline (default), detail, credentials, resources, heatmap, sessions, errors, cross_account, ips",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "24h",
+                  "description": "1h, 6h, 24h (default), 7d, 30d, 90d, custom",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-01-02",
+                  "description": "Required with custom",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "description": "^[A-Za-z0-9-]{1,64}$",
+                  "disabled": true
+                },
+                {
+                  "key": "action",
+                  "value": "GetObject",
+                  "description": "^[A-Za-z0-9_.-]{1,128}$",
+                  "disabled": true
+                },
+                {
+                  "key": "result",
+                  "value": "all",
+                  "description": "success | error | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "read_write",
+                  "value": "all",
+                  "description": "read | write | all (default)",
+                  "disabled": true
+                },
+                {
+                  "key": "resource",
+                  "value": "",
+                  "description": "max 256 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "credential",
+                  "value": "",
+                  "description": "max 2048 bytes",
+                  "disabled": true
+                },
+                {
+                  "key": "source_ip",
+                  "value": "",
+                  "description": "valid IP",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "100",
+                  "description": "1-500, default 100; page*page_size <= 100000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credentials",
+      "description": "",
+      "item": [
+        {
+          "name": "List Credentials",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials?page=1&page_size=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": false
+                },
+                {
+                  "key": "page_size",
+                  "value": "25",
+                  "description": "Default 25, clamped to 100",
+                  "disabled": false
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "free text",
+                  "disabled": true
+                },
+                {
+                  "key": "credential_type",
+                  "value": "iam_role",
+                  "description": "CSV: iam_role, iam_user, access_key, certificate, api_key, secret, password, saml_provider, oidc_provider, managed_policy, inline_policy, service_account, service_principal, oauth_token, ssh_key, tls_cert, kms_key",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "CSV: active, inactive, expired, revoked, rotated, pending, deleted",
+                  "disabled": true
+                },
+                {
+                  "key": "owner_principal_arn",
+                  "value": "",
+                  "description": "free text",
+                  "disabled": true
+                },
+                {
+                  "key": "rotation_enabled",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                },
+                {
+                  "key": "rotation_overdue",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                },
+                {
+                  "key": "is_orphaned",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                },
+                {
+                  "key": "has_external_trust",
+                  "value": "true",
+                  "description": "bool",
+                  "disabled": true
+                },
+                {
+                  "key": "min_idle_days",
+                  "value": "30",
+                  "description": "int",
+                  "disabled": true
+                },
+                {
+                  "key": "max_days_until_expiry",
+                  "value": "30",
+                  "description": "int",
+                  "disabled": true
+                },
+                {
+                  "key": "sort_by",
+                  "value": "last_used_at",
+                  "description": "name, arn, credential_type, account_id, region, status, last_used_at (default), last_rotated_at, expires_at, age_days, idle_days, days_until_expiry, bound_identities_count",
+                  "disabled": true
+                },
+                {
+                  "key": "sort_order",
+                  "value": "desc",
+                  "description": "asc | desc (default)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Credential Detail - overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "overview",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        },
+        {
+          "name": "Credential Detail - trust",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=trust",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "trust",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        },
+        {
+          "name": "Credential Detail - activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=activity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "activity",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                },
+                {
+                  "key": "time_range",
+                  "value": "90d",
+                  "description": "Integer days with optional 'd' (1-36500), 'all', or 'custom'. Default 90d.",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "YYYY-MM-DD or RFC3339. Required with time_range=custom, forbidden otherwise.",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-03-31",
+                  "description": "Same format; end is clamped to now.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "int >= 1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "50",
+                  "description": "1-100 (rejected outside range). page*page_size <= 1000. Default 50.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        },
+        {
+          "name": "Credential Detail - rotation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=rotation",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "rotation",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        },
+        {
+          "name": "Credential Detail - relationships",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=relationships",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "relationships",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                },
+                {
+                  "key": "depth",
+                  "value": "1",
+                  "description": "1-3, default 1",
+                  "disabled": true
+                },
+                {
+                  "key": "edge_type",
+                  "value": "assume_role",
+                  "description": "One of: assume_role, bound_to, accesses, trusts, contains, manages, attached_to, uses, service_trust, cross_account, federated_oidc, federated_saml, created_by",
+                  "disabled": true
+                },
+                {
+                  "key": "time_range",
+                  "value": "90d",
+                  "description": "Integer days with optional 'd' (1-36500), 'all', or 'custom'. Default 90d.",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01",
+                  "description": "YYYY-MM-DD or RFC3339. Required with time_range=custom, forbidden otherwise.",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-03-31",
+                  "description": "Same format; end is clamped to now.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        },
+        {
+          "name": "Credential Detail - raw",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credentials/{{credential_id}}?tab=raw",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credentials",
+                "{{credential_id}}"
+              ],
+              "query": [
+                {
+                  "key": "tab",
+                  "value": "raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "{id} must be a UUID. 'service' and 'used_only' are NOT accepted here (400 INVALID_QUERY_PARAM)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Permission Source",
+      "description": "",
+      "item": [
+        {
+          "name": "Permission Source",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/permission-source?credential_id={{credential_id}}&event_source=s3.amazonaws.com&event_name=GetObject",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "permission-source"
+              ],
+              "query": [
+                {
+                  "key": "credential_id",
+                  "value": "{{credential_id}}",
+                  "description": "Credential UUID (required)",
+                  "disabled": false
+                },
+                {
+                  "key": "event_source",
+                  "value": "s3.amazonaws.com",
+                  "description": "Required. ^[A-Za-z0-9._:-]{1,128}$",
+                  "disabled": false
+                },
+                {
+                  "key": "event_name",
+                  "value": "GetObject",
+                  "description": "Required. Same regex.",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credential Exposure (admin)",
+      "description": "Requires JWT role=admin; otherwise 403 FORBIDDEN.",
+      "item": [
+        {
+          "name": "Findings - list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored on /flagged)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "1-500, default 200",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ">= 0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Admin role required."
+          }
+        },
+        {
+          "name": "Findings - by finding_id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings?finding_id=REPLACE_ME",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings"
+              ],
+              "query": [
+                {
+                  "key": "finding_id",
+                  "value": "REPLACE_ME",
+                  "description": "Lookup mode: must be the ONLY query param. <=1000 chars. 404 NOT_FOUND, 409 AMBIGUOUS_FINDING.",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Findings - flagged",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings/flagged",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings",
+                "flagged"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored on /flagged)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "1-500, default 200",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ">= 0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Same as list with ml_flagged forced true."
+          }
+        },
+        {
+          "name": "Findings - summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored on /flagged)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Allowlist - list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/allowlist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "allowlist"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "optional, <=200",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Allowlist - create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/allowlist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "allowlist"
+              ]
+            },
+            "description": "client_id<=200, file_path<=1000, detector<=200, redacted<=500 (all required); reason<=1000, dismissed_by<=200 optional. Upsert.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"file_path\": \"src/config.py\",\n  \"detector\": \"AWS\",\n  \"redacted\": \"AKIA****\",\n  \"reason\": \"test key\",\n  \"dismissed_by\": \"analyst@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Allowlist - delete",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/allowlist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "allowlist"
+              ]
+            },
+            "description": "JSON body; returns {ok} (false if nothing deleted).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"file_path\": \"src/config.py\",\n  \"detector\": \"AWS\",\n  \"redacted\": \"AKIA****\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Decision - save",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/decisions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "decisions"
+              ]
+            },
+            "description": "decision: real_secret | false_positive. decided_by optional (<=300).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"finding_id\": \"REPLACE_ME\",\n  \"decision\": \"false_positive\",\n  \"decided_by\": \"dashboard user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Deep scan - trigger",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/deep-scan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "deep-scan"
+              ]
+            },
+            "description": "client_id 1-200, repository 1-500. Proxied to scanner; 502/503 SCANNER_UNAVAILABLE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"repository\": \"{{repository}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Deep scan - status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/deep-scan/status?client_id={{client_id}}&repository={{repository}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "deep-scan",
+                "status"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "required, 1-200",
+                  "disabled": false
+                },
+                {
+                  "key": "repository",
+                  "value": "{{repository}}",
+                  "description": "required, 1-500",
+                  "disabled": false
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github; needed if repo exists on both (409 PLATFORM_REQUIRED)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Integrations (AWS)",
+      "item": [
+        {
+          "name": "Get AWS integration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws"
+              ]
+            },
+            "description": "Setup values, connected accounts, has_connected_account, exposure_enabled, can_manage."
+          }
+        },
+        {
+          "name": "Verify connection (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws",
+                "verify"
+              ]
+            },
+            "description": "Runs assume_role, read_access and events checks and saves the account. 429 AWS_VERIFY_IN_PROGRESS while another check runs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_arn\": \"arn:aws:iam::{{aws_account_id}}:role/NHIPlatformCollector\",\n  \"regions\": [\n    \"us-east-1\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update regions (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws/accounts/{{aws_account_id}}/regions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws",
+                "accounts",
+                "{{aws_account_id}}",
+                "regions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regions\": [\n    \"us-east-1\",\n    \"eu-west-1\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set exposed-credential scanning (admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws/accounts/{{aws_account_id}}/exposure",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws",
+                "accounts",
+                "{{aws_account_id}}",
+                "exposure"
+              ]
+            },
+            "description": "Each requested platform is checked through the account's role and switched on only if its checks pass. Send false for both to switch scanning off.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"github\": true,\n  \"codecommit\": true,\n  \"github_secret_arn\": \"arn:aws:secretsmanager:us-east-1:{{aws_account_id}}:secret:nhi/github/token-AbCdEf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Request sync (admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws/accounts/{{aws_account_id}}/sync",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws",
+                "accounts",
+                "{{aws_account_id}}",
+                "sync"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove account (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/aws/accounts/{{aws_account_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "aws",
+                "accounts",
+                "{{aws_account_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ISPM Posture",
+      "item": [
+        {
+          "name": "Posture overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/posture/overview?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "posture",
+                "overview"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Quick-win identities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/posture/quick-wins/{{rule_id}}/identities",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "posture",
+                "quick-wins",
+                "{{rule_id}}",
+                "identities"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "max 100",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "from page.next_cursor",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/posture/export?format=csv&window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "posture",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv",
+                  "disabled": false
+                },
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                },
+                {
+                  "key": "band",
+                  "value": "CRITICAL,POOR",
+                  "description": "HEALTHY | FAIR | POOR | CRITICAL",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "Critical,High",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "category",
+                  "value": "",
+                  "description": "functional_class",
+                  "disabled": true
+                },
+                {
+                  "key": "account",
+                  "value": "",
+                  "description": "account id",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "identity type",
+                  "disabled": true
+                },
+                {
+                  "key": "pillar",
+                  "value": "",
+                  "description": "weakest pillar",
+                  "disabled": true
+                },
+                {
+                  "key": "failing_check",
+                  "value": "",
+                  "description": "rule id",
+                  "disabled": true
+                },
+                {
+                  "key": "changed",
+                  "value": "down",
+                  "description": "down | up",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "name or ARN, 2+ chars",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "score",
+                  "description": "score | -score | failed | change | name",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "max 100",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity facets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/facets?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "facets"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity posture",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/posture?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "posture"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity checks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/checks?status=all",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "checks"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all",
+                  "description": "failed | passed | all",
+                  "disabled": false
+                },
+                {
+                  "key": "pillar",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/history?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity credentials",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/credentials",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "credentials"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity role use",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/role-use",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "role-use"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/activity?window=30d",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                },
+                {
+                  "key": "mutating",
+                  "value": "",
+                  "description": "true | false",
+                  "disabled": true
+                },
+                {
+                  "key": "service",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity alerts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/alerts?window=30d&status=open",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "window",
+                  "value": "30d",
+                  "description": "24h | 3d | 7d | 30d | 60d | 90d",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "open",
+                  "description": "open | closed | all",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity graph",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/identities/{{posture_identity_id}}/graph?depth=2",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "identities",
+                "{{posture_identity_id}}",
+                "graph"
+              ],
+              "query": [
+                {
+                  "key": "depth",
+                  "value": "2",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "edge_types",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_nodes",
+                  "value": "200",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/checks/{{rule_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "checks",
+                "{{rule_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update finding (analyst/admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/findings/{{finding_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "findings",
+                "{{finding_id}}"
+              ]
+            },
+            "description": "Analyst or admin. Only the finding id and the change are needed. status ACCEPTED (with accepted_reason) | SUPPRESSED (with suppressed_until) | OPEN; assigned_to; note. 409 when the finding is already resolved by the engine.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACCEPTED\",\n  \"accepted_reason\": \"Break-glass role\",\n  \"note\": \"Reviewed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "NHI Genome",
+      "item": [
+        {
+          "name": "Dashboard summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/dashboard/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "dashboard",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601, exclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "source_type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "account_id",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "region",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities"
+              ],
+              "query": [
+                {
+                  "key": "source_type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "account_id",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "region",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "baseline",
+                  "value": "established",
+                  "description": "established | learning",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "risk_desc",
+                  "description": "risk_desc | last_seen_desc | name_asc",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "max 100",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "meta.next_cursor",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601, exclusive",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "identity_name must be URL-encoded (an ARN)."
+          }
+        },
+        {
+          "name": "Identity activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}/activity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601, exclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "bucket",
+                  "value": "day",
+                  "description": "day | hour",
+                  "disabled": true
+                },
+                {
+                  "key": "recent_limit",
+                  "value": "25",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "recent_cursor",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity genome",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}/genome",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}",
+                "genome"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601, inclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601, exclusive",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity baseline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}/baseline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}",
+                "baseline"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "versions",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Identity timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}/timeline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}",
+                "timeline"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List anomalies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies"
+              ],
+              "query": [
+                {
+                  "key": "source_type",
+                  "value": "",
+                  "description": "with identity_name: one identity",
+                  "disabled": true
+                },
+                {
+                  "key": "identity_name",
+                  "value": "",
+                  "description": "URL-encoded",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "dimension",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "state",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "review",
+                  "value": "pending",
+                  "description": "pending | reviewed",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601 UTC",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601 UTC",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "max 100",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "meta.next_cursor",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "§6.1. Alerts for identities in scope, newest first, each with its triggering event and latest reviewer verdict. counts covers the same filters. feedback_available is false when the pipeline's alert_feedback table is missing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const first = j && j.data && j.data.items && j.data.items[0];",
+                  "if (first) pm.collectionVariables.set('genome_alert_id', String(first.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anomaly feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies/{{genome_alert_id}}/feedback",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies",
+                "{{genome_alert_id}}",
+                "feedback"
+              ]
+            },
+            "description": "§6.4. Analyst or admin. decision: malicious (Real anomaly) | legitimate (False positive) | unknown (Not sure). approved_for_baseline only with legitimate. reason optional, up to 1000 characters. 403 FORBIDDEN, 404 ANOMALY_NOT_FOUND, 409 ANOMALY_NOT_REVIEWABLE, 503 FEEDBACK_UNAVAILABLE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"legitimate\",\n  \"approved_for_baseline\": false,\n  \"reason\": \"Expected deploy job\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

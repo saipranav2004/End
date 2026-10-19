@@ -1,0 +1,777 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* `dark:` applies inside a dark document, except within a subtree that has
+   opted back into light. Without the exclusion, utilities like `dark:hidden`
+   would still fire inside the sign-in card, which is light in both themes. */
+@custom-variant dark (
+  &:where([data-theme='dark'], [data-theme='dark'] *):not(
+      :where([data-theme='light'], [data-theme='light'] *)
+    )
+);
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-line-strong) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--t-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--t-ink-3);
+    background-clip: content-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Large displays should show a BIGGER console, not the same console pushed
+     into a corner. The layout is built in px, so widening the container alone
+     just makes every control look further away. Scaling the root enlarges
+     type, controls and spacing together and keeps every proportion the design
+     was tuned at.
+     `zoom` on the root element is the one property that does this without
+     breaking fixed positioning - a transform would detach the fixed top bar
+     and the drawers from the viewport. The factor is kept in a variable so a
+     subtree can cancel it exactly; see `.auth-canvas`. */
+  html {
+    --app-zoom: 1;
+    zoom: var(--app-zoom);
+  }
+
+  @media (min-width: 1800px) {
+    html {
+      --app-zoom: 1.08;
+    }
+  }
+  @media (min-width: 2300px) {
+    html {
+      --app-zoom: 1.18;
+    }
+  }
+  @media (min-width: 3000px) {
+    html {
+      --app-zoom: 1.32;
+    }
+  }
+
+  /* The other direction. On a narrow desktop the content column runs out of
+     room before the window does - the sidebar takes 232px of it - and the
+     side-by-side composition used to collapse into a stack. Scaling the
+     content column down a little keeps the composition and shrinks what is
+     inside it, which is what "decrease accordingly and fit" means: two columns
+     of slightly smaller panels beat one column of full-size ones.
+     Only between `lg` and `xl`, where the problem exists. Below `lg` the layout
+     is a single column already and shrinking text there would only cost
+     legibility; from `xl` up there is room and the scale returns to 1. */
+  :root {
+    --content-zoom: 1;
+  }
+
+  @media (min-width: 1024px) and (max-width: 1279.98px) {
+    :root {
+      --content-zoom: 0.9;
+    }
+  }
+  @media (min-width: 1024px) and (max-width: 1099.98px) {
+    :root {
+      --content-zoom: 0.85;
+    }
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--t-canvas);
+    color: var(--t-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.018em;
+    margin: 0;
+  }
+
+  /* Numeric data must never jitter between renders. */
+  [data-numeric],
+  th,
+  td {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--t-focus-ring);
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--t-accent) 26%, transparent);
+  }
+}
+
+/* ==========================================================================
+   Motion - every animation below is disabled under reduced-motion.
+   ========================================================================== */
+@keyframes dna-fade-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dna-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dna-slide-left {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dna-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dna-shimmer {
+  from {
+    background-position: -140% 0;
+  }
+  to {
+    background-position: 240% 0;
+  }
+}
+
+@keyframes dna-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(240%);
+  }
+}
+
+@utility animate-rise {
+  animation: dna-fade-rise 0.42s var(--ease-out-quint) both;
+}
+@utility animate-fade {
+  animation: dna-fade 0.3s ease-out both;
+}
+@utility animate-pop {
+  animation: dna-pop 0.24s var(--ease-out-quint) both;
+}
+@utility animate-slide-left {
+  animation: dna-slide-left 0.34s var(--ease-out-quint) both;
+}
+
+/* Sign-in entrance. The page assembles in sequence instead of appearing all
+   at once: the statement in order, then the card.
+   Smoothness here comes from three things, not from a longer duration: a
+   short travel (8px, so nothing appears to fly in), an easing that settles
+   without a late snap (`--ease-soft`), and an opacity ramp that starts before
+   the movement finishes. Each part takes 0.72s and they overlap heavily at
+   110ms apart, so the page reads as one continuous settle rather than a queue
+   of separate slides. `--step` is the position in that sequence.
+   `will-change` keeps each part on its own compositor layer for the duration,
+   which is what removes the sub-pixel jitter on the text. */
+@keyframes dna-auth-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dna-auth-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.994);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-auth {
+  animation: dna-auth-in 0.72s var(--ease-soft) both;
+  animation-delay: calc(var(--step, 0) * 110ms);
+  will-change: opacity, transform;
+}
+
+@utility animate-auth-card {
+  animation: dna-auth-card-in 0.86s var(--ease-soft) both;
+  animation-delay: calc(var(--step, 0) * 110ms);
+  will-change: opacity, transform;
+}
+
+/* ── Access graph ───────────────────────────────────────────────────────────
+   The graph is drawn by React Flow, so these styles dress its nodes and edges
+   rather than positioning anything.
+
+   The palette is deliberately narrow: every node is neutral, and colour is
+   spent on two things only - what is selected, and what is already a risk.
+   The reasoning and the measurements are in `features/access/graphTheme.js`;
+   the short version is that a node-link diagram is an all-pairs form, and no
+   assignment of eight hues stays distinguishable when any two nodes can sit
+   side by side.
+
+   Motion here is all transform and opacity, so the compositor runs it and the
+   global reduced-motion rule below switches it off without JavaScript. */
+
+@keyframes dna-node-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-14px, 0, 0) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes dna-focus-halo {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--t-graph-accent),
+      0 0 0 5px color-mix(in oklab, var(--t-graph-accent) 14%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--t-graph-accent),
+      0 0 0 9px color-mix(in oklab, var(--t-graph-accent) 4%, transparent);
+  }
+}
+
+/* The travel has to be a whole number of dash periods or the pattern jumps at
+   every loop boundary. `--dash-period` is the dash plus the gap; the animation
+   moves exactly two of them. */
+@keyframes dna-edge-dash {
+  to {
+    stroke-dashoffset: calc(var(--dash-period, 18px) * -2);
+  }
+}
+
+@layer utilities {
+  /* The canvas. A dotted background reads as a surface you can move rather
+     than a picture, which is the one hint that makes people try dragging. */
+  .access-canvas {
+    background-color: var(--t-surface-inset);
+  }
+  .access-canvas .react-flow__background-pattern {
+    color: var(--t-line);
+  }
+
+  /* React Flow's own chrome, restyled to the app's tokens. */
+  .access-canvas .react-flow__controls {
+    box-shadow: var(--t-shadow-md);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+    border: 1px solid var(--t-line);
+  }
+  .access-canvas .react-flow__controls-button {
+    background: var(--t-surface);
+    border-bottom: 1px solid var(--t-line);
+    color: var(--t-ink-2);
+    width: 26px;
+    height: 26px;
+  }
+  .access-canvas .react-flow__controls-button:hover {
+    background: var(--t-surface-3);
+    color: var(--t-ink);
+  }
+  .access-canvas .react-flow__controls-button svg {
+    fill: currentColor;
+    max-width: 12px;
+    max-height: 12px;
+  }
+  .access-canvas .react-flow__minimap {
+    background: var(--t-surface);
+    border: 1px solid var(--t-line);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+  /* On a phone the minimap covers a third of a 360px canvas, and it sat on
+     exactly the column an expansion had just opened. Pan and the zoom
+     buttons do its job there. */
+  @media (max-width: 639px) {
+    .access-canvas .react-flow__minimap {
+      display: none;
+    }
+  }
+  .access-canvas .react-flow__minimap-mask {
+    fill: color-mix(in oklab, var(--t-ink) 12%, transparent);
+  }
+  /* `!important` on the background, and only there, for a cascade reason
+     rather than a stylistic one: React Flow's `base.css` arrives unlayered
+     through the JS import, and an unlayered declaration beats every layered
+     one no matter how specific. Without it the attribution keeps its
+     `rgba(255,255,255,0.5)` and renders as a pale patch on the dark canvas. */
+  /* The hop strip scrolls when the labels outrun the header, and does it
+     without a visible scrollbar - a 3px trough under a row of 10px labels
+     reads as damage rather than as an affordance. */
+  .access-shell {
+    transition: height 0.32s var(--ease-out-quint);
+  }
+
+  /* Phone: the drawn height, floored so a two-node graph still reads as a
+     canvas and capped so it never takes the whole screen. */
+  .access-shell-sized {
+    height: min(max(320px, var(--graph-content-h, 320px)), 68vh);
+  }
+
+  /* Desktop: the full frame, because the empty part is what an expansion
+     grows into. */
+  @media (min-width: 768px) {
+    .access-shell-sized {
+      height: min(var(--graph-max-h, 560px), 74vh);
+      min-height: 420px;
+    }
+  }
+
+  /* Once the panel sits beside the graph rather than under it, both columns
+     are bounded to the same height and each scrolls its own overflow.
+     Letting the graph take the row height was right when the panel was short
+     and wrong once it grew: with every section filled in, the panel ran to
+     1,200px and stretched the canvas to match, which put five nodes in a
+     screen and a half of empty grid. Bounding both is what keeps the two
+     columns aligned without either dictating the other's size. */
+  @media (min-width: 1120px) {
+    .access-shell-sized {
+      height: min(var(--graph-max-h, 560px), 74vh);
+      min-height: 420px;
+    }
+
+    /* The panel is bounded by the same rule at the same breakpoint, and
+       scrolls its own overflow. A container query was wrong here: the graph's
+       height is a viewport question, so a panel sized against its container
+       could disagree with it - and did, running to 1,036px beside a 560px
+       graph. One breakpoint, one figure, two columns that line up. */
+    /* The panel is bounded; its pane scrolls, not the panel, so the tab row
+       stays put. `height` rather than `max-height` so the flex child below the
+       pinned head has a definite space to scroll within. */
+    .access-inspector {
+      height: min(var(--graph-max-h, 560px), 74vh);
+      min-height: 420px;
+    }
+  }
+
+  .access-hop-strip {
+    scrollbar-width: none;
+  }
+  .access-hop-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .access-canvas .react-flow__attribution {
+    background: transparent !important;
+    color: var(--t-ink-3);
+    font-size: 9px;
+  }
+  .access-canvas .react-flow__attribution a {
+    color: var(--t-ink-3);
+  }
+
+  /* ── Nodes ─────────────────────────────────────────────────────────────── */
+  .access-node,
+  .access-more {
+    animation: dna-node-in 0.34s var(--ease-out-quint) both;
+    transition:
+      border-color 0.16s ease-out,
+      box-shadow 0.18s ease-out,
+      transform 0.18s var(--ease-out-quint),
+      background-color 0.16s ease-out;
+    cursor: pointer;
+    box-shadow: var(--t-shadow-sm);
+  }
+
+  .access-node-neutral {
+    background: var(--t-surface);
+    border-color: var(--t-line-strong);
+  }
+  .access-node-critical {
+    background: var(--t-surface);
+    border-color: color-mix(in oklab, var(--t-graph-risk) 55%, var(--t-line-strong));
+  }
+
+  /* Hover lifts the node a little and strengthens its edge. Two pixels and a
+     shadow - enough to confirm the thing is live, not enough to make a graph
+     of forty nodes feel like it is breathing. */
+  .access-node:hover,
+  .access-more:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--t-shadow-md);
+    border-color: var(--t-graph-accent);
+  }
+
+  .access-node-selected {
+    border-color: var(--t-graph-accent);
+    box-shadow:
+      var(--t-shadow-md),
+      0 0 0 1px var(--t-graph-accent);
+  }
+
+  .access-node-focus {
+    animation:
+      dna-node-in 0.34s var(--ease-out-quint) both,
+      dna-focus-halo 3.2s ease-in-out 0.34s infinite;
+  }
+
+  .access-node-icon {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    background: var(--t-surface-3);
+    color: var(--t-ink-2);
+  }
+  .access-node-icon-critical {
+    background: color-mix(in oklab, var(--t-graph-risk) 12%, transparent);
+    color: var(--t-graph-risk);
+  }
+
+  .access-node-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    flex-shrink: 0;
+    padding: 2px 4px;
+    border-radius: 999px;
+    background: var(--t-surface-3);
+    color: var(--t-ink-2);
+    cursor: pointer;
+    transition:
+      background-color 0.16s ease-out,
+      color 0.16s ease-out,
+      transform 0.16s var(--ease-out-quint);
+  }
+  .access-node:hover .access-node-more {
+    background: var(--t-info-soft);
+    color: var(--t-brand);
+  }
+  /* Its own hover, stronger than the card's, because this is the control and
+     the card around it does something else. */
+  .access-node-more:hover {
+    background: var(--t-info-soft);
+    color: var(--t-brand);
+    box-shadow: inset 0 0 0 1px var(--t-brand);
+    transform: scale(1.08);
+  }
+  .access-node-more-open {
+    background: transparent;
+    color: var(--t-ink-3);
+  }
+
+  /* ── Fold-away ─────────────────────────────────────────────────────────── */
+  .access-more {
+    background: var(--t-surface-2);
+    border-color: var(--t-line);
+    border-style: dashed;
+  }
+  .access-more:hover {
+    background: var(--t-surface);
+    border-style: solid;
+  }
+  .access-more-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--t-info-soft);
+    color: var(--t-brand);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  /* Handles exist for the edge geometry, not for connecting anything by hand. */
+  .access-handle {
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+    min-width: 1px;
+    min-height: 1px;
+    border: 0;
+  }
+
+  /* ── Edges ─────────────────────────────────────────────────────────────── */
+  .access-canvas .react-flow__edge-path {
+    transition:
+      stroke 0.16s ease-out,
+      stroke-width 0.16s ease-out,
+      opacity 0.16s ease-out;
+  }
+  /* Every edge flows from cause to effect.
+     An access graph is directional - "A can become B" is not the same claim as
+     "B can become A" - and an arrowhead states that only at one end of a line
+     the eye has to follow. A slow drift along the whole edge states it
+     continuously, and it is the difference between a diagram that looks static
+     and one that reads as a system with things moving through it.
+     Slow on purpose: this runs on every edge at rest, so anything faster
+     competes with the reader rather than helping them. It is visible because
+     of the colour, not the speed - the edges are drawn in --t-graph-flow,
+     over 3:1 against the canvas; the old grey was 1.36:1 and the motion could
+     not be seen at all. Long dashes, short gaps, so an edge still reads as
+     one line while it moves. `--dash-period` is dash plus gap, and escalation
+     edges use the same rhythm, so neither jumps at the loop boundary. */
+  .access-canvas .react-flow__edge-path {
+    --dash-period: 14px;
+    stroke-dasharray: 8 6;
+    stroke-linecap: round;
+    animation: dna-edge-dash 2.4s linear infinite;
+  }
+
+  /* An edge under the cursor's neighbourhood speeds up: the hover already dims
+     everything else, and this gives the survivors a reason to be looked at. */
+  .access-canvas .access-edge-active .react-flow__edge-path {
+    animation-duration: 1.5s;
+  }
+  .access-canvas .access-edge-dimmed .react-flow__edge-path {
+    opacity: 0.14;
+  }
+  .access-canvas .react-flow__edge-text {
+    font-size: 9.5px;
+    fill: var(--t-ink-3);
+  }
+  .access-canvas .react-flow__edge-textbg {
+    fill: var(--t-surface-inset);
+  }
+
+  /* Hop headings, rendered above the canvas rather than inside it. */
+  .access-hop-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--t-ink-3);
+  }
+
+  /* A deep scan that is running, in the status chip.
+     There is no progress figure to show - the service reports commits_scanned
+     only once the walk has finished - so a determinate bar would have to
+     invent one. A pulse says "still going" and claims nothing about how far
+     through it is, which is the honest amount to say. */
+  .deep-scan-pulse {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    animation: deep-scan-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes deep-scan-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.72);
+    }
+  }
+}
+
+/* Staggered section reveal: `data-stagger` index drives the delay. */
+@layer utilities {
+  [data-stagger] {
+    animation-delay: calc(var(--stagger, 0) * 55ms);
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--t-surface-3);
+    border-radius: 6px;
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--t-surface) 62%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: dna-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .topbar-surface {
+    background: var(--t-topbar);
+  }
+
+  /* Applied to the content column only. The top bar, the sidebar and every
+     portalled overlay (drawer, modal, toast, command palette) live outside it,
+     so none of them is scaled and no fixed positioning is disturbed. Because
+     `container-type: inline-size` reports the scaled width, the container
+     queries inside see the extra room and keep their columns. */
+  .content-scale {
+    zoom: var(--content-zoom);
+  }
+
+  /* Popover placement. `usePopover` sets `data-placement` and a max-height
+     budget; these rules do the positioning so no component repeats it. A
+     flipped panel is anchored to the trigger's top edge instead of its
+     bottom. */
+  [data-placement='bottom'] {
+    top: 100%;
+    margin-top: 0.375rem;
+  }
+  [data-placement='top'] {
+    bottom: 100%;
+    margin-bottom: 0.375rem;
+  }
+  /* The panel owns the height budget; its scrollable region shares it. */
+  [data-placement] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Sampled from the supplied sign-in design: one flat navy across the whole
+     canvas (top-left, centre and bottom all read #0a192f), with the only
+     modelling coming from the brand slash. The previous three-layer gradient
+     was invention. */
+  .auth-canvas {
+    background: var(--t-auth-canvas);
+    animation: dna-fade 0.5s ease-out both;
+    /* The sign-in screen already scales itself: every size on it is a `clamp()`
+       against the viewport, calibrated so it matches the supplied design at
+       that design's width. The console's root zoom would scale it a second
+       time, so it is cancelled here - zoom is multiplicative, and this subtree
+       has no fixed-position chrome that could be disturbed by it. */
+    zoom: calc(1 / var(--app-zoom));
+    /* Viewport units ignore zoom, so the cancelled factor has to be put back
+       for the canvas to fill the screen exactly. */
+    min-height: calc(100dvh * var(--app-zoom));
+  }
+
+  .hairline-grid {
+    background-image:
+      linear-gradient(to right, var(--t-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--t-line) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Table shell used by the data grid - keeps sticky headers crisp. */
+  .grid-sticky-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--t-surface-2);
+    backdrop-filter: saturate(1.1) blur(2px);
+    box-shadow: 0 1px 0 var(--t-line);
+  }
+
+  /* Row hover: a 2px accent on the leading cell confirms the hit target
+     without repainting the whole row. */
+  .grid-row:hover > :first-child,
+  .grid-row:focus-visible > :first-child {
+    box-shadow: inset 2px 0 0 var(--t-brand);
+  }
+
+  .row-actions {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  .grid-row:hover .row-actions,
+  .grid-row:focus-within .row-actions {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .row-actions {
+      opacity: 1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Zero the delays too: with only the duration clamped, a staggered item
+     would still wait out its delay while invisible. */
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0ms !important;
+  }
+
+  .skeleton::after {
+    display: none;
+  }
+}
