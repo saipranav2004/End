@@ -21,7 +21,7 @@ import (
 // from/to window and the error mapping into the §1.5 envelope.
 
 // Routes (internal/routes/routes.go): /identities/{source_type}/{identity_name:.+}
-// and its /activity, /genome, /baseline, /timeline sub-resources. The
+// and its /activity, /genome, /timeline sub-resources. The
 // identity_name segment may contain ':' and (URL-encoded) '/' because it is
 // an ARN, hence the `.+` pattern; the sub-resource routes are registered
 // before the plain identity route.

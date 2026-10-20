@@ -39,7 +39,7 @@ func (a *ActivityService) fetchActivity(ctx context.Context, accounts []string, 
 	out := &activityFetch{}
 
 	var (
-		wg       sync.WaitGroup
+		wg       panicGroup
 		mu       sync.Mutex
 		firstErr error
 	)
@@ -119,7 +119,7 @@ func (a *ActivityService) IdentityActivity(ctx context.Context, resolved *scope.
 	}
 
 	var lookup *repov1.IdentityLookup
-	var wg sync.WaitGroup
+	var wg panicGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); lookup = a.loadLookup(ctx, resolved, accounts) }()
 	f, err := a.fetchActivity(ctx, accounts, subj.Keys, tr, p, service, false, "")
@@ -149,7 +149,7 @@ func (a *ActivityService) CredentialActivity(ctx context.Context, resolved *scop
 	}
 
 	var lookup *repov1.IdentityLookup
-	var wg sync.WaitGroup
+	var wg panicGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); lookup = a.loadLookup(ctx, resolved, accounts) }()
 	f, err := a.fetchActivity(ctx, accounts, subj.Keys, tr, p, service, true, subj.ARN)

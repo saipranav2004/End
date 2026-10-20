@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"time"
 
 	"nhi-backend-api/internal/database"
 	"nhi-backend-api/internal/middleware"
@@ -108,19 +107,6 @@ func rejectUnknownQuery(w http.ResponseWriter, r *http.Request, allowed map[stri
 	if unknown, ok := checkUnknown(r.URL.Query(), allowed); ok {
 		writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("Unknown query parameter: %s. Allowed parameters: %s", unknown, allowedList(allowed)), "INVALID_QUERY_PARAM")
 		return true
-	}
-	return false
-}
-
-func isValidDate(s string) bool {
-	if strings.TrimSpace(s) == "" {
-		return false
-	}
-	layouts := []string{"2006-01-02", time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05"}
-	for _, l := range layouts {
-		if _, err := time.Parse(l, strings.TrimSpace(s)); err == nil {
-			return true
-		}
 	}
 	return false
 }

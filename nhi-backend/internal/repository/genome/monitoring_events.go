@@ -29,11 +29,12 @@ type MonitoringEvents struct {
 	conn    driver.Conn
 	table   string // `database`.`table`, both validated identifiers
 	timeout time.Duration
+	client  *chclient.Client
 }
 
 // ErrMonitoringEventsNotConfigured is returned by every reader when no
 // monitoring ClickHouse is configured (NHI_MONITORING_CLICKHOUSE_HOST empty)
-// or it was unreachable at start-up.
+// or it is not answering right now.
 var ErrMonitoringEventsNotConfigured = errors.New("monitoring clickhouse is not configured")
 
 // NewMonitoringEvents wraps the monitoring ClickHouse client. database is
@@ -48,11 +49,12 @@ func NewMonitoringEvents(client *chclient.Client, database string) *MonitoringEv
 	if database != "" {
 		table = "`" + database + "`." + table
 	}
-	return &MonitoringEvents{conn: client.Conn(), table: table, timeout: client.Timeout()}
+	return &MonitoringEvents{conn: client.Conn(), table: table, timeout: client.Timeout(), client: client}
 }
 
-// Enabled reports whether the event table can be queried. Safe on nil.
-func (e *MonitoringEvents) Enabled() bool { return e != nil }
+// Enabled reports whether the event table can be queried: configured and the
+// server answering pings. Safe on nil.
+func (e *MonitoringEvents) Enabled() bool { return e != nil && e.client.Up() }
 
 // Table is the schema-qualified table the readers query (for logs/tests).
 func (e *MonitoringEvents) Table() string {

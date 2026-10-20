@@ -261,7 +261,7 @@ func (e *eventsEnv) timeline(ctx context.Context) *models.IdentityEventsTimeline
 	}
 	var rows []chrepo.Event
 	var total uint64
-	var wg sync.WaitGroup
+	var wg panicGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -320,7 +320,7 @@ func (e *eventsEnv) detail(ctx context.Context) (*models.IdentityEventsDetailRes
 	cred, matched := e.match(ev.SessionIssuerARN, ev.CallerARN, ev.AccessKeyID)
 	var used uint64
 	var grant *models.PermissionSourceResponse
-	var wg sync.WaitGroup
+	var wg panicGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -538,7 +538,7 @@ func (e *eventsEnv) errorsSection(ctx context.Context) *models.IdentityEventsErr
 
 	var sum *chrepo.ErrorSummaryResult
 	var rows []chrepo.Event
-	var wg sync.WaitGroup
+	var wg panicGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()

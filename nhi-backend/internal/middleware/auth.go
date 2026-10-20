@@ -127,17 +127,3 @@ func GetClaims(r *http.Request) *jwt.CustomClaims {
 	claims, _ := r.Context().Value(UserClaimsKey).(*jwt.CustomClaims)
 	return claims
 }
-
-func GetDBName(r *http.Request) string {
-	if claims := GetClaims(r); claims != nil {
-		return claims.DBName
-	}
-	return ""
-}
-
-func GetTenantID(r *http.Request) string {
-	if claims := GetClaims(r); claims != nil {
-		return claims.TenantID
-	}
-	return ""
-}

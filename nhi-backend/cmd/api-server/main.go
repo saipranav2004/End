@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -61,14 +62,15 @@ func main() {
 		}
 	}()
 
-	// ClickHouse (CloudTrail events) is optional. If it is unconfigured or
-	// unreachable the API keeps serving Postgres data; chClient is then nil.
+	// ClickHouse (CloudTrail events) is optional. Unconfigured: chClient is nil.
+	// Unreachable: the client is kept and retried; until it answers the API
+	// serves Postgres data only.
 	chCtx, chCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	chClient, err := clickhouse.New(chCtx, cfg.ClickHouse)
 	chCancel()
 	switch {
 	case err != nil:
-		log.Printf("WARNING: clickhouse unavailable, activity data disabled: %v", err)
+		log.Printf("WARNING: clickhouse unavailable, activity data disabled until it answers: %v", err)
 	case chClient == nil:
 		log.Printf("clickhouse not configured; activity data disabled")
 	default:
@@ -94,7 +96,7 @@ func main() {
 	monCancel()
 	switch {
 	case err != nil:
-		log.Printf("WARNING: monitoring clickhouse unavailable, event-backed fields disabled: %v", err)
+		log.Printf("WARNING: monitoring clickhouse unavailable, event-backed fields disabled until it answers: %v", err)
 	case monitoringClient == nil:
 		log.Printf("monitoring clickhouse not configured (NHI_MONITORING_CLICKHOUSE_HOST empty); event-backed fields disabled")
 	default:
@@ -238,11 +240,38 @@ func main() {
 		CredentialExposureDeepScanHandler:  ceDeepScanHandler,
 	})
 
+	// Readiness: 200 when Postgres answers (ClickHouse is optional and only
+	// reported), 503 otherwise. /health stays a plain liveness probe.
+	router.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		state := func(c *clickhouse.Client) string {
+			switch {
+			case c == nil:
+				return "not_configured"
+			case c.Up():
+				return "ok"
+			}
+			return "down"
+		}
+		body := map[string]string{"postgres": "ok", "clickhouse": state(chClient), "monitoring_clickhouse": state(monitoringClient)}
+		status := http.StatusOK
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		if err := db.DB.PingContext(ctx); err != nil {
+			log.Printf("readiness: postgres: %v", err)
+			body["postgres"], status = "down", http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+	}).Methods(http.MethodGet)
+
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      middleware.SetupCORS(cfg.CORS)(router),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler:     middleware.SetupCORS(cfg.CORS)(router),
+		ReadTimeout: 15 * time.Second,
+		// Above the slowest handler: AWS verify runs up to 12 s of checks and
+		// then a 5 s save; queries stop at the 25 s statement_timeout.
+		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 	// Drain in-flight requests on SIGINT/SIGTERM so deferred cleanup (pool

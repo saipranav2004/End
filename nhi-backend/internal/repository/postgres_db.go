@@ -46,11 +46,6 @@ func (p *PostgresDB) Close() error {
 	return p.manager.Close()
 }
 
-func ownedCredsArray(alias string) string {
-	col := "NULLIF(" + alias + ".owned_credentials::text, '')::jsonb"
-	return "(CASE WHEN jsonb_typeof(" + col + ") = 'array' THEN " + col + " ELSE '[]'::jsonb END)"
-}
-
 // Identifier quotes a static schema/table name safely.
 func Identifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`

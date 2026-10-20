@@ -84,11 +84,14 @@ func (d DatabaseConfig) GetConnectionString() string {
 	const port = 5432
 	const sslmode = "require"
 	u := url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword(d.User, d.Password),
-		Host:     net.JoinHostPort(d.Host, strconv.Itoa(port)),
-		Path:     "/" + d.DBName(),
-		RawQuery: url.Values{"sslmode": []string{sslmode}}.Encode(),
+		Scheme: "postgres",
+		User:   url.UserPassword(d.User, d.Password),
+		Host:   net.JoinHostPort(d.Host, strconv.Itoa(port)),
+		Path:   "/" + d.DBName(),
+		// statement_timeout (a Postgres runtime parameter, sent by pgx at
+		// connect) stops a runaway query from holding a connection forever;
+		// it is below the HTTP write timeout so the client still gets an answer.
+		RawQuery: url.Values{"sslmode": []string{sslmode}, "statement_timeout": []string{"25000"}}.Encode(),
 	}
 	return u.String()
 }

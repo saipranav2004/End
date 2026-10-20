@@ -13,7 +13,11 @@ change tracking and credential exposure - from one process, behind one sign-in.
 - **Stores**: PostgreSQL (`nhi_db`, one schema per tenant), ClickHouse for
   CloudTrail events, and a second ClickHouse for the genome's `log_events`.
   Either ClickHouse may be missing; the fields that need it then say
-  "unavailable" and everything else keeps working.
+  "unavailable" and everything else keeps working. A configured ClickHouse
+  that is down (at start-up or later) is pinged every 15 s and used again as
+  soon as it answers; while it is down it is skipped, not waited on.
+- **Timeouts**: Postgres statements stop after 25 s (`statement_timeout`), the
+  HTTP write timeout is 30 s.
 
 ```sh
 go build ./... && go vet ./... && go test ./...
@@ -85,6 +89,7 @@ is not fully set up), every API answers **503 `TENANT_NOT_PROVISIONED`**.
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/health` | Liveness probe (no token). |
+| GET | `/ready` | Readiness probe (no token): 200 when Postgres answers, 503 when not; also reports each ClickHouse as `ok`, `down` or `not_configured`. |
 
 ### Sign-in and session
 

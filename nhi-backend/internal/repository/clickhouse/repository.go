@@ -15,6 +15,7 @@ type Repository struct {
 	conn    driver.Conn
 	table   string
 	timeout time.Duration
+	client  *chclient.Client
 }
 
 // New wraps the client. It returns nil when ClickHouse is not available, so a
@@ -23,8 +24,9 @@ func New(client *chclient.Client) *Repository {
 	if client == nil {
 		return nil
 	}
-	return &Repository{conn: client.Conn(), table: client.Table(), timeout: client.Timeout()}
+	return &Repository{conn: client.Conn(), table: client.Table(), timeout: client.Timeout(), client: client}
 }
 
-// Enabled reports whether ClickHouse queries can run. Safe on a nil Repository.
-func (c *Repository) Enabled() bool { return c != nil }
+// Enabled reports whether ClickHouse queries can run: configured and
+// answering pings. Safe on a nil Repository.
+func (c *Repository) Enabled() bool { return c != nil && c.client.Up() }
