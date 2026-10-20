@@ -63,27 +63,27 @@ func (s *IdentityGenomeService) GetGenome(ctx context.Context, userID, tenantID,
 	}
 
 	// Denominator of every share: all calls of the identity in the window.
-	total, err := s.events.TotalCalls(ctx, key.SourceType, key.IdentityName, from, to)
+	total, err := s.events.TotalCalls(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, from, to)
 	if !eventsReadOK("identity genome total calls", err) {
 		return out, nil
 	}
 
-	if points, err := s.events.Fingerprint(ctx, key.SourceType, key.IdentityName, from, to, genomeFingerprintDimensions, p.Limit); eventsReadOK("identity fingerprint", err) {
+	if points, err := s.events.Fingerprint(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, from, to, genomeFingerprintDimensions, p.Limit); eventsReadOK("identity fingerprint", err) {
 		for _, pt := range points {
 			out.Fingerprint = append(out.Fingerprint, models.IdentityFingerprintPoint{Dimension: pt.Dimension, Value: pt.Value, SharePercent: sharePercent(pt.Calls, total)})
 		}
 	}
-	if actions, err := s.events.TypicalActions(ctx, key.SourceType, key.IdentityName, from, to, p.Limit); eventsReadOK("identity typical actions", err) {
+	if actions, err := s.events.TypicalActions(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, from, to, p.Limit); eventsReadOK("identity typical actions", err) {
 		for _, a := range actions {
 			out.TypicalActions = append(out.TypicalActions, models.IdentityTypicalAction{APIOperation: apiOperation(a.EventSource, a.EventName), Calls: a.Calls, SharePercent: sharePercent(a.Calls, total)})
 		}
 	}
-	if resources, err := s.events.TypicalResources(ctx, key.SourceType, key.IdentityName, from, to, p.Limit); eventsReadOK("identity typical resources", err) {
+	if resources, err := s.events.TypicalResources(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, from, to, p.Limit); eventsReadOK("identity typical resources", err) {
 		for _, r := range resources {
 			out.TypicalResources = append(out.TypicalResources, models.IdentityTypicalResource{Resource: r.ResourceARN, ResourceType: optionalString(r.ResourceType), Calls: r.Calls})
 		}
 	}
-	if cells, err := s.events.ActivitySchedule(ctx, key.SourceType, key.IdentityName, from, to); eventsReadOK("identity activity schedule", err) {
+	if cells, err := s.events.ActivitySchedule(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, from, to); eventsReadOK("identity activity schedule", err) {
 		for _, c := range cells {
 			out.ActivitySchedule = append(out.ActivitySchedule, models.IdentityScheduleCell{DayOfWeek: int(c.DayOfWeek), Hour: int(c.Hour), Calls: c.Calls})
 		}

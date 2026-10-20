@@ -292,19 +292,20 @@ func (r *AWSIntegrationRepository) AccountClaimedByOther(ctx context.Context, te
 }
 
 func (r *AWSIntegrationRepository) claimedByOther(ctx context.Context, q queryer, tenantID, accountID string) (bool, error) {
-	// The other tenants' schemas whose accounts table has the connection
-	// columns (a schema not yet migrated cannot hold a connection).
+	// Any row for the account in another tenant's schema claims it: rows from
+	// this API are saved only after AssumeRole succeeded (the tenant controls
+	// the account), and role-less rows were registered by the scanner. Both
+	// scope that tenant's CloudTrail events, so a second owner would share them.
 	rows, err := q.QueryContext(ctx, `SELECT t.db_name
 		FROM `+database.Table(r.globalSchema, "tenants")+` t
 		JOIN pg_namespace n ON n.nspname = t.db_name
 		JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = $2 AND c.relkind IN ('r', 'p')
-		WHERE t.tenant_id <> $1::uuid
-		  AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'client_role_arn' AND NOT a.attisdropped)`,
+		WHERE t.tenant_id <> $1::uuid`,
 		tenantID, accountsTable)
 	if err != nil {
 		return false, fmt.Errorf("list tenant schemas: %w", missingSchema(err))
 	}
-	schemas := make([]string, 0)
+	parts := make([]string, 0)
 	for rows.Next() {
 		var s string
 		if err := rows.Scan(&s); err != nil {
@@ -312,19 +313,15 @@ func (r *AWSIntegrationRepository) claimedByOther(ctx context.Context, q queryer
 			return false, fmt.Errorf("scan tenant schema: %w", err)
 		}
 		if config.ValidateSchemaName(s) == nil {
-			schemas = append(schemas, s)
+			parts = append(parts, `SELECT 1 FROM `+database.Table(s, accountsTable)+` WHERE account_id = $1`)
 		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return false, fmt.Errorf("iterate tenant schemas: %w", err)
 	}
-	if len(schemas) == 0 {
+	if len(parts) == 0 {
 		return false, nil
-	}
-	parts := make([]string, len(schemas))
-	for i, s := range schemas {
-		parts[i] = `SELECT 1 FROM ` + database.Table(s, accountsTable) + ` WHERE account_id = $1 AND ` + connectionRow
 	}
 	var one int
 	err = q.QueryRowContext(ctx, `SELECT 1 FROM (`+strings.Join(parts, " UNION ALL ")+`) owners LIMIT 1`, accountID).Scan(&one)

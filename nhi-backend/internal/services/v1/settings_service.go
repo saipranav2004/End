@@ -81,14 +81,6 @@ func cleanList(field string, in []string, pattern *regexp.Regexp) ([]string, err
 	return out, nil
 }
 
-func optionalString(value string) *string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	v := value
-	return &v
-}
-
 func sourceName(hasUserSettings bool) string {
 	if hasUserSettings {
 		return "user_settings"

@@ -192,6 +192,12 @@ func TestAWSIntegrationRepositoryAgainstPostgres(t *testing.T) {
 	if _, _, err := repo.SaveVerification(ctx, tenantB, schemaB, other); !errors.Is(err, ErrAWSAccountClaimed) {
 		t.Fatalf("second tenant save: %v", err)
 	}
+	// A scanner-registered row (no role) claims the account too.
+	scannerOnly := randomAccountID(t)
+	mustExec(t, db, `INSERT INTO `+database.Table(schemaA, "accounts")+` (tenant_id, account_id) VALUES ($1::uuid, $2)`, tenantA, scannerOnly)
+	if claimed, err := repo.AccountClaimedByOther(ctx, tenantB, scannerOnly); err != nil || !claimed {
+		t.Fatalf("scanner row not a claim: %v %v", claimed, err)
+	}
 	var wg sync.WaitGroup
 	wins := make(chan string, 2)
 	race := modelsv1.AWSAccountRecord{AccountID: acct2, RoleARN: "arn:aws:iam::" + acct2 + ":role/R", Regions: []string{"us-east-1"},

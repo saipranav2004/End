@@ -74,14 +74,14 @@ func (s *IdentityActivityService) GetActivity(ctx context.Context, userID, tenan
 	if p.Bucket == ActivityBucketHour {
 		bucket = repo.VolumeBucketHour
 	}
-	if points, err := s.events.Volume(ctx, key.SourceType, key.IdentityName, p.Window.From, p.Window.To, bucket); eventsReadOK("identity activity volume", err) {
+	if points, err := s.events.Volume(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, p.Window.From, p.Window.To, bucket); eventsReadOK("identity activity volume", err) {
 		for _, pt := range points {
 			out.Volume = append(out.Volume, models.IdentityVolumePoint{Bucket: formatVolumeBucket(pt.Bucket, bucket), Calls: pt.Calls})
 		}
 	}
 
 	var next *string
-	if rows, err := s.events.RecentCalls(ctx, key.SourceType, key.IdentityName, p.Window.From, p.Window.To, before, p.RecentLimit+1); eventsReadOK("identity recent calls", err) {
+	if rows, err := s.events.RecentCalls(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, p.Window.From, p.Window.To, before, p.RecentLimit+1); eventsReadOK("identity recent calls", err) {
 		if len(rows) > p.RecentLimit { // one extra row was requested to detect a next page
 			rows = rows[:p.RecentLimit]
 			last := rows[len(rows)-1]
@@ -101,7 +101,7 @@ func (s *IdentityActivityService) GetActivity(ctx context.Context, userID, tenan
 		}
 	}
 
-	if total, err := s.events.TotalCalls(ctx, key.SourceType, key.IdentityName, p.Window.From, p.Window.To); eventsReadOK("identity total calls", err) {
+	if total, err := s.events.TotalCalls(ctx, res.scope.AccountIDs, key.SourceType, key.IdentityName, p.Window.From, p.Window.To); eventsReadOK("identity total calls", err) {
 		out.TotalCalls = &total
 	}
 	return out, next, nil

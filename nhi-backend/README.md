@@ -7,7 +7,9 @@ change tracking and credential exposure - from one process, behind one sign-in.
 - **Tenant** comes only from the signed JWT (`tenant_id`, `db_name` = the
   tenant's PostgreSQL schema). Nothing a client sends can choose another tenant.
 - **Scope**: inventory, genome and change tracking answer only for the accounts
-  and regions the user selected (Settings); posture covers the whole tenant.
+  and regions the user selected (Settings; a saved `"all"` means every
+  account or region of the tenant); posture covers the whole tenant. Genome
+  event reads are filtered on `account_id` as well as the identity.
 - **Stores**: PostgreSQL (`nhi_db`, one schema per tenant), ClickHouse for
   CloudTrail events, and a second ClickHouse for the genome's `log_events`.
   Either ClickHouse may be missing; the fields that need it then say
@@ -611,7 +613,7 @@ that account in ClickHouse (or `event_log_group`) within
 | 403 | `FORBIDDEN` | not an admin |
 | 404 | `AWS_ACCOUNT_NOT_FOUND` | not this tenant's account |
 | 409 | `AWS_ACCOUNT_NOT_CONNECTED` | sync or exposure before the account has connected |
-| 409 | `AWS_ACCOUNT_IN_USE` | account belongs to another tenant |
+| 409 | `AWS_ACCOUNT_IN_USE` | another tenant already has a row for this account (connected by them or registered by the scanner) |
 | 429 | `AWS_VERIFY_IN_PROGRESS` | a check is already running for this tenant |
 | 503 | `AWS_PLATFORM_NOT_CONFIGURED` | migrations missing or the tenant row has no collector values |
 | 503 | `AWS_UNAVAILABLE` | AWS unreachable, or this service has no AWS identity |

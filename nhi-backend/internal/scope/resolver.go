@@ -182,13 +182,24 @@ func (r *Resolver) defaultRegions(ctx context.Context, db *sql.DB, schema, tenan
 	return queryStrings(ctx, db, q, tenantID)
 }
 
+// selectsAll reports a saved selection of "all" (the settings table's
+// default, '["all"]'): every account or region of the tenant.
+func selectsAll(selected []string) bool {
+	for _, v := range selected {
+		if strings.EqualFold(strings.TrimSpace(v), "all") {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Resolver) existingAccounts(ctx context.Context, db *sql.DB, schema, tenantID string, selected []string) ([]string, error) {
 	if len(selected) == 0 {
 		return make([]string, 0), nil
 	}
 	q := `SELECT DISTINCT account_id FROM ` + database.Table(schema, "accounts") + `
-		WHERE tenant_id = $1::uuid AND account_id = ANY($2::text[]) ORDER BY account_id`
-	return queryStrings(ctx, db, q, tenantID, pq.Array(selected))
+		WHERE tenant_id = $1::uuid AND account_id <> '' AND ($3 OR account_id = ANY($2::text[])) ORDER BY account_id`
+	return queryStrings(ctx, db, q, tenantID, pq.Array(selected), selectsAll(selected))
 }
 
 func (r *Resolver) existingRegions(ctx context.Context, db *sql.DB, schema, tenantID string, selected []string) ([]string, error) {
@@ -196,8 +207,8 @@ func (r *Resolver) existingRegions(ctx context.Context, db *sql.DB, schema, tena
 		return make([]string, 0), nil
 	}
 	q := `SELECT DISTINCT r FROM ` + database.Table(schema, "accounts") + ` a, unnest(a.regions) AS r
-		WHERE a.tenant_id = $1::uuid AND r = ANY($2::text[]) ORDER BY r`
-	return queryStrings(ctx, db, q, tenantID, pq.Array(selected))
+		WHERE a.tenant_id = $1::uuid AND r <> '' AND ($3 OR r = ANY($2::text[])) ORDER BY r`
+	return queryStrings(ctx, db, q, tenantID, pq.Array(selected), selectsAll(selected))
 }
 
 func queryStrings(ctx context.Context, db *sql.DB, q string, args ...any) ([]string, error) {

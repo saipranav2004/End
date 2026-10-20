@@ -85,7 +85,7 @@ func (r *IdentitySummaryRepository) OpenAlertCount(ctx context.Context, resolved
 // LastSeen is §10.2 last_seen: MAX(event_time) over the latest row per
 // event_id of the identity, resolved events only (is_resolved = 1), across
 // all stored history. nil when the identity has no resolved event.
-func (e *MonitoringEvents) LastSeen(ctx context.Context, sourceType, identityName string) (*time.Time, error) {
+func (e *MonitoringEvents) LastSeen(ctx context.Context, accounts []string, sourceType, identityName string) (*time.Time, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -96,13 +96,14 @@ func (e *MonitoringEvents) LastSeen(ctx context.Context, sourceType, identityNam
 	                 argMax(is_resolved, ingested_at) AS is_resolved
 	          FROM ` + e.table + `
 	          WHERE source_type = {source_type:String} AND identity_name = {identity_name:String}
+	            AND has({accounts:Array(String)}, account_id)
 	          GROUP BY event_id
 	      )
 	      WHERE is_resolved = 1`
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	var last *time.Time
-	if err := e.conn.QueryRow(ctx, q, ch.Named("source_type", sourceType), ch.Named("identity_name", identityName)).Scan(&last); err != nil {
+	if err := e.conn.QueryRow(ctx, q, ch.Named("accounts", accounts), ch.Named("source_type", sourceType), ch.Named("identity_name", identityName)).Scan(&last); err != nil {
 		return nil, fmt.Errorf("log_events last seen: %w", err)
 	}
 	if last == nil {

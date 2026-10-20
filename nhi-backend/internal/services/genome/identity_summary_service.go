@@ -71,10 +71,10 @@ func (s *IdentitySummaryService) GetIdentity(ctx context.Context, userID, tenant
 	}
 
 	// ---- ClickHouse log_events ------------------------------------------------
-	if calls, err := s.events.TotalCalls(ctx, id.Key.SourceType, id.Key.IdentityName, p.Window.From, p.Window.To); eventsReadOK("identity calls in window", err) {
+	if calls, err := s.events.TotalCalls(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName, p.Window.From, p.Window.To); eventsReadOK("identity calls in window", err) {
 		out.HeadlineMetrics.CallsInWindow = &calls
 	}
-	if last, err := s.events.LastSeen(ctx, id.Key.SourceType, id.Key.IdentityName); eventsReadOK("identity last seen", err) {
+	if last, err := s.events.LastSeen(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName); eventsReadOK("identity last seen", err) {
 		out.HeadlineMetrics.LastSeen = last
 	}
 	return out, nil

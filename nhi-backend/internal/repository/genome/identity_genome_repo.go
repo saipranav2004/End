@@ -22,7 +22,7 @@ type IdentityActionCount struct {
 
 // TypicalActions groups the identity's events by event_source + event_name
 // (§5.4 "aggregate event_name + event_source"), most-called first, limit rows.
-func (e *MonitoringEvents) TypicalActions(ctx context.Context, sourceType, identityName string, from, to time.Time, limit int) ([]IdentityActionCount, error) {
+func (e *MonitoringEvents) TypicalActions(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time, limit int) ([]IdentityActionCount, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -32,7 +32,7 @@ func (e *MonitoringEvents) TypicalActions(ctx context.Context, sourceType, ident
 	      GROUP BY event_source, event_name
 	      ORDER BY calls DESC, event_source, event_name
 	      LIMIT {limit:UInt32}`
-	args := append(identityWindowArgs(sourceType, identityName, from, to), ch.Named("limit", uint32(limit)))
+	args := append(identityWindowArgs(accounts, sourceType, identityName, from, to), ch.Named("limit", uint32(limit)))
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	rows, err := e.conn.Query(ctx, q, args...)
@@ -65,7 +65,7 @@ type IdentityResourceCount struct {
 // (§5.4 "split the comma-separated value before counting") and counts
 // distinct events per ARN, most-used first, limit rows. resource_type is the
 // dimensions_json.resource_type value seen most often with that ARN (§10.3).
-func (e *MonitoringEvents) TypicalResources(ctx context.Context, sourceType, identityName string, from, to time.Time, limit int) ([]IdentityResourceCount, error) {
+func (e *MonitoringEvents) TypicalResources(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time, limit int) ([]IdentityResourceCount, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -86,7 +86,7 @@ func (e *MonitoringEvents) TypicalResources(ctx context.Context, sourceType, ide
 	      GROUP BY resource_arn
 	      ORDER BY calls DESC, resource_arn
 	      LIMIT {limit:UInt32}`
-	args := append(identityWindowArgs(sourceType, identityName, from, to), ch.Named("limit", uint32(limit)))
+	args := append(identityWindowArgs(accounts, sourceType, identityName, from, to), ch.Named("limit", uint32(limit)))
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	rows, err := e.conn.Query(ctx, q, args...)
@@ -116,7 +116,7 @@ type IdentityScheduleCell struct {
 }
 
 // ActivitySchedule is the §5.4 schedule query (toDayOfWeek × toHour).
-func (e *MonitoringEvents) ActivitySchedule(ctx context.Context, sourceType, identityName string, from, to time.Time) ([]IdentityScheduleCell, error) {
+func (e *MonitoringEvents) ActivitySchedule(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time) ([]IdentityScheduleCell, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -127,7 +127,7 @@ func (e *MonitoringEvents) ActivitySchedule(ctx context.Context, sourceType, ide
 	      ORDER BY day_of_week, hour`
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
-	rows, err := e.conn.Query(ctx, q, identityWindowArgs(sourceType, identityName, from, to)...)
+	rows, err := e.conn.Query(ctx, q, identityWindowArgs(accounts, sourceType, identityName, from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("log_events activity schedule: %w", err)
 	}
@@ -158,7 +158,7 @@ type IdentityDimensionValueCount struct {
 // passed in dimensions) and counts distinct events per (dimension, value),
 // keeping the perDimension most frequent values of each dimension. Numeric
 // JSON values (e.g. hour_of_week_utc) are returned as their text form.
-func (e *MonitoringEvents) Fingerprint(ctx context.Context, sourceType, identityName string, from, to time.Time, dimensions []string, perDimension int) ([]IdentityDimensionValueCount, error) {
+func (e *MonitoringEvents) Fingerprint(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time, dimensions []string, perDimension int) ([]IdentityDimensionValueCount, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -180,7 +180,7 @@ func (e *MonitoringEvents) Fingerprint(ctx context.Context, sourceType, identity
 	      GROUP BY dimension, value
 	      ORDER BY dimension, calls DESC, value
 	      LIMIT {per_dimension:UInt32} BY dimension`
-	args := append(identityWindowArgs(sourceType, identityName, from, to),
+	args := append(identityWindowArgs(accounts, sourceType, identityName, from, to),
 		ch.Named("dimensions", dimensions), ch.Named("per_dimension", uint32(perDimension)))
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()

@@ -68,15 +68,18 @@ func (e *MonitoringEvents) queryContext(ctx context.Context) (context.Context, c
 }
 
 // identityWindowSQL is the contract's per-identity predicate (§5.3/§5.4):
-// one identity, half-open [from, to) on event_time. Values are bound as
-// server-side query parameters, never interpolated.
+// one identity of the caller's accounts, half-open [from, to) on
+// event_time. The account predicate keeps two tenants with a same-named role
+// apart. Values are bound as server-side query parameters, never interpolated.
 const identityWindowSQL = ` source_type = {source_type:String}
 	  AND identity_name = {identity_name:String}
+	  AND has({accounts:Array(String)}, account_id)
 	  AND event_time >= {from:DateTime64(3)}
 	  AND event_time < {to:DateTime64(3)} `
 
-func identityWindowArgs(sourceType, identityName string, from, to time.Time) []any {
+func identityWindowArgs(accounts []string, sourceType, identityName string, from, to time.Time) []any {
 	return []any{
+		ch.Named("accounts", accounts),
 		ch.Named("source_type", sourceType),
 		ch.Named("identity_name", identityName),
 		ch.DateNamed("from", from.UTC(), ch.MilliSeconds),
@@ -87,7 +90,7 @@ func identityWindowArgs(sourceType, identityName string, from, to time.Time) []a
 // TotalCalls is uniqExact(event_id) for the identity inside [from, to) —
 // headline_metrics.calls_in_window (§10.2); the §5.3 activity endpoint
 // reuses it for total_calls.
-func (e *MonitoringEvents) TotalCalls(ctx context.Context, sourceType, identityName string, from, to time.Time) (uint64, error) {
+func (e *MonitoringEvents) TotalCalls(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time) (uint64, error) {
 	if !e.Enabled() {
 		return 0, ErrMonitoringEventsNotConfigured
 	}
@@ -95,7 +98,7 @@ func (e *MonitoringEvents) TotalCalls(ctx context.Context, sourceType, identityN
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	var total uint64
-	if err := e.conn.QueryRow(ctx, q, identityWindowArgs(sourceType, identityName, from, to)...).Scan(&total); err != nil {
+	if err := e.conn.QueryRow(ctx, q, identityWindowArgs(accounts, sourceType, identityName, from, to)...).Scan(&total); err != nil {
 		return 0, fmt.Errorf("log_events total calls: %w", err)
 	}
 	return total, nil

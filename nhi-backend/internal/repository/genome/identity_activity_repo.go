@@ -30,7 +30,7 @@ type IdentityVolumePoint struct {
 
 // Volume is the §5.3 call-volume query: uniqExact(event_id) per day or hour
 // bucket of event_time inside [from, to), oldest bucket first.
-func (e *MonitoringEvents) Volume(ctx context.Context, sourceType, identityName string, from, to time.Time, bucket VolumeBucket) ([]IdentityVolumePoint, error) {
+func (e *MonitoringEvents) Volume(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time, bucket VolumeBucket) ([]IdentityVolumePoint, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
@@ -45,7 +45,7 @@ func (e *MonitoringEvents) Volume(ctx context.Context, sourceType, identityName 
 	      ORDER BY bucket`
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
-	rows, err := e.conn.Query(ctx, q, identityWindowArgs(sourceType, identityName, from, to)...)
+	rows, err := e.conn.Query(ctx, q, identityWindowArgs(accounts, sourceType, identityName, from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("log_events volume: %w", err)
 	}
@@ -91,14 +91,14 @@ type RecentCallsCursor struct {
 // on that bounded range so each event appears once with its latest version.
 // before, when set, continues after a previous page; limit rows are returned
 // (callers ask for one more than the page size to detect a next page).
-func (e *MonitoringEvents) RecentCalls(ctx context.Context, sourceType, identityName string, from, to time.Time, before *RecentCallsCursor, limit int) ([]IdentityRecentCall, error) {
+func (e *MonitoringEvents) RecentCalls(ctx context.Context, accounts []string, sourceType, identityName string, from, to time.Time, before *RecentCallsCursor, limit int) ([]IdentityRecentCall, error) {
 	if !e.Enabled() {
 		return nil, ErrMonitoringEventsNotConfigured
 	}
 	if limit < 1 {
 		return []IdentityRecentCall{}, nil
 	}
-	args := identityWindowArgs(sourceType, identityName, from, to)
+	args := identityWindowArgs(accounts, sourceType, identityName, from, to)
 	cursor := ""
 	if before != nil {
 		cursor = ` AND (event_time, event_id) < ({before_time:DateTime64(3)}, {before_id:String})`
