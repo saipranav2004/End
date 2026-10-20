@@ -21,7 +21,7 @@ var tenantIDRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 var sessionIDRE = tenantIDRE
 
 type AuthContextValidator interface {
-	ValidateAuthContext(ctx context.Context, email, tenantID, dbName, sessionID string) (bool, error)
+	ValidateAuthContext(ctx context.Context, email, tenantID, dbName, sessionID string) (valid bool, role string, err error)
 }
 
 type AuthMiddleware struct {
@@ -61,7 +61,7 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			respondError(w, http.StatusServiceUnavailable, "Authentication state validation is unavailable", "AUTH_STATE_UNAVAILABLE")
 			return
 		}
-		valid, err := m.validator.ValidateAuthContext(r.Context(), claims.UserID, claims.TenantID, claims.DBName, claims.ID)
+		valid, role, err := m.validator.ValidateAuthContext(r.Context(), claims.UserID, claims.TenantID, claims.DBName, claims.ID)
 		if err != nil {
 			respondError(w, http.StatusServiceUnavailable, "Unable to verify account and tenant status", "AUTH_STATE_CHECK_FAILED")
 			return
@@ -70,6 +70,7 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			respondUnauthorized(w, "Session has ended or account is no longer active")
 			return
 		}
+		claims.Role = role // the database's current role, not the token's
 		ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

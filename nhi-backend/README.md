@@ -83,8 +83,8 @@ Response shapes: inventory, integrations and change tracking answer
 
 | Method | Path | What it does |
 |---|---|---|
-| POST | `/login` | Email + password → access token (1 h) and refresh token (7 d); starts a session. |
-| POST | `/refresh` | Swaps a refresh token for a new pair (single use; reusing an old one ends every session of the user). |
+| POST | `/login` | Email + password → access token (1 h) and refresh token (7 d); starts a session. 429 `RATE_LIMITED` after 10 tries a minute per address or 5 per account; 403 `ACCOUNT_DISABLED` for a disabled account with the right password. |
+| POST | `/refresh` | Swaps a refresh token for a new pair (single use; reusing an old one ends every session of the user). Refused once the session is 30 days old. |
 | POST | `/logout` | Ends the session; its access token stops working everywhere at once. |
 | GET | `/me` | The signed-in user: email, role, tenant. |
 
@@ -255,8 +255,18 @@ Shared by everything: `cmd/api-server/main.go` (wiring), `internal/routes/routes
 Login starts a session: the access token carries its id (`jti`) and every
 request checks that the session still exists and has not ended. Refresh tokens
 are single-use and stay in the same session; reusing an old one ends every
-session of that user. Logout ends the session, so its access token stops
-working at once - on every API above, since they share the middleware.
+session of that user (a token from a session that was logged out is just
+refused). A session lives at most `jwt.session_max_hours` (default 720, 30
+days) however often it is refreshed. Logout ends the session, so its access
+token stops working at once - on every API above, since they share the
+middleware. The role is re-read from `nhi_users` on every request, so a role
+change applies at once.
+
+Login always runs one bcrypt comparison (against a placeholder hash for
+unknown emails), so response time does not reveal which emails exist.
+`/login` and `/refresh` are rate limited in process per client address and
+`/login` also per account; the address is `X-Real-IP` when the request comes
+from a private or loopback peer (the console's nginx), else the peer itself.
 Access tokens issued before `003_refresh_token_session.sql` have no session id
 and are rejected, so users sign in again once after the upgrade.
 

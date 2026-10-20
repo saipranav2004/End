@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { describe } from './http';
+import { ApiError, describe } from './http';
 import {
   clearSession,
   readRefreshToken,
@@ -46,6 +46,9 @@ const AUTH_PATHS = /\/api\/(v1\/)?(auth\/)?(login|refresh|logout)$/;
  * checks whether another tab already rotated the pair.
  */
 let inflight = null;
+/* Resolves true (renewed), false (the refresh token is no longer valid) or
+   null (the service could not answer: network, 429, 5xx). Only false ends
+   the session; a passing outage must not sign anyone out. */
 async function renewSession() {
   const held = readRefreshToken();
   const run = async () => {
@@ -66,8 +69,9 @@ async function renewSession() {
       if (!data?.token || !data?.refresh_token) return false;
       writeSession({ token: data.token, refreshToken: data.refresh_token, user: data.user });
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      const status = err?.response?.status;
+      return status === 400 || status === 401 ? false : null;
     }
   };
   if (typeof navigator !== 'undefined' && navigator.locks?.request) {
@@ -86,9 +90,15 @@ client.interceptors.response.use(
       inflight ??= renewSession().finally(() => {
         inflight = null;
       });
-      if (await inflight) {
+      const renewed = await inflight;
+      if (renewed) {
         config.headers.Authorization = `Bearer ${readToken()}`;
         return client.request(config);
+      }
+      if (renewed === null) {
+        return Promise.reject(
+          new ApiError({ message: 'Could not renew your session just now. Try again in a moment.', code: 'RENEW_FAILED', retryable: true }),
+        );
       }
       clearSession();
       unauthorizedHandler?.();

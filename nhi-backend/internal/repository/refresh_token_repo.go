@@ -31,36 +31,40 @@ func (r *UserRepository) CreateRefreshToken(ctx context.Context, userID int, ses
 }
 
 // ConsumeRefreshToken atomically revokes a valid (unrevoked, unexpired) token
-// of a live session and returns its owner and session id. found=false means the token is unknown, expired or
+// of a live session and returns its owner, session id and when the session
+// began (its first token). found=false means the token is unknown, expired or
 // already used. reused=true means it existed but was already revoked, so the
 // caller should treat it as theft and revoke the user's other sessions.
-func (r *UserRepository) ConsumeRefreshToken(ctx context.Context, tokenHash string) (userID int, sessionID string, found, reused bool, err error) {
+func (r *UserRepository) ConsumeRefreshToken(ctx context.Context, tokenHash string) (userID int, sessionID string, startedAt time.Time, found, reused bool, err error) {
 	db, err := r.globalDB()
 	if err != nil {
-		return 0, "", false, false, err
+		return 0, "", time.Time{}, false, false, err
 	}
-	query := `UPDATE ` + r.refreshTable() + ` SET revoked_at = NOW()
+	query := `UPDATE ` + r.refreshTable() + ` t SET revoked_at = NOW()
 		WHERE token_hash = $1 AND revoked_at IS NULL AND session_ended_at IS NULL AND expires_at > NOW()
-		RETURNING user_id, session_id::text`
-	err = db.QueryRowContext(ctx, query, tokenHash).Scan(&userID, &sessionID)
+		RETURNING user_id, session_id::text,
+			(SELECT MIN(s.created_at) FROM ` + r.refreshTable() + ` s WHERE s.session_id = t.session_id)`
+	err = db.QueryRowContext(ctx, query, tokenHash).Scan(&userID, &sessionID, &startedAt)
 	if err == nil {
-		return userID, sessionID, true, false, nil
+		return userID, sessionID, startedAt, true, false, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, "", false, false, fmt.Errorf("consume refresh token: %w", err)
+		return 0, "", time.Time{}, false, false, fmt.Errorf("consume refresh token: %w", err)
 	}
 	// Not consumable: distinguish "already revoked" (reuse) from unknown/expired.
 	var owner int
 	var revoked bool
-	lookup := `SELECT user_id, revoked_at IS NOT NULL FROM ` + r.refreshTable() + ` WHERE token_hash = $1`
+	// A token from a session that was logged out is simply invalid: an old tab
+	// refreshing after sign-out must not end the user's other sessions.
+	lookup := `SELECT user_id, revoked_at IS NOT NULL AND session_ended_at IS NULL FROM ` + r.refreshTable() + ` WHERE token_hash = $1`
 	err = db.QueryRowContext(ctx, lookup, tokenHash).Scan(&owner, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, "", false, false, nil
+		return 0, "", time.Time{}, false, false, nil
 	}
 	if err != nil {
-		return 0, "", false, false, fmt.Errorf("lookup refresh token: %w", err)
+		return 0, "", time.Time{}, false, false, fmt.Errorf("lookup refresh token: %w", err)
 	}
-	return owner, "", false, revoked, nil
+	return owner, "", time.Time{}, false, revoked, nil
 }
 
 // RevokeRefreshSession ends the whole session that the given refresh token

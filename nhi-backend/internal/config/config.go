@@ -97,6 +97,9 @@ type JWTConfig struct {
 	Secret           string `yaml:"secret"`
 	AccessTTLMinutes int    `yaml:"access_ttl_minutes"`
 	RefreshTTLHours  int    `yaml:"refresh_ttl_hours"`
+	// SessionMaxHours caps how long one sign-in can be kept alive by
+	// refreshing; after it the user must sign in again.
+	SessionMaxHours int `yaml:"session_max_hours"`
 }
 
 type CORSConfig struct {
@@ -164,6 +167,9 @@ func (c *Config) applyEnvironment() error {
 	if err := setInt(&c.JWT.RefreshTTLHours, "NHI_JWT_REFRESH_TTL_HOURS"); err != nil {
 		return err
 	}
+	if err := setInt(&c.JWT.SessionMaxHours, "NHI_JWT_SESSION_MAX_HOURS"); err != nil {
+		return err
+	}
 	setString(&c.ClickHouse.Host, "NHI_CLICKHOUSE_HOST")
 	if err := setInt(&c.ClickHouse.Port, "NHI_CLICKHOUSE_PORT"); err != nil {
 		return err
@@ -204,6 +210,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Database.Schema == "" {
 		c.Database.Schema = DefaultGlobalSchema
+	}
+	if c.JWT.SessionMaxHours == 0 {
+		c.JWT.SessionMaxHours = max(720, c.JWT.RefreshTTLHours) // 30 days
 	}
 	if c.ClickHouse.Port == 0 {
 		c.ClickHouse.Port = 9000
@@ -247,6 +256,9 @@ func (c *Config) validate() error {
 	}
 	if time.Duration(c.JWT.RefreshTTLHours)*time.Hour <= time.Duration(c.JWT.AccessTTLMinutes)*time.Minute {
 		return fmt.Errorf("config: jwt.refresh_ttl_hours must be longer than jwt.access_ttl_minutes")
+	}
+	if c.JWT.SessionMaxHours < c.JWT.RefreshTTLHours || c.JWT.SessionMaxHours > 24*365 {
+		return fmt.Errorf("config: jwt.session_max_hours must be between jwt.refresh_ttl_hours and 8760")
 	}
 	if !schemaNameRE.MatchString(c.Database.Schema) {
 		return fmt.Errorf("config: database.schema (global schema) must be a valid identifier")

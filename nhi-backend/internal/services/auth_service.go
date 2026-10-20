@@ -45,14 +45,20 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("authentication lookup failed: %w", err)
 	}
-	if user == nil {
+	// Always run one bcrypt comparison, so an unknown email takes as long as a
+	// wrong password and response time does not reveal which emails exist.
+	hash := dummyHash
+	if user != nil && isBcryptHash(user.Password) {
+		hash = []byte(user.Password)
+	}
+	pwErr := bcrypt.CompareHashAndPassword(hash, []byte(req.Password))
+	if user == nil || !isBcryptHash(user.Password) || pwErr != nil {
 		return nil, errors.New("invalid email or password")
 	}
+	// Status is checked only after the password, so a disabled account is not
+	// revealed to someone who does not know its password.
 	if !strings.EqualFold(strings.TrimSpace(user.Status), "active") {
 		return nil, ErrAccountDisabled
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid email or password")
 	}
 
 	// Do not issue a token if the audit update failed: the documented login
@@ -66,12 +72,25 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("issue session id: %w", err)
 	}
-	return s.issueTokens(ctx, user, sessionID)
+	return s.issueTokens(ctx, user, sessionID, now)
 }
 
+// dummyHash is compared against when the user is missing or has no bcrypt
+// hash; it matches no password anyone will send.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("no-such-user-placeholder"), bcrypt.DefaultCost)
+
+func isBcryptHash(h string) bool {
+	_, err := bcrypt.Cost([]byte(h))
+	return err == nil
+}
+
+// ErrSessionExpired: the sign-in is older than jwt.session_max_hours.
+var ErrSessionExpired = errors.New("session reached its maximum lifetime; sign in again")
+
 // issueTokens resolves the tenant schema and returns a fresh access token plus
-// a newly stored refresh token for an already-authenticated, active user.
-func (s *AuthService) issueTokens(ctx context.Context, user *models.User, sessionID string) (*models.LoginResponse, error) {
+// a newly stored refresh token for an already-authenticated, active user. The
+// refresh token never outlives the session's maximum lifetime.
+func (s *AuthService) issueTokens(ctx context.Context, user *models.User, sessionID string, sessionStart time.Time) (*models.LoginResponse, error) {
 	dbName, err := s.userRepo.GetTenantDBName(ctx, user.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("tenant resolution failed: %w", err)
@@ -83,6 +102,12 @@ func (s *AuthService) issueTokens(ctx context.Context, user *models.User, sessio
 
 	accessTTL := time.Duration(s.jwtCfg.AccessTTLMinutes) * time.Minute
 	refreshTTL := time.Duration(s.jwtCfg.RefreshTTLHours) * time.Hour
+	left := time.Until(sessionStart.Add(time.Duration(s.jwtCfg.SessionMaxHours) * time.Hour)).Truncate(time.Second)
+	if left <= 0 {
+		return nil, ErrSessionExpired
+	}
+	refreshTTL = min(refreshTTL, left)
+	accessTTL = min(accessTTL, left)
 
 	token, err := jwt.GenerateToken(user.Email, user.TenantID, dbName, user.Role, sessionID, s.jwtCfg.Secret, accessTTL)
 	if err != nil {
@@ -115,7 +140,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*models
 	if refreshToken == "" {
 		return nil, ErrInvalidRefreshToken
 	}
-	userID, sessionID, found, reused, err := s.userRepo.ConsumeRefreshToken(ctx, hashRefreshToken(refreshToken))
+	userID, sessionID, startedAt, found, reused, err := s.userRepo.ConsumeRefreshToken(ctx, hashRefreshToken(refreshToken))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +160,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*models
 	if user == nil || !strings.EqualFold(strings.TrimSpace(user.Status), "active") {
 		return nil, ErrAccountDisabled
 	}
-	return s.issueTokens(ctx, user, sessionID)
+	return s.issueTokens(ctx, user, sessionID, startedAt)
 }
 
 // Logout ends the session the refresh token belongs to, so both its refresh
@@ -170,15 +195,4 @@ func newRefreshToken() (string, error) {
 func hashRefreshToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
-}
-
-func (s *AuthService) GetUserByID(ctx context.Context, id int) (*models.User, error) {
-	user, err := s.userRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if user != nil {
-		user.Password = ""
-	}
-	return user, nil
 }

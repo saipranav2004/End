@@ -2,13 +2,61 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
+	"strconv"
+	"strings"
+	"time"
 
 	"nhi-backend-api/internal/middleware"
 	"nhi-backend-api/internal/models"
+	"nhi-backend-api/internal/ratelimit"
 	"nhi-backend-api/internal/services"
 )
+
+// Sign-in guessing limits: per client address and per account.
+var (
+	loginByIP    = ratelimit.New(10.0/60, 10) // 10 a minute per address
+	loginByEmail = ratelimit.New(5.0/300, 5)  // 5, then 1 every minute per account
+	refreshByIP  = ratelimit.New(1, 60)       // tabs refresh about hourly
+)
+
+// clientIP is the caller's address. X-Real-IP (set by the console's nginx) is
+// trusted only when the direct peer is a private or loopback address, i.e.
+// the request came through our own proxy; otherwise anyone could forge it.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if peer, err := netip.ParseAddr(host); err == nil && (peer.IsLoopback() || peer.IsPrivate()) {
+		if real, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
+			return real.String()
+		}
+	}
+	return host
+}
+
+// tooManyAttempts answers 429 with Retry-After when any limiter is empty.
+func tooManyAttempts(w http.ResponseWriter, what string, checks ...func() (bool, time.Duration)) bool {
+	for _, check := range checks {
+		if ok, wait := check(); !ok {
+			secs := int(wait.Seconds()) + 1
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			sendJSON(w, http.StatusTooManyRequests, models.APIResponse{
+				Success: false,
+				Message: fmt.Sprintf("Too many %s attempts. Wait %d seconds and try again.", what, secs),
+				Error:   "RATE_LIMITED",
+			})
+			return true
+		}
+	}
+	return false
+}
 
 type AuthHandler struct {
 	authService *services.AuthService
@@ -48,7 +96,24 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := time.Now()
+	if tooManyAttempts(w, "sign-in",
+		func() (bool, time.Duration) { return loginByIP.Allow(clientIP(r), now) },
+		func() (bool, time.Duration) { return loginByEmail.Allow(strings.ToLower(req.Login()), now) },
+	) {
+		return
+	}
+
 	resp, err := h.authService.Login(r.Context(), req)
+	if errors.Is(err, services.ErrAccountDisabled) {
+		// Only reachable with the right password, so saying so leaks nothing.
+		sendJSON(w, http.StatusForbidden, models.APIResponse{
+			Success: false,
+			Message: "This account is disabled. Ask an administrator to re-enable it.",
+			Error:   "ACCOUNT_DISABLED",
+		})
+		return
+	}
 	if err != nil {
 		log.Printf("login failed: %v", err)
 		sendJSON(w, http.StatusUnauthorized, models.APIResponse{
@@ -91,6 +156,9 @@ func decodeRefreshRequest(w http.ResponseWriter, r *http.Request) (string, bool)
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	token, ok := decodeRefreshRequest(w, r)
 	if !ok {
+		return
+	}
+	if tooManyAttempts(w, "session renewal", func() (bool, time.Duration) { return refreshByIP.Allow(clientIP(r), time.Now()) }) {
 		return
 	}
 	resp, err := h.authService.Refresh(r.Context(), token)

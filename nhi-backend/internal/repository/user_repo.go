@@ -112,13 +112,14 @@ func (r *UserRepository) GetTenantDBName(ctx context.Context, tenantID string) (
 // ValidateAuthContext revalidates the signed token's user/tenant/database tuple
 // against the global registry and confirms the account is still active and the
 // token's session (jti) exists and has not been ended by logout.
-func (r *UserRepository) ValidateAuthContext(ctx context.Context, email, tenantID, dbName, sessionID string) (bool, error) {
+func (r *UserRepository) ValidateAuthContext(ctx context.Context, email, tenantID, dbName, sessionID string) (bool, string, error) {
 	db, err := r.globalDB()
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	query := `SELECT EXISTS (
-		SELECT 1
+	// The role is read here, not trusted from the token, so a demoted admin
+	// loses admin endpoints on the next request rather than at token expiry.
+	query := `SELECT COALESCE(u.role, '')
 		FROM ` + database.Table(r.schema, globalUsersTable) + ` u
 		JOIN ` + database.Table(r.schema, globalTenantsTable) + ` t ON t.tenant_id = u.tenant_id
 		WHERE LOWER(TRIM(u.email)) = LOWER(TRIM($1))
@@ -127,28 +128,16 @@ func (r *UserRepository) ValidateAuthContext(ctx context.Context, email, tenantI
 		  AND LOWER(TRIM(COALESCE(u.status, ''))) = 'active'
 		  AND EXISTS (SELECT 1 FROM ` + r.refreshTable() + ` s WHERE s.session_id = $4::uuid AND s.user_id = u.id)
 		  AND NOT EXISTS (SELECT 1 FROM ` + r.refreshTable() + ` s WHERE s.session_id = $4::uuid AND s.session_ended_at IS NOT NULL)
-	)`
-	var ok bool
-	if err := db.QueryRowContext(ctx, query, strings.TrimSpace(email), strings.TrimSpace(tenantID), strings.TrimSpace(dbName), strings.TrimSpace(sessionID)).Scan(&ok); err != nil {
-		return false, fmt.Errorf("validate authenticated tenant context: %w", err)
-	}
-	return ok, nil
-}
-
-func (r *UserRepository) GetStatusByEmail(ctx context.Context, email string) (status string, found bool, err error) {
-	db, err := r.globalDB()
-	if err != nil {
-		return "", false, err
-	}
-	query := `SELECT COALESCE(status, '') FROM ` + database.Table(r.schema, globalUsersTable) + ` WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))`
-	err = db.QueryRowContext(ctx, query, strings.TrimSpace(email)).Scan(&status)
+		LIMIT 1`
+	var role string
+	err = db.QueryRowContext(ctx, query, strings.TrimSpace(email), strings.TrimSpace(tenantID), strings.TrimSpace(dbName), strings.TrimSpace(sessionID)).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
+		return false, "", nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("query user status: %w", err)
+		return false, "", fmt.Errorf("validate authenticated tenant context: %w", err)
 	}
-	return status, true, nil
+	return true, role, nil
 }
 
 func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID int) error {

@@ -24,6 +24,7 @@ jwt:
   secret: ""                  # REQUIRED, >= 32 chars. Or set NHI_JWT_SECRET env var.
   access_ttl_minutes: 60   # access token: 1 hour
   refresh_ttl_hours: 168   # refresh token: 7 days
+  session_max_hours: 720   # sign in again after 30 days, however often refreshed
 
 cors:
   allowed_origins:

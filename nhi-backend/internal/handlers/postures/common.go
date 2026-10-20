@@ -21,11 +21,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"nhi-backend-api/internal/middleware"
 	models "nhi-backend-api/internal/models/postures"
+	"nhi-backend-api/internal/ratelimit"
 	svc "nhi-backend-api/internal/services/postures"
 )
 
@@ -137,7 +137,7 @@ func begin(w http.ResponseWriter, r *http.Request) (models.Caller, bool) {
 		writeError(w, http.StatusUnauthorized, codeUnauthorized, "missing or invalid token", "")
 		return models.Caller{}, false
 	}
-	if ok, wait := tenantLimiter.allow(claims.TenantID, time.Now()); !ok {
+	if ok, wait := tenantLimiter.Allow(claims.TenantID, time.Now()); !ok {
 		secs := int(math.Ceil(wait.Seconds()))
 		if secs < 1 {
 			secs = 1
@@ -154,50 +154,8 @@ const (
 	rateLimitBurst     = 50.0
 )
 
-// limiter is a per-tenant token bucket.
-type limiter struct {
-	mu    sync.Mutex
-	rate  float64
-	burst float64
-	m     map[string]*bucket
-}
-
-type bucket struct {
-	tokens float64
-	last   time.Time
-}
-
-func newLimiter(rate, burst float64) *limiter {
-	return &limiter{rate: rate, burst: burst, m: map[string]*bucket{}}
-}
-
-var tenantLimiter = newLimiter(rateLimitPerSecond, rateLimitBurst)
-
-// allow takes one token for the key. When none is left it reports how long to
-// wait for the next one.
-func (l *limiter) allow(key string, now time.Time) (bool, time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	b, ok := l.m[key]
-	if !ok {
-		if len(l.m) > 5000 { // drop idle tenants
-			for k, v := range l.m {
-				if now.Sub(v.last) > time.Minute {
-					delete(l.m, k)
-				}
-			}
-		}
-		b = &bucket{tokens: l.burst, last: now}
-		l.m[key] = b
-	}
-	b.tokens = math.Min(l.burst, b.tokens+now.Sub(b.last).Seconds()*l.rate)
-	b.last = now
-	if b.tokens >= 1 {
-		b.tokens--
-		return true, 0
-	}
-	return false, time.Duration((1 - b.tokens) / l.rate * float64(time.Second))
-}
+// tenantLimiter is a per-tenant token bucket.
+var tenantLimiter = ratelimit.New(rateLimitPerSecond, rateLimitBurst)
 
 // ─────────────────────────────────────────────────────────────────────────
 // Caching: ETag "<scan_id>"
