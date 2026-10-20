@@ -716,7 +716,7 @@ function BehaviourPanel({ query, wide }) {
   const stats = [
     { label: 'Watched', value: cards.watched },
     { label: 'Established', value: cards.established, tone: 'text-low' },
-    { label: 'Still learning', value: cards.learning },
+    { label: 'No baseline yet', value: cards.learning },
   ];
   const coverage =
     cards.watched > 0 && cards.established !== null ? Math.round((cards.established / cards.watched) * 100) : null;

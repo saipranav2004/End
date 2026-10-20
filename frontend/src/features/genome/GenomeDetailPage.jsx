@@ -23,7 +23,7 @@ import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { SegmentedControl, Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { TrendChart } from '../../charts/TrendChart';
-import { ApiShareList, Fingerprint, formatShare, ScheduleGrid } from './visuals';
+import { ApiShareList, formatShare, ScheduleGrid } from './visuals';
 import {
   anomalyStatusMeta,
   CursorPager,
@@ -364,7 +364,6 @@ function GenomeIdentity({ sourceType, identityName }) {
 
 /* ── Genome ───────────────────────────────────────────────────────────────── */
 
-const RADAR_AXES = 8;
 const RESOURCES_SHOWN = 10;
 
 function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
@@ -374,9 +373,8 @@ function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
     [sourceType, identityName, window],
   );
 
-  /* The fingerprint arrives as (dimension, value, share) rows. Grouped by
-     dimension, the share of the most common value says how predictable this
-     identity is on that axis - which is the shape the radar draws. */
+  /* The fingerprint arrives as (dimension, value, share) rows; grouped by
+     dimension, most common value first. */
   const dimensions = useMemo(() => {
     const groups = new Map();
     for (const point of profile.data?.fingerprint ?? []) {
@@ -386,7 +384,6 @@ function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
     return [...groups.entries()].map(([dimension, values]) => ({
       dimension,
       values: [...values].sort((a, b) => b.share_percent - a.share_percent),
-      top: Math.max(0, ...values.map((value) => Number(value.share_percent) || 0)),
     }));
   }, [profile.data]);
 
@@ -424,11 +421,10 @@ function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
   const { typicalActions, typicalResources, activitySchedule } = profile.data;
   const span = WINDOW_WORDS[window];
   const empty = dimensions.length === 0 && typicalActions.length === 0 && activitySchedule.length === 0;
-  const axes = dimensions.slice(0, RADAR_AXES).map((entry) => ({ key: entry.dimension, label: dimensionLabel(entry.dimension) }));
 
-  return (
-    <div className="flex flex-col gap-4">
-      {empty && (
+  if (empty) {
+    return (
+      <div className="flex flex-col gap-4">
         <Panel prominence="quiet" className="animate-rise">
           <EmptyState
             compact
@@ -437,161 +433,258 @@ function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
             description="The genome is drawn from this identity's own calls. Widen the window, or check back once it has been active."
           />
         </Panel>
-      )}
-      {empty && <BaselineProvenance summary={summary} timeline={timeline} span={span} />}
+        <BaselineProvenance summary={summary} timeline={timeline} span={span} />
+      </div>
+    );
+  }
 
-      {!empty && (
-        <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-          <Panel prominence="lead" className="animate-rise">
-            <PanelHeader
-              prominence="lead"
-              title="Behavioural fingerprint"
-              subtitle={`How concentrated each dimension is over the last ${span}: the share of calls carried by its most common value. A full axis means one value carries every call.`}
+  /* In the order an analyst asks: what is normal for it, can the baseline be
+     trusted, exactly which actions and resources, and when it works. */
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <NormalBehaviour dimensions={dimensions} schedule={activitySchedule} span={span} />
+        <BaselineProvenance summary={summary} timeline={timeline} span={span} />
+      </div>
+
+      <div className="grid gap-4 @min-[52rem]:grid-cols-2">
+        <Panel prominence="quiet" className="animate-rise">
+          <PanelHeader prominence="quiet" title="Typical actions" subtitle={`API calls it made over the last ${span}, by share.`} />
+          {typicalActions.length === 0 ? (
+            <p className="mt-3 text-[12.5px] text-ink-3">No API calls in this window.</p>
+          ) : (
+            <ApiShareList
+              className="mt-3"
+              actions={typicalActions.map((action) => ({
+                api: action.api_operation,
+                share: Number(action.share_percent) || 0,
+                calls: Number(action.calls) || 0,
+              }))}
             />
-            {axes.length >= 3 ? (
-              <Fingerprint
-                className="mt-4"
-                axes={axes}
-                valueSuffix="%"
-                series={[
-                  {
-                    key: 'top',
-                    label: 'Most common value',
-                    values: Object.fromEntries(dimensions.map((entry) => [entry.dimension, entry.top])),
-                    tone: 'var(--t-series-1)',
-                  },
-                ]}
-              />
-            ) : (
-              <p className="mt-4 text-[12.5px] text-ink-3">
-                {dimensions.length === 0
-                  ? 'No behavioural dimensions were recorded in this window.'
-                  : 'Too few dimensions to draw a shape. Their values are listed below.'}
-              </p>
-            )}
-          </Panel>
+          )}
+        </Panel>
 
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
-            <PanelHeader prominence="quiet" title="Typical actions" subtitle={`Share of calls over the last ${span}.`} />
-            {typicalActions.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No API calls in this window.</p>
-            ) : (
-              <ApiShareList
-                className="mt-3"
-                actions={typicalActions.map((action) => ({
-                  api: action.api_operation,
-                  share: Number(action.share_percent) || 0,
-                  calls: Number(action.calls) || 0,
-                }))}
-              />
-            )}
-          </Panel>
-        </div>
-      )}
-
-      {!empty && (
-        <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <Panel prominence="quiet" className="animate-rise">
-            <PanelHeader
-              prominence="quiet"
-              title="Activity schedule"
-              subtitle="Seven days by hour, UTC. Darker means busier; activity outside these usual hours is what a departure looks like."
-            />
-            {activitySchedule.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
-            ) : (
-              <ScheduleGrid className="mt-3" cells={activitySchedule} />
-            )}
-          </Panel>
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
-            <PanelHeader prominence="quiet" title="Calls by hour of day" subtitle={`All days of the last ${span} folded onto one day, UTC.`} />
-            {hourly.every((entry) => entry.calls === 0) ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
-            ) : (
-              <TrendChart className="mt-3" variant="bar" data={hourly} dataKey="calls" label="API calls" height={150} />
-            )}
-          </Panel>
-        </div>
-      )}
-
-      {!empty && (
-        <div className="grid gap-4 @min-[52rem]:grid-cols-2">
-          <Panel prominence="quiet" className="animate-rise" >
-            <PanelHeader prominence="quiet" title="Typical resources" subtitle={`Resources touched over the last ${span}, by calls.`} />
-            {typicalResources.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No resource ARNs were recorded on this identity's calls.</p>
-            ) : (
-              <ul className="mt-3 flex flex-col">
-                {(showAllResources ? typicalResources : typicalResources.slice(0, RESOURCES_SHOWN)).map((resource) => (
-                  <li key={resource.resource} className="border-b border-line py-2 last:border-0">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="min-w-0 truncate font-mono text-[12px] text-ink-2" title={resource.resource}>
-                        {resource.resource}
-                      </span>
-                      <span data-numeric="" className="shrink-0 text-[11.5px] text-ink-3">
-                        {formatNumber(resource.calls)}
-                      </span>
-                    </div>
-                    {resource.resource_type && (
-                      <span className="mt-0.5 block text-[11px] text-ink-3">{resource.resource_type}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {typicalResources.length > RESOURCES_SHOWN && (
-              <Button
-                variant="link"
-                size="sm"
-                className="mt-2"
-                aria-expanded={showAllResources}
-                onClick={() => setShowAllResources((value) => !value)}
-              >
-                {showAllResources ? 'Show fewer' : `Show all ${formatNumber(typicalResources.length)} resources`}
-              </Button>
-            )}
-          </Panel>
-          <BaselineProvenance summary={summary} timeline={timeline} span={span} />
-        </div>
-      )}
-
-      {!empty && (
-          <Panel prominence="quiet" className="animate-rise">
-            <PanelHeader prominence="quiet" title="Values by dimension" subtitle="Each dimension's values and their share of calls." />
-            {dimensions.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No behavioural dimensions were recorded in this window.</p>
-            ) : (
-              <div className="mt-3 gap-x-8 @min-[52rem]:columns-2">
-                {dimensions.map((entry) => (
-                  <div key={entry.dimension} className="mb-4 break-inside-avoid">
-                    <SectionLabel>{dimensionLabel(entry.dimension)}</SectionLabel>
-                    <ul className="mt-1.5 flex flex-col gap-1.5">
-                      {entry.values.slice(0, 6).map((point) => (
-                        <li key={point.value} className="flex items-center gap-3">
-                          <span className="w-[42%] min-w-0 truncate font-mono text-[11.5px] text-ink-2" title={point.value}>
-                            {dimensionValueLabel(entry.dimension, point.value)}
-                          </span>
-                          <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
-                            <span
-                              className="block h-full rounded-full"
-                              style={{ width: `${Math.min(100, point.share_percent)}%`, background: 'var(--t-series-1)' }}
-                            />
-                          </span>
-                          <span data-numeric="" className="w-11 shrink-0 text-right text-[11.5px] font-semibold text-ink">
-                            {formatShare(point.share_percent)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    {entry.values.length > 6 && (
-                      <p className="mt-1 text-[11px] text-ink-3">and {formatNumber(entry.values.length - 6)} rarer values</p>
-                    )}
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+          <PanelHeader prominence="quiet" title="Typical resources" subtitle={`What those calls touched over the last ${span}.`} />
+          {typicalResources.length === 0 ? (
+            <p className="mt-3 text-[12.5px] text-ink-3">No resource ARNs were recorded on this identity's calls.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col">
+              {(showAllResources ? typicalResources : typicalResources.slice(0, RESOURCES_SHOWN)).map((resource) => (
+                <li key={resource.resource} className="border-b border-line py-2 last:border-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate font-mono text-[12px] text-ink-2" title={resource.resource}>
+                      {resource.resource}
+                    </span>
+                    <span data-numeric="" className="shrink-0 text-[11.5px] text-ink-3">
+                      {formatNumber(resource.calls)} {Number(resource.calls) === 1 ? 'call' : 'calls'}
+                    </span>
                   </div>
-                ))}
-              </div>
-            )}
-          </Panel>
+                  {resource.resource_type && <span className="mt-0.5 block text-[11px] text-ink-3">{resource.resource_type}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {typicalResources.length > RESOURCES_SHOWN && (
+            <Button
+              variant="link"
+              size="sm"
+              className="mt-2"
+              aria-expanded={showAllResources}
+              onClick={() => setShowAllResources((value) => !value)}
+            >
+              {showAllResources ? 'Show fewer' : `Show all ${formatNumber(typicalResources.length)} resources`}
+            </Button>
+          )}
+        </Panel>
+      </div>
+
+      <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <Panel prominence="quiet" className="animate-rise">
+          <PanelHeader
+            prominence="quiet"
+            title="Activity schedule"
+            subtitle="Seven days by hour, UTC. Darker means busier; calls outside these hours are what an off-hours departure looks like."
+          />
+          {activitySchedule.length === 0 ? (
+            <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
+          ) : (
+            <ScheduleGrid className="mt-3" cells={activitySchedule} />
+          )}
+        </Panel>
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+          <PanelHeader prominence="quiet" title="Calls by hour of day" subtitle={`Every day of the last ${span} folded onto one, UTC.`} />
+          {hourly.every((entry) => entry.calls === 0) ? (
+            <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
+          ) : (
+            <TrendChart className="mt-3" variant="bar" data={hourly} dataKey="calls" label="API calls" height={150} />
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* Which question each fingerprint dimension answers. API operation, hour of
+   week and hour of day are left out: Typical actions and the schedule show
+   them in full. Anything the pipeline adds later lands in "Workload". */
+const PROFILE_GROUPS = [
+  { key: 'what', title: 'What it calls', dims: ['api_service', 'read_write', 'result'] },
+  { key: 'where', title: 'Where it calls from', dims: ['region', 'source_network_class', 'user_agent_family'] },
+  { key: 'touches', title: 'What it touches', dims: ['resource_type', 'resource_pattern'] },
+];
+const SHOWN_ELSEWHERE = new Set(['api_operation', 'hour_of_week_utc', 'timing']);
+const UNREPORTED = new Set(['', 'unknown', 'none', 'null', 'n/a']);
+const unreported = (value) => UNREPORTED.has(String(value ?? '').trim().toLowerCase());
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** How settled a dimension is, in the words people use for it. */
+function consistency(values) {
+  const reported = values.filter((value) => !unreported(value.value));
+  const top = Number(reported[0]?.share_percent) || 0;
+  if (reported.length === 1 && top >= 99.5) return { label: 'Always', tone: 'low' };
+  if (top >= 80) return { label: 'Mostly', tone: 'info' };
+  return { label: `${formatNumber(reported.length)} values`, tone: 'neutral' };
+}
+
+/** "Fri" or "Mon–Fri", and "05:00–13:59 UTC", from the schedule cells. */
+function whenItWorks(schedule) {
+  const days = new Set();
+  const hours = new Set();
+  for (const cell of schedule) {
+    if (!(Number(cell.calls) > 0)) continue;
+    const day = Number(cell.day_of_week) - 1;
+    if (day >= 0 && day < 7) days.add(day);
+    if (Number(cell.hour) >= 0 && Number(cell.hour) < 24) hours.add(Number(cell.hour));
+  }
+  if (days.size === 0) return null;
+  const dayList = [...days].sort((a, b) => a - b);
+  const contiguous = dayList.length > 1 && dayList.at(-1) - dayList[0] === dayList.length - 1;
+  const dayText = contiguous ? `${DAY_NAMES[dayList[0]]}–${DAY_NAMES[dayList.at(-1)]}` : dayList.map((day) => DAY_NAMES[day]).join(', ');
+  const hourList = [...hours].sort((a, b) => a - b);
+  const pad = (hour) => String(hour).padStart(2, '0');
+  return { days: dayText, hours: `${pad(hourList[0])}:00–${pad(hourList.at(-1))}:59 UTC` };
+}
+
+/**
+ * The identity's normal behaviour as statements, grouped by the question each
+ * answers, instead of one bar per dimension. A dimension with one value reads
+ * "Always"; one the pipeline reports only as "unknown" is listed once at the
+ * foot, not as a row of identical full bars.
+ */
+function NormalBehaviour({ dimensions, schedule, span }) {
+  const byKey = new Map(dimensions.map((entry) => [entry.dimension, entry]));
+  const grouped = new Set(PROFILE_GROUPS.flatMap((group) => group.dims));
+  const notReported = [];
+  const rowsFor = (keys) =>
+    keys.flatMap((key) => {
+      const entry = byKey.get(key);
+      if (!entry) return [];
+      if (entry.values.every((value) => unreported(value.value))) {
+        notReported.push(dimensionLabel(key));
+        return [];
+      }
+      return [entry];
+    });
+  const groups = [
+    ...PROFILE_GROUPS.map((group) => ({ ...group, rows: rowsFor(group.dims) })),
+    {
+      key: 'workload',
+      title: 'Workload',
+      rows: rowsFor(dimensions.map((entry) => entry.dimension).filter((key) => !grouped.has(key) && !SHOWN_ELSEWHERE.has(key))),
+    },
+  ].filter((group) => group.rows.length > 0);
+  const when = whenItWorks(schedule);
+  const settled = dimensions.filter((entry) => !SHOWN_ELSEWHERE.has(entry.dimension) && consistency(entry.values).label === 'Always').length;
+  const measured = dimensions.filter((entry) => !SHOWN_ELSEWHERE.has(entry.dimension) && !entry.values.every((value) => unreported(value.value))).length;
+
+  return (
+    <Panel prominence="lead" className="animate-rise">
+      <PanelHeader
+        prominence="lead"
+        title="Normal behaviour"
+        subtitle={
+          measured > 0
+            ? `Over the last ${span}, ${formatNumber(settled)} of ${formatNumber(measured)} measured traits always took one value. A call outside these is what a departure is.`
+            : `What this identity did over the last ${span}.`
+        }
+      />
+      <div className="mt-4 flex flex-col gap-5">
+        {when && (
+          <ProfileGroup title="When it works">
+            <ProfileRow label="Days" values={[{ text: when.days }]} />
+            <ProfileRow label="Hours" values={[{ text: when.hours }]} />
+          </ProfileGroup>
+        )}
+        {groups.map((group) => (
+          <ProfileGroup key={group.key} title={group.title}>
+            {group.rows.map((entry) => {
+              const reported = entry.values.filter((value) => !unreported(value.value));
+              const shown = reported.slice(0, 3);
+              const settledRow = consistency(entry.values);
+              return (
+                <ProfileRow
+                  key={entry.dimension}
+                  label={dimensionLabel(entry.dimension)}
+                  // Only the exceptions carry a badge; "always" is the norm the subtitle states.
+                  badge={settledRow.label === 'Always' ? null : settledRow}
+                  values={shown.map((value) => ({
+                    text: dimensionValueLabel(entry.dimension, value.value),
+                    share: settledRow.label === 'Always' ? null : value.share_percent,
+                  }))}
+                  more={reported.length - shown.length}
+                />
+              );
+            })}
+          </ProfileGroup>
+        ))}
+      </div>
+      {notReported.length > 0 && (
+        <p className="mt-4 border-t border-line pt-3 text-[11.5px] text-ink-3">
+          Not reported by the pipeline: {notReported.join(', ')}.
+        </p>
       )}
+    </Panel>
+  );
+}
+
+function ProfileGroup({ title, children }) {
+  return (
+    <section>
+      <SectionLabel>{title}</SectionLabel>
+      <dl className="mt-1.5 flex flex-col divide-y divide-line">{children}</dl>
+    </section>
+  );
+}
+
+function ProfileRow({ label, values, badge, more = 0 }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_auto] items-center gap-3 py-1.5">
+      <dt className="text-[12px] text-ink-3">{label}</dt>
+      <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {values.map((value) => (
+          <span
+            key={value.text}
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-[var(--radius-control)] border border-line bg-surface-2 px-1.5 py-0.5"
+            title={value.text}
+          >
+            <span className="min-w-0 truncate font-mono text-[11.5px] text-ink">{value.text}</span>
+            {value.share !== null && value.share !== undefined && (
+              <span data-numeric="" className="shrink-0 text-[11px] text-ink-3">
+                {formatShare(value.share)}
+              </span>
+            )}
+          </span>
+        ))}
+        {more > 0 && <span className="text-[11px] text-ink-3">+{formatNumber(more)} rarer</span>}
+      </dd>
+      <dd className="shrink-0">
+        {badge && (
+          <Tag tone={badge.tone} size="sm">
+            {badge.label}
+          </Tag>
+        )}
+      </dd>
     </div>
   );
 }

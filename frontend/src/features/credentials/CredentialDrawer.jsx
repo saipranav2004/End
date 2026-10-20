@@ -40,8 +40,8 @@ const TABS = [
  * One credential (`GET /api/v1/credentials/{id}?tab=`), opened over the
  * register. `row` is the list item, shown at once while the tabs load.
  */
-export function CredentialDrawer({ credentialId, row, onClose }) {
-  const [tab, setTab] = useState('overview');
+export function CredentialDrawer({ credentialId, row, onClose, initialTab }) {
+  const [tab, setTab] = useState(() => (TABS.some((entry) => entry.value === initialTab) ? initialTab : 'overview'));
   const open = Boolean(credentialId);
 
   const overviewQuery = useCredentialTab(credentialId, 'overview', open);

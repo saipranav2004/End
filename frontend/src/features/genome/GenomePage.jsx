@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, SearchX, ShieldQuestion } from 'lucide-react';
-import { fetchGenomeSummary, fetchMonitoredFleet } from '../../lib/api/genome';
+import { fetchGenomeIdentity, fetchGenomeSummary, fetchMonitoredFleet } from '../../lib/api/genome';
 import { genomeRoute } from '../../lib/identityLinks';
 import { useDebouncedValue, useQuery } from '../../lib/hooks';
 import { severityMeta } from '../../lib/domain';
@@ -13,7 +13,6 @@ import { Button } from '../../ui/Button';
 import { DataGrid } from '../../ui/DataGrid';
 import { SearchInput, Select } from '../../ui/Field';
 import { Pagination } from '../../ui/Pagination';
-import { ProportionBar } from '../../ui/Meter';
 import { Panel, PanelHeader } from '../../ui/Panel';
 import { ChartSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
 import { MetricTile } from '../../ui/Stat';
@@ -95,6 +94,7 @@ export default function GenomePage() {
   const lastPage = Math.max(1, Math.ceil(filtered.length / pageSize));
   const current = Math.min(page, lastPage);
   const rows = filtered.slice((current - 1) * pageSize, current * pageSize);
+  const rowSummaries = useRowSummaries(rows);
 
   /* Workload mix of the watched fleet, largest first; the tail folds into
      "Other" so the ring stays readable. */
@@ -139,20 +139,23 @@ export default function GenomePage() {
       key: 'identity',
       header: 'Identity',
       primary: true,
-      width: '40%',
+      width: '30%',
       cell: (row) => (
         <span className="block min-w-0">
           <span className="block truncate text-[13px] font-semibold text-ink" title={row.identityName}>
             {row.name || row.identityName}
           </span>
-          <span className="block truncate text-[11.5px] text-ink-3">{sourceTypeLabel(row.sourceType)}</span>
+          <span className="block truncate text-[11.5px] text-ink-3">
+            {sourceTypeLabel(row.sourceType)}
+            {row.status && String(row.status).toLowerCase() !== 'active' ? ` · ${row.status}` : ''}
+          </span>
         </span>
       ),
     },
     {
       key: 'scope',
       header: 'Account / region',
-      width: '22%',
+      width: '17%',
       priority: 'wide',
       cell: (row) => (
         <span className="block min-w-0">
@@ -164,36 +167,29 @@ export default function GenomePage() {
       ),
     },
     {
-      key: 'status',
-      header: 'Status',
-      width: '14%',
-      cell: (row) =>
-        row.status ? (
-          <Tag tone={String(row.status).toLowerCase() === 'active' ? 'low' : 'neutral'} size="sm" dot>
-            {row.status}
-          </Tag>
-        ) : (
-          <span className="text-[12px] text-ink-3">-</span>
-        ),
+      key: 'baseline',
+      header: 'Baseline',
+      width: '17%',
+      cell: (row) => <RowCell summary={rowSummaries.data} id={row.id} render={baselineCell} />,
     },
     {
-      key: 'seen',
-      header: 'Last seen in CloudTrail',
-      width: '18%',
-      cell: (row) =>
-        row.last_activity_at ? (
-          <span className="block whitespace-nowrap text-[12.5px] text-ink-2" title={formatDateTime(row.last_activity_at)}>
-            {formatRelative(row.last_activity_at)}
-          </span>
-        ) : fleet.data?.activityAvailable === false ? (
-          <span className="text-[12px] text-ink-3" title="CloudTrail activity could not be read">
-            Not available
-          </span>
-        ) : (
-          <span className="text-[12px] text-ink-3" title="Discovery's CloudTrail activity; the genome's own call count is on the identity's page">
-            None recorded
-          </span>
-        ),
+      key: 'open',
+      header: 'Open departures',
+      width: '12%',
+      cell: (row) => <RowCell summary={rowSummaries.data} id={row.id} render={openCell} />,
+    },
+    {
+      key: 'calls',
+      header: 'Calls · 14 days',
+      width: '11%',
+      priority: 'wide',
+      cell: (row) => <RowCell summary={rowSummaries.data} id={row.id} render={callsCell} />,
+    },
+    {
+      key: 'last',
+      header: 'Last call',
+      width: '13%',
+      cell: (row) => <RowCell summary={rowSummaries.data} id={row.id} render={lastCallCell} />,
     },
   ];
 
@@ -228,11 +224,8 @@ export default function GenomePage() {
       ) : (
         <>
           <SummaryCards cards={summary.data.cards} window={window} />
-          <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="flex flex-col gap-4">
-              <CoveragePanel cards={summary.data.cards} window={window} />
-              <AnomaliesPerDay days={summary.data.anomaliesByDay} span={chartDays} generatedAt={summary.data.generatedAt} />
-            </div>
+          <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <AnomaliesPerDay days={summary.data.anomaliesByDay} span={chartDays} generatedAt={summary.data.generatedAt} />
             <DeparturesByType departures={summary.data.departures} span={chartDays} />
           </div>
           {summary.data.mostAnomalous.length > 0 && <MostAnomalous entries={summary.data.mostAnomalous} />}
@@ -378,17 +371,17 @@ function SummaryCards({ cards, window }) {
     />,
     <MetricTile
       key="learning"
-      label="Still learning"
+      label="No baseline yet"
       value={cards.still_learning}
       tone="medium"
-      caption="No baseline yet, so no anomaly can be raised"
+      caption="Learning, or not started; nothing can be flagged for them yet"
     />,
     <MetricTile
       key="open"
-      label="Open anomalies"
+      label={`New anomalies · ${window}`}
       value={open}
       tone={open > 0 ? 'critical' : 'neutral'}
-      caption={`Raised in the last ${WINDOW_WORDS[window]} and still open`}
+      caption={`Raised in the last ${WINDOW_WORDS[window]} and still open; older open ones are in the list below`}
     />,
     critical !== null && critical !== undefined && (
       <MetricTile key="critical" label="Critical anomalies" value={critical} tone="critical" caption="Highest-confidence departures" />
@@ -402,50 +395,6 @@ function SummaryCards({ cards, window }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function Fact({ label, value }) {
-  return (
-    <div>
-      <dt className="text-[10.5px] font-semibold tracking-[0.085em] text-ink-3 uppercase">{label}</dt>
-      <dd data-numeric="" className="mt-0.5 text-[13px] font-semibold text-ink">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-/** Established against still learning, plus what the summary measures about the fleet's baselines. */
-function CoveragePanel({ cards, window }) {
-  const established = Number(cards.baselines_established) || 0;
-  const learning = Number(cards.still_learning) || 0;
-  const coverage = cards.baseline_coverage_percent;
-  return (
-    <Panel prominence="quiet" className="animate-rise">
-      <PanelHeader prominence="quiet" title="Baseline coverage" />
-      <ProportionBar
-        className="mt-3"
-        height={10}
-        total={established + learning}
-        ariaLabel={`${established} established and ${learning} learning`}
-        segments={[
-          { key: 'established', label: 'Established', value: established, color: 'var(--t-low)' },
-          { key: 'learning', label: 'Learning', value: learning, color: 'var(--t-medium)' },
-        ]}
-      />
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
-        <Fact label="Coverage" value={coverage === null || coverage === undefined ? '-' : `${Math.round(coverage)}%`} />
-        <Fact label="Card window" value={`Last ${WINDOW_WORDS[window]}`} />
-        {cards.mean_confidence_percent !== null && cards.mean_confidence_percent !== undefined && (
-          <Fact label="Mean confidence" value={`${Math.round(cards.mean_confidence_percent)}%`} />
-        )}
-        {cards.drifting_baselines_available && <Fact label="Drifting baselines" value={formatNumber(cards.drifting_baselines)} />}
-      </dl>
-      <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">
-        Only an established baseline can raise an anomaly; identities still learning are watched but never flagged.
-      </p>
-    </Panel>
   );
 }
 
@@ -593,4 +542,93 @@ function RecentlyBaselined({ entries, loading }) {
       ))}
     </ul>
   );
+}
+
+/**
+ * The genome's own state for the rows on screen: one identity summary each,
+ * six at a time. A row whose summary fails shows "-" rather than failing the
+ * table. ponytail: one request per visible row; a batch endpoint is the
+ * upgrade if pages of 100 become common.
+ */
+function useRowSummaries(rows) {
+  const key = rows.map((row) => row.id).join(',');
+  return useQuery(
+    async (signal) => {
+      const out = new Map();
+      let next = 0;
+      const work = async () => {
+        while (next < rows.length) {
+          const row = rows[next++];
+          try {
+            out.set(row.id, await fetchGenomeIdentity(row.sourceType, row.identityName, {}, signal));
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            out.set(row.id, null);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, rows.length) }, work));
+      return out;
+    },
+    [key],
+  );
+}
+
+function RowCell({ summary, id, render }) {
+  if (!summary) return <span className="text-[12px] text-ink-3">…</span>;
+  const entry = summary.get(id);
+  return entry ? render(entry) : <span className="text-[12px] text-ink-3">-</span>;
+}
+
+function baselineCell({ baseline }) {
+  if (!baseline) return <span className="text-[12px] text-ink-3">Not started</span>;
+  if (String(baseline.status).toLowerCase() === 'active') {
+    return (
+      <Tag tone="low" size="sm" dot>
+        Established
+      </Tag>
+    );
+  }
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      <Tag tone="medium" size="sm" dot>
+        Learning
+      </Tag>
+      <span className="text-[11px] text-ink-3">
+        {formatNumber(baseline.built_days)} of {formatNumber(baseline.required_days)} days
+      </span>
+    </span>
+  );
+}
+
+function openCell({ openAnomalies }) {
+  if (openAnomalies === null || openAnomalies === undefined) return <span className="text-[12px] text-ink-3">-</span>;
+  return openAnomalies > 0 ? (
+    <span data-numeric="" className="text-[13px] font-semibold text-critical">
+      {formatNumber(openAnomalies)}
+    </span>
+  ) : (
+    <span className="text-[12px] text-ink-3">None</span>
+  );
+}
+
+function callsCell({ callsInWindow }) {
+  if (callsInWindow === null || callsInWindow === undefined) return <span className="text-[12px] text-ink-3" title="The call store could not be read">-</span>;
+  return (
+    <span data-numeric="" className="text-[12.5px] text-ink-2">
+      {formatNumber(callsInWindow)}
+    </span>
+  );
+}
+
+function lastCallCell({ lastSeen, callsInWindow }) {
+  if (lastSeen) {
+    return (
+      <span className="whitespace-nowrap text-[12.5px] text-ink-2" title={formatDateTime(lastSeen)}>
+        {formatRelative(lastSeen)}
+      </span>
+    );
+  }
+  // "Never" only when the store was read and counted nothing; otherwise unknown.
+  return <span className="text-[12px] text-ink-3">{callsInWindow === 0 ? 'Never' : '-'}</span>;
 }

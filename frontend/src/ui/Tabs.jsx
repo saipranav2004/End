@@ -21,6 +21,11 @@ export function Tabs({ tabs, value, onChange, className, size = 'md' }) {
       return;
     }
     setIndicator({ left: active.offsetLeft, width: active.offsetWidth });
+    /* A strip wider than its box scrolls; keep the active tab in view, or a
+       tab opened from a link (a drawer's Changes) is selected off-screen. */
+    if (active.offsetLeft < list.scrollLeft || active.offsetLeft + active.offsetWidth > list.scrollLeft + list.clientWidth) {
+      list.scrollLeft = Math.max(0, active.offsetLeft - 16);
+    }
   }, []);
 
   /* What the tabs actually render, not just how many there are. Counts arrive

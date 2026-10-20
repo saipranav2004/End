@@ -1,8 +1,10 @@
 import { useId, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowLeftRight,
   ArrowRight,
   ChevronDown,
+  GitCompareArrows,
   CircleMinus,
   CirclePlus,
   Fingerprint,
@@ -12,7 +14,9 @@ import {
   PencilLine,
   ScrollText,
 } from 'lucide-react';
-import { formatDateTime, formatRelative, humanizeToken } from '../../lib/format';
+import { fetchScanChanges, scanChangesRoute } from '../../lib/api/changes';
+import { useQuery } from '../../lib/hooks';
+import { formatDateTime, formatNumber, formatRelative, humanizeToken } from '../../lib/format';
 import { CopyableValue } from '../../ui/Copyable';
 import { cn, TONE_BG } from '../../ui/cn';
 import { DIFF_LIMIT, diffValues, isPlainObject, parseJsonish } from '../../lib/jsonDiff';
@@ -60,20 +64,103 @@ export function ChangeBadge({ type, className, short = false }) {
   );
 }
 
-/** The NEW / CHANGED marker beside a name in the inventory lists. */
-export function RecentChangeMarker({ change }) {
+/**
+ * Beside a name in the inventory lists: what the latest scan did to the row.
+ * It is a control, not a decoration - it opens the row's Changes, so "what
+ * changed?" is one click away. `to` makes it a link, `onOpen` a button; the
+ * click never also opens the row behind it.
+ */
+export function RecentChangeMarker({ change, to, onOpen }) {
   if (change !== 'CREATED' && change !== 'MODIFIED') return null;
   const created = change === 'CREATED';
+  const label = created ? 'New' : 'Modified';
+  const title = created ? 'First discovered in the latest scan - open its changes' : 'Changed in the latest scan - see what changed';
+  const className = cn(
+    'inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[10.5px] font-semibold transition-colors',
+    created ? 'border-low/30 bg-low-soft text-low hover:border-low/60' : 'border-medium/30 bg-medium-soft text-medium hover:border-medium/60',
+  );
+  const content = (
+    <>
+      <span aria-hidden="true" className={cn('size-1.5 rounded-full', created ? 'bg-low' : 'bg-medium')} />
+      {label}
+    </>
+  );
+  const stop = (event) => event.stopPropagation();
+  if (to) {
+    return (
+      <Link to={to} title={title} aria-label={`${label}: ${title}`} onClick={stop} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        title={title}
+        aria-label={`${label}: ${title}`}
+        onClick={(event) => {
+          stop(event);
+          onOpen();
+        }}
+        className={className}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
-    <span
-      title={created ? 'Discovered in the latest scan' : 'Changed in the latest scan'}
-      className={cn(
-        'inline-flex shrink-0 items-center rounded px-1 py-px text-[9.5px] font-bold tracking-[0.06em] uppercase',
-        created ? 'bg-low-soft text-low' : 'bg-medium-soft text-medium',
-      )}
-    >
-      {created ? 'New' : 'Changed'}
+    <span title={title} className={className}>
+      {content}
     </span>
+  );
+}
+
+/**
+ * One line above an inventory list when the latest scan changed rows of this
+ * kind: how many were new, modified and removed, and the way to the full
+ * diff. Removed rows are no longer in the list, so this is the only place
+ * they are mentioned. Nothing renders while there is nothing to say.
+ */
+export function LatestChangesNotice({ entityType, noun }) {
+  const counts = useQuery(
+    async (signal) => {
+      const read = (changeType) =>
+        fetchScanChanges({ scanId: 'latest', entityType, changeType, limit: 1 }, signal).then((data) => ({
+          total: data.pagination.total,
+          scan: data.scan,
+        }));
+      const [created, modified, deleted] = await Promise.all(['CREATED', 'MODIFIED', 'DELETED'].map(read));
+      return { created: created.total, modified: modified.total, deleted: deleted.total, scan: created.scan };
+    },
+    [entityType],
+  );
+  const data = counts.data;
+  const total = data ? data.created + data.modified + data.deleted : 0;
+  if (!data || total === 0 || !data.scan) return null;
+  const parts = [
+    data.created && `${formatNumber(data.created)} new`,
+    data.modified && `${formatNumber(data.modified)} modified`,
+    data.deleted && `${formatNumber(data.deleted)} removed`,
+  ].filter(Boolean);
+  return (
+    <div className="animate-rise flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[var(--radius-panel)] border border-medium/25 bg-medium-soft/40 px-4 py-2.5">
+      <GitCompareArrows aria-hidden="true" className="size-4 shrink-0 text-medium" />
+      <p className="min-w-0 flex-1 text-[12.5px] text-ink-2">
+        <span className="font-semibold text-ink">
+          {formatNumber(total)} {total === 1 ? noun.one : noun.many} changed
+        </span>{' '}
+        in the latest scan ({parts.join(', ')}) ·{' '}
+        <span title={formatDateTime(data.scan.completedAt)}>{formatRelative(data.scan.completedAt)}</span>
+      </p>
+      <Link
+        to={scanChangesRoute(data.scan.id, { entity_type: entityType })}
+        className="inline-flex items-center gap-1 text-[12.5px] font-medium text-brand hover:underline"
+      >
+        Review the changes
+        <ArrowRight aria-hidden="true" className="size-3.5" />
+      </Link>
+    </div>
   );
 }
 

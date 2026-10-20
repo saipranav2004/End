@@ -203,8 +203,28 @@ const (
 // changeScopeFor is the change-level scope predicate ($1 accounts, $2
 // regions); scanAccount is the SQL for the change's scan account.
 func changeScopeFor(scanAccount string) string {
-	return `COALESCE(` + changeAccountARN + `, ` + scanAccount + `) = ANY($1::text[]) AND ` + changeRegion + ` = ANY($2::text[])`
+	return `COALESCE(` + changeAccountARN + `, ` + scanAccount + `) = ANY($1::text[]) AND ` + changeRegion + ` = ANY($2::text[]) AND ` + notScannerNoise
 }
+
+// notScannerNoise drops a modification whose only difference is the
+// scanner's own scan_errors inside type_attributes: AWS error text carries a
+// fresh RequestID on every run, so without this every identity reads as
+// changed after every scan. Nested CASEs, because SQL does not promise to
+// evaluate AND in order and the casts must only run on valid JSON objects.
+// pg_input_is_valid needs PostgreSQL 16+.
+const notScannerNoise = `NOT COALESCE(CASE WHEN upper(c.change_type) = 'MODIFIED'
+	  AND jsonb_typeof(c.details->'fields_changed') = 'array' THEN
+	    CASE WHEN jsonb_array_length(c.details->'fields_changed') = 1
+	      AND c.details->'fields_changed'->0->>'field' = 'type_attributes'
+	      AND pg_input_is_valid(c.details->'fields_changed'->0->>'old_value', 'jsonb')
+	      AND pg_input_is_valid(c.details->'fields_changed'->0->>'new_value', 'jsonb') THEN
+	        CASE WHEN jsonb_typeof((c.details->'fields_changed'->0->>'old_value')::jsonb) = 'object'
+	          AND jsonb_typeof((c.details->'fields_changed'->0->>'new_value')::jsonb) = 'object' THEN
+	            ((c.details->'fields_changed'->0->>'old_value')::jsonb - 'scan_errors') =
+	            ((c.details->'fields_changed'->0->>'new_value')::jsonb - 'scan_errors')
+	        END
+	    END
+	END, false)`
 
 // changeScope is changeScopeFor joined to the scan as s.
 var changeScope = changeScopeFor("s.account_id")

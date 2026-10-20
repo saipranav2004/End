@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import { formatNumber } from '../../lib/format';
 import { cn } from '../../ui/cn';
 
@@ -6,8 +5,6 @@ import { cn } from '../../ui/cn';
  * The purpose-built visuals the Genome screens need. Each one exists because a
  * generic chart would say less:
  *
- *   Fingerprint    every dimension at once. A bar chart would lose the shape,
- *                  which is the thing being read.
  *   ScheduleGrid   7 x 24 of activity. "Off-hours" is only meaningful next to
  *                  the hours that are normal for this identity.
  *   ApiShareList   ranked call mix.
@@ -15,119 +12,6 @@ import { cn } from '../../ui/cn';
  * All of them draw marks in the data hue (`--t-series-1`, the same blue
  * `TrendChart` defaults to) and reserve the severity tiers for severity.
  */
-
-/* ── Behavioural fingerprint ──────────────────────────────────────────────── */
-
-const SIZE = 210;
-const CENTRE = SIZE / 2;
-const RADIUS = 74;
-
-function axisPoint(index, count, value) {
-  /* Start at twelve o'clock so the first axis is where the eye lands. */
-  const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-  const distance = (Math.max(0, Math.min(100, value)) / 100) * RADIUS;
-  return [CENTRE + Math.cos(angle) * distance, CENTRE + Math.sin(angle) * distance];
-}
-
-function polygon(values, axes) {
-  return axes
-    .map((axis, index) => axisPoint(index, axes.length, values[axis.key] ?? 0).map((n) => n.toFixed(1)).join(','))
-    .join(' ');
-}
-
-/**
- * `axes` is `[{ key, label }]` (three or more), `series` is
- * `[{ key, label, values, tone }]` with values 0-100 keyed by axis. Two series
- * is the useful maximum: overlapping polygons stop being readable.
- */
-export function Fingerprint({ series, axes, className, valueSuffix = '' }) {
-  const titleId = useId();
-
-  return (
-    <div className={cn('flex flex-col items-center gap-3', className)}>
-      <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        role="img"
-        aria-labelledby={titleId}
-        className="w-full max-w-[240px]"
-      >
-        <title id={titleId}>
-          {series.map((entry) => `${entry.label}: ${axes.map((axis) => `${axis.label} ${Math.round(entry.values[axis.key] ?? 0)}${valueSuffix}`).join(', ')}`).join('. ')}
-        </title>
-
-        {/* Rings at 25% steps, so a reader can estimate a value without a scale. */}
-        {[0.25, 0.5, 0.75, 1].map((step) => (
-          <polygon
-            key={step}
-            points={polygon(
-              Object.fromEntries(axes.map((axis) => [axis.key, step * 100])),
-              axes,
-            )}
-            fill="none"
-            stroke="var(--t-line)"
-            strokeWidth="1"
-          />
-        ))}
-
-        {axes.map((axis, index) => {
-          const [x, y] = axisPoint(index, axes.length, 100);
-          return <line key={axis.key} x1={CENTRE} y1={CENTRE} x2={x} y2={y} stroke="var(--t-line)" strokeWidth="1" />;
-        })}
-
-        {series.map((entry) => (
-          <polygon
-            key={entry.key}
-            points={polygon(entry.values, axes)}
-            fill={entry.tone}
-            fillOpacity={entry.fillOpacity ?? 0.16}
-            stroke={entry.tone}
-            strokeWidth="1.75"
-            strokeDasharray={entry.dashed ? '4 3' : undefined}
-          />
-        ))}
-      </svg>
-
-      <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-1">
-        {axes.map((axis) => (
-          <div key={axis.key} className="flex items-baseline justify-between gap-2">
-            <dt className="truncate text-[11.5px] text-ink-3" title={axis.label}>
-              {axis.label}
-            </dt>
-            <dd className="flex shrink-0 items-baseline gap-1.5">
-              {series.map((entry) => (
-                <span
-                  key={entry.key}
-                  data-numeric=""
-                  className="text-[11.5px] font-semibold"
-                  style={{ color: entry.tone }}
-                  title={entry.label}
-                >
-                  {Math.round(entry.values[axis.key] ?? 0)}
-                  {valueSuffix}
-                </span>
-              ))}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      {series.length > 1 && (
-      <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-        {series.map((entry) => (
-          <li key={entry.key} className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
-            <span
-              aria-hidden="true"
-              className="h-0.5 w-4 rounded-full"
-              style={{ background: entry.tone }}
-            />
-            {entry.label}
-          </li>
-        ))}
-      </ul>
-      )}
-    </div>
-  );
-}
 
 /* ── Activity schedule ────────────────────────────────────────────────────── */
 

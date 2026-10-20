@@ -4,7 +4,7 @@ import { Copy, Fingerprint, SearchX } from 'lucide-react';
 import { countIdentities, fetchFilters, fetchIdentities, fetchTopOwners } from '../../lib/api/inventory';
 import { fetchPostureScoreIndex } from '../../lib/api/posture';
 import { ScoreRing } from '../posture/parts';
-import { RecentChangeMarker } from '../changes/parts';
+import { LatestChangesNotice, RecentChangeMarker } from '../changes/parts';
 import { bandMeta } from '../../lib/posture';
 import { useDebouncedValue, useQuery } from '../../lib/hooks';
 import { useAccess } from '../../app/useAccess';
@@ -311,7 +311,7 @@ export default function IdentitiesPage() {
       header: 'Identity',
       primary: true,
       sortable: true,
-      width: '26%',
+      width: '31%',
       cell: (row) => {
         const meta = functionalClassMeta(row.functional_class);
         return (
@@ -328,14 +328,15 @@ export default function IdentitiesPage() {
               {meta.badge}
             </span>
             <span className="min-w-0">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[13px] font-semibold text-ink" title={row.arn}>
+              <span className="flex min-w-0 items-start gap-1.5">
+                {/* Two lines before truncating, so a marker beside it never costs the name. */}
+                <span className="line-clamp-2 min-w-0 text-[13px] leading-snug font-semibold text-ink [overflow-wrap:anywhere]" title={row.arn}>
                   {row.name || row.arn}
                 </span>
+                {/* Beside the name, where the eye reads the row; it opens this identity's Changes. */}
+                <RecentChangeMarker change={row.recent_change} to={`/identities/${encodeURIComponent(row.id)}?tab=changes`} />
               </span>
-              {/* The marker sits on the type line so the name keeps the width. */}
               <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
-                <RecentChangeMarker change={row.recent_change} />
                 <span className="truncate text-[11px] text-ink-3">
                   {identityTypeLabel(row.identity_type)} · {meta.label}
                 </span>
@@ -348,13 +349,13 @@ export default function IdentitiesPage() {
     {
       key: 'posture',
       header: 'Posture',
-      width: '14%',
+      width: '11%',
       cell: (row) => <PostureCell entry={postureIndex.data?.get(row.arn)} loading={!postureIndex.data && !postureIndex.isError} />,
     },
     {
       key: 'signals',
       header: 'Risks',
-      width: '14%',
+      width: '12%',
       cell: (row) => <RiskCell identity={row} activityAvailable={activityAvailable} />,
     },
     {
@@ -435,6 +436,8 @@ export default function IdentitiesPage() {
           />
         }
       />
+
+      <LatestChangesNotice entityType="identity" noun={{ one: 'identity', many: 'identities' }} />
 
       <WorkArea
         railOpen={railOpen}

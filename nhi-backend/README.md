@@ -635,7 +635,14 @@ use `uniqExact(event_id)` and row reads use `FINAL`): `event_id`, `source_type`,
   `edge_type`, `external`.
 - **Ownership**: a change belongs to the inventory row in `entity_id` (an
   identity, or a credential when `entity_type = 'credential'`) or with the same
-  ARN; that drives the Changes tabs and the NEW / CHANGED list badges.
+  ARN; that drives the Changes tabs and the New / Modified list markers.
+- **Scanner noise is not a change**: a MODIFIED row whose only difference is
+  `scan_errors` inside `type_attributes` is left out of every count, list,
+  badge and tab (`notScannerNoise` in `scan_changes_repo.go`). The scanner's
+  AWS error text carries a fresh RequestID each run, so without this every
+  identity reads as changed after every scan; in the supplied dump that was
+  all 16 of 16 modifications. Needs PostgreSQL 16+ (`pg_input_is_valid`).
+  The lasting fix is in the scanner: do not diff `scan_errors`.
 - **Scope**: a scan is visible when it ran for an account the user
   selected; a change when its account and region are selected (IAM is `global`).
 - **CloudTrail evidence** is not stored: for CREATED / DELETED identity and

@@ -23,7 +23,7 @@ import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { cn } from '../../ui/cn';
 import { API_CREDENTIAL_STATUSES, API_CREDENTIAL_TYPES, credentialTypeMeta, lifecycleMeta } from '../identities/meta';
 import { splitList } from '../identities/filters';
-import { RecentChangeMarker } from '../changes/parts';
+import { LatestChangesNotice, RecentChangeMarker } from '../changes/parts';
 import { CredentialDrawer } from './CredentialDrawer';
 
 /**
@@ -174,16 +174,20 @@ export default function CredentialsPage() {
     setSearchDraft('');
   };
 
-  const openCredential = (row) => {
+  /* `tab` opens the drawer on one tab, e.g. a change marker opens Changes. */
+  const openCredential = (row, tab) => {
     setSelectedRow(row);
     const next = new URLSearchParams(searchParams);
     next.set('credential', row.id);
+    if (tab) next.set('credential_tab', tab);
+    else next.delete('credential_tab');
     setSearchParams(next, { replace: true });
   };
   const closeCredential = () => {
     setSelectedRow(null);
     const next = new URLSearchParams(searchParams);
     next.delete('credential');
+    next.delete('credential_tab');
     setSearchParams(next, { replace: true });
   };
   const openId = searchParams.get('credential') || '';
@@ -307,7 +311,7 @@ export default function CredentialsPage() {
           title={credentialTypeMeta(row.credential_type).label}
           meta={row.name || row.arn}
           mono
-          badge={<RecentChangeMarker change={row.recent_change} />}
+          badge={<RecentChangeMarker change={row.recent_change} onOpen={() => openCredential(row, 'changes')} />}
         />
       ),
     },
@@ -489,6 +493,8 @@ export default function CredentialsPage() {
         )}
       </Panel>
 
+      <LatestChangesNotice entityType="credential" noun={{ one: 'credential', many: 'credentials' }} />
+
       <WorkArea
         railOpen={railOpen}
         rail={<FacetRail groups={facetGroups} appliedCount={chips.length} onClearAll={clearAll} onClose={toggleRail} mobileTitle="Filter credentials" />}
@@ -592,7 +598,13 @@ export default function CredentialsPage() {
         </Panel>
       </WorkArea>
 
-      <CredentialDrawer key={openId || 'none'} credentialId={openId} row={selected} onClose={closeCredential} />
+      <CredentialDrawer
+        key={`${openId || 'none'}:${searchParams.get('credential_tab') || ''}`}
+        credentialId={openId}
+        row={selected}
+        initialTab={searchParams.get('credential_tab')}
+        onClose={closeCredential}
+      />
     </div>
   );
 }
