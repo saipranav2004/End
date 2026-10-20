@@ -207,6 +207,7 @@ from it are raised as anomalies for review.
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/genome/dashboard/summary` | Identities watched, baselines established, still learning, recently baselined (plus the anomaly panels, empty until the pipeline writes alerts). |
+| GET | `/genome/identities/{source_type}/{identity_name}` | The identity page header, trimmed to what the stores fill: `identity` (discovery's latest snapshot), `baseline_summary` (status, built/required days; absent until a baselines row exists) and `headline_metrics` (calls in `from`/`to`, default 14 days; open anomalies; last seen). Absent values are omitted, not null. |
 | GET | `/genome/identities/{source_type}/{identity_name}/genome` | Its behaviour fingerprint (`dimensions_json`), typical actions, typical resources and hour-of-week schedule. |
 | GET | `/genome/identities/{source_type}/{identity_name}/activity` | Calls per day / hour, recent calls (cursor) and the total. |
 | GET | `/genome/identities/{source_type}/{identity_name}/timeline` | Learning started, baseline established, versions published, and anomalies grouped per detection window ("1 active anomaly"). |

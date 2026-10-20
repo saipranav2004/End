@@ -57,9 +57,11 @@ function list(value) {
 }
 
 /**
- * Fleet dashboard: identities watched, baselines established, still learning
- * and the recently baselined feed. With no window the service answers cards
- * for the last 24 hours; with a window it uses that.
+ * Fleet dashboard: the cards (watched, established, learning, open anomalies),
+ * open departures by dimension, anomalies raised per day, the most anomalous
+ * identities and the recently baselined feed. With no window the service
+ * answers cards for the last 24 hours and charts for the last 14 days; with a
+ * window it uses that for both.
  */
 export async function fetchGenomeSummary({ window, sourceType, accountId, region } = {}, signal) {
   const range = window && window !== '24h' ? windowRange(window) : {};
@@ -72,6 +74,9 @@ export async function fetchGenomeSummary({ window, sourceType, accountId, region
   if (!data || typeof data !== 'object' || !data.cards) throw unexpected();
   return {
     cards: data.cards,
+    departures: list(data.departures_by_dimension),
+    anomaliesByDay: list(data.anomalies_by_day),
+    mostAnomalous: list(data.most_anomalous_identities),
     recentlyBaselined: list(data.recently_baselined),
     generatedAt: meta.generated_at ?? null,
   };

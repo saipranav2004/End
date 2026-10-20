@@ -18,8 +18,7 @@ import { Button } from '../../ui/Button';
 import { CopyableValue } from '../../ui/Copyable';
 import { DataGrid } from '../../ui/DataGrid';
 import { Panel, PanelHeader, SectionLabel } from '../../ui/Panel';
-import { ChartSkeleton, ListSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
-import { MetricTile } from '../../ui/Stat';
+import { ChartSkeleton, ListSkeleton } from '../../ui/Skeleton';
 import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { SegmentedControl, Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
@@ -214,7 +213,7 @@ function GenomeIdentity({ sourceType, identityName }) {
           title="Genome"
           actions={
             <Button variant="secondary" as={Link} to="/genome" icon={ArrowLeft}>
-              All identities
+              Fleet
             </Button>
           }
         />
@@ -262,7 +261,7 @@ function GenomeIdentity({ sourceType, identityName }) {
               onChange={(value) => setParam('window', value === DEFAULT_WINDOW ? '' : value)}
             />
             <Button variant="secondary" as={Link} to="/genome" icon={ArrowLeft}>
-              All identities
+              Fleet
             </Button>
             {discoveryId ? (
               <>
@@ -290,26 +289,26 @@ function GenomeIdentity({ sourceType, identityName }) {
                 {state.key === 'active' ? `since ${formatDate(state.at)}` : `started ${formatRelative(state.at)}`}
               </span>
             )}
+            {summary.data?.baseline && state.key !== 'active' && (
+              <Tag tone="neutral" size="sm">
+                Learned {formatNumber(summary.data.baseline.built_days)} of {formatNumber(summary.data.baseline.required_days)} days
+              </Tag>
+            )}
             {identity?.status && (
               <Tag tone="neutral" size="sm">
                 {titleCaseEnum(identity.status)}
               </Tag>
             )}
-            <CopyableValue value={identityName} className="max-w-full text-[11.5px] text-ink-3" />
-            {identity?.role_arn && (
-              <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-3">
-                Runs as
-                <CopyableValue value={identity.role_arn} className="text-[11.5px]">
-                  {arnName(identity.role_arn)}
-                </CopyableValue>
+            {summary.data?.lastSeen && (
+              <span className="text-[11.5px] text-ink-3" title={formatDateTime(summary.data.lastSeen)}>
+                Last seen {formatRelative(summary.data.lastSeen)}
               </span>
             )}
+            <CopyableValue value={identityName} className="max-w-full text-[11.5px] text-ink-3" />
           </div>
         }
         tabs={<Tabs size="sm" tabs={tabs} value={tab} onChange={setTab} />}
       />
-
-      <HeadlineMetrics summary={summary} window={window} onOpenTimeline={() => setTab('timeline')} />
 
       {/* An open departure is the reason anyone opened this record, so it is
           stated above the tabs rather than hidden inside one of them. */}
@@ -317,11 +316,11 @@ function GenomeIdentity({ sourceType, identityName }) {
         <Panel prominence="lead" className="animate-rise border-critical/30">
           <PanelHeader
             prominence="lead"
-            title={`${formatNumber(openCount)} open ${openCount === 1 ? 'anomaly' : 'anomalies'}`}
+            title={`${formatNumber(openCount)} open ${openCount === 1 ? 'departure' : 'departures'} from baseline`}
             subtitle="This identity behaved outside its own baseline."
             actions={
               <Button variant="secondary" size="sm" onClick={() => setTab('timeline')}>
-                See the timeline
+                Read the evidence
               </Button>
             }
           />
@@ -354,62 +353,11 @@ function GenomeIdentity({ sourceType, identityName }) {
         </Panel>
       )}
 
-      {tab === 'genome' && <GenomeTab sourceType={sourceType} identityName={identityName} window={window} />}
+      {tab === 'genome' && (
+        <GenomeTab sourceType={sourceType} identityName={identityName} window={window} summary={summary.data} timeline={timeline.items} />
+      )}
       {tab === 'activity' && <ActivityTab sourceType={sourceType} identityName={identityName} window={window} />}
       {tab === 'timeline' && <TimelineTab timeline={timeline} />}
-    </div>
-  );
-}
-
-/** Calls in the window, open anomalies and baseline progress, from the summary. */
-function HeadlineMetrics({ summary, window, onOpenTimeline }) {
-  if (summary.isError && !summary.data) {
-    return <InlineError error={summary.error} onRetry={summary.refetch} label="The identity summary failed to load" />;
-  }
-  if (!summary.data) return <StatStripSkeleton count={3} />;
-  const { callsInWindow, openAnomalies, lastSeen, baseline } = summary.data;
-  const built = Number(baseline?.built_days);
-  const required = Number(baseline?.required_days);
-  const progress = baseline && required > 0 ? Math.min(100, (built / required) * 100) : null;
-  return (
-    <div className="grid gap-3 @min-[30rem]:grid-cols-3">
-      <MetricTile
-        label={`Calls · last ${WINDOW_WORDS[window]}`}
-        value={callsInWindow}
-        tone="info"
-        caption={
-          lastSeen ? (
-            <span title={formatDateTime(lastSeen)}>Last call {formatRelative(lastSeen)}</span>
-          ) : callsInWindow === null ? (
-            'Call history is not available right now'
-          ) : (
-            'No call recorded yet'
-          )
-        }
-        className="animate-rise"
-      />
-      <MetricTile
-        label="Open anomalies"
-        value={openAnomalies}
-        tone={openAnomalies > 0 ? 'critical' : 'low'}
-        caption={openAnomalies > 0 ? 'Departures from its baseline, still open' : 'Nothing open against its baseline'}
-        {...(openAnomalies > 0 ? { as: 'button', type: 'button', onClick: onOpenTimeline } : {})}
-        className="animate-rise"
-        data-stagger=""
-        style={{ '--stagger': 1 }}
-      />
-      <MetricTile
-        label="Baseline learned"
-        value={baseline ? built : null}
-        unit={baseline ? `of ${formatNumber(required)} ${required === 1 ? 'day' : 'days'}` : undefined}
-        tone={!baseline ? 'neutral' : progress !== null && progress >= 100 ? 'low' : 'medium'}
-        meter={progress}
-        meterLabel="Days of behaviour learned against the days the baseline needs"
-        caption={baseline ? `Baseline ${titleCaseEnum(baseline.status).toLowerCase()}` : 'Learning has not started yet'}
-        className="animate-rise"
-        data-stagger=""
-        style={{ '--stagger': 2 }}
-      />
     </div>
   );
 }
@@ -419,7 +367,7 @@ function HeadlineMetrics({ summary, window, onOpenTimeline }) {
 const RADAR_AXES = 8;
 const RESOURCES_SHOWN = 10;
 
-function GenomeTab({ sourceType, identityName, window }) {
+function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
   const [showAllResources, setShowAllResources] = useState(false);
   const profile = useQuery(
     (signal) => fetchGenomeProfile(sourceType, identityName, { window, limit: 25 }, signal),
@@ -440,6 +388,17 @@ function GenomeTab({ sourceType, identityName, window }) {
       values: [...values].sort((a, b) => b.share_percent - a.share_percent),
       top: Math.max(0, ...values.map((value) => Number(value.share_percent) || 0)),
     }));
+  }, [profile.data]);
+
+  /* The schedule's (day, hour) cells folded onto one day: when in the day
+     this identity works, whatever the weekday. */
+  const hourly = useMemo(() => {
+    const calls = Array(24).fill(0);
+    for (const cell of profile.data?.activitySchedule ?? []) {
+      const hour = Number(cell.hour);
+      if (hour >= 0 && hour < 24) calls[hour] += Number(cell.calls) || 0;
+    }
+    return calls.map((value, hour) => ({ label: `${String(hour).padStart(2, '0')}:00`, calls: value }));
   }, [profile.data]);
 
   if (profile.isError && !profile.data) {
@@ -479,6 +438,7 @@ function GenomeTab({ sourceType, identityName, window }) {
           />
         </Panel>
       )}
+      {empty && <BaselineProvenance summary={summary} timeline={timeline} span={span} />}
 
       {!empty && (
         <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
@@ -530,59 +490,33 @@ function GenomeTab({ sourceType, identityName, window }) {
       )}
 
       {!empty && (
-        <Panel prominence="quiet" className="animate-rise">
-          <PanelHeader
-            prominence="quiet"
-            title="Activity schedule"
-            subtitle="Seven days by hour, UTC. Darker means busier; activity outside these usual hours is what a departure looks like."
-          />
-          {activitySchedule.length === 0 ? (
-            <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
-          ) : (
-            <ScheduleGrid className="mt-3" cells={activitySchedule} />
-          )}
-        </Panel>
+        <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <Panel prominence="quiet" className="animate-rise">
+            <PanelHeader
+              prominence="quiet"
+              title="Activity schedule"
+              subtitle="Seven days by hour, UTC. Darker means busier; activity outside these usual hours is what a departure looks like."
+            />
+            {activitySchedule.length === 0 ? (
+              <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
+            ) : (
+              <ScheduleGrid className="mt-3" cells={activitySchedule} />
+            )}
+          </Panel>
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+            <PanelHeader prominence="quiet" title="Calls by hour of day" subtitle={`All days of the last ${span} folded onto one day, UTC.`} />
+            {hourly.every((entry) => entry.calls === 0) ? (
+              <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
+            ) : (
+              <TrendChart className="mt-3" variant="bar" data={hourly} dataKey="calls" label="API calls" height={150} />
+            )}
+          </Panel>
+        </div>
       )}
 
       {!empty && (
         <div className="grid gap-4 @min-[52rem]:grid-cols-2">
-          <Panel prominence="quiet" className="animate-rise">
-            <PanelHeader prominence="quiet" title="Values by dimension" subtitle="Each dimension's values and their share of calls." />
-            {dimensions.length === 0 ? (
-              <p className="mt-3 text-[12.5px] text-ink-3">No behavioural dimensions were recorded in this window.</p>
-            ) : (
-              <div className="mt-3 flex flex-col gap-4">
-                {dimensions.map((entry) => (
-                  <div key={entry.dimension}>
-                    <SectionLabel>{dimensionLabel(entry.dimension)}</SectionLabel>
-                    <ul className="mt-1.5 flex flex-col gap-1.5">
-                      {entry.values.slice(0, 6).map((point) => (
-                        <li key={point.value} className="flex items-center gap-3">
-                          <span className="w-[42%] min-w-0 truncate font-mono text-[11.5px] text-ink-2" title={point.value}>
-                            {dimensionValueLabel(entry.dimension, point.value)}
-                          </span>
-                          <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
-                            <span
-                              className="block h-full rounded-full"
-                              style={{ width: `${Math.min(100, point.share_percent)}%`, background: 'var(--t-series-1)' }}
-                            />
-                          </span>
-                          <span data-numeric="" className="w-11 shrink-0 text-right text-[11.5px] font-semibold text-ink">
-                            {formatShare(point.share_percent)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    {entry.values.length > 6 && (
-                      <p className="mt-1 text-[11px] text-ink-3">and {formatNumber(entry.values.length - 6)} rarer values</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+          <Panel prominence="quiet" className="animate-rise" >
             <PanelHeader prominence="quiet" title="Typical resources" subtitle={`Resources touched over the last ${span}, by calls.`} />
             {typicalResources.length === 0 ? (
               <p className="mt-3 text-[12.5px] text-ink-3">No resource ARNs were recorded on this identity's calls.</p>
@@ -617,9 +551,93 @@ function GenomeTab({ sourceType, identityName, window }) {
               </Button>
             )}
           </Panel>
+          <BaselineProvenance summary={summary} timeline={timeline} span={span} />
         </div>
       )}
+
+      {!empty && (
+          <Panel prominence="quiet" className="animate-rise">
+            <PanelHeader prominence="quiet" title="Values by dimension" subtitle="Each dimension's values and their share of calls." />
+            {dimensions.length === 0 ? (
+              <p className="mt-3 text-[12.5px] text-ink-3">No behavioural dimensions were recorded in this window.</p>
+            ) : (
+              <div className="mt-3 gap-x-8 @min-[52rem]:columns-2">
+                {dimensions.map((entry) => (
+                  <div key={entry.dimension} className="mb-4 break-inside-avoid">
+                    <SectionLabel>{dimensionLabel(entry.dimension)}</SectionLabel>
+                    <ul className="mt-1.5 flex flex-col gap-1.5">
+                      {entry.values.slice(0, 6).map((point) => (
+                        <li key={point.value} className="flex items-center gap-3">
+                          <span className="w-[42%] min-w-0 truncate font-mono text-[11.5px] text-ink-2" title={point.value}>
+                            {dimensionValueLabel(entry.dimension, point.value)}
+                          </span>
+                          <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
+                            <span
+                              className="block h-full rounded-full"
+                              style={{ width: `${Math.min(100, point.share_percent)}%`, background: 'var(--t-series-1)' }}
+                            />
+                          </span>
+                          <span data-numeric="" className="w-11 shrink-0 text-right text-[11.5px] font-semibold text-ink">
+                            {formatShare(point.share_percent)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {entry.values.length > 6 && (
+                      <p className="mt-1 text-[11px] text-ink-3">and {formatNumber(entry.values.length - 6)} rarer values</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel>
+      )}
     </div>
+  );
+}
+
+/**
+ * What this identity's verdicts are built from: the baselines row (learning
+ * period, days learned), the timeline's milestones and versions, and the
+ * calls the genome read. Rows the stores have not filled are left out.
+ */
+function BaselineProvenance({ summary, timeline, span }) {
+  const baseline = summary?.baseline;
+  const at = (type) => timeline.find((item) => item.type === type)?.occurred_at;
+  const versions = timeline.filter((item) => item.type === 'baseline_version_published');
+  const latest = versions.length ? /(\d+)/.exec(versions[0].description ?? '')?.[1] : null;
+  const date = (iso) => <span title={formatDateTime(iso)}>{formatDate(iso)}</span>;
+  const rows = [
+    baseline && ['Learning period', `${formatNumber(baseline.required_days)} ${baseline.required_days === 1 ? 'day' : 'days'}`],
+    baseline && ['Days learned', `${formatNumber(baseline.built_days)} (${titleCaseEnum(baseline.status).toLowerCase()})`],
+    at('learning_started') && ['Learning started', date(at('learning_started'))],
+    at('baseline_established') && ['Baseline established', date(at('baseline_established'))],
+    latest && ['Current version', `Version ${latest}, published ${formatRelative(versions[0].occurred_at)}`],
+    summary?.callsInWindow !== null && summary?.callsInWindow !== undefined && [`Calls, last ${span}`, formatNumber(summary.callsInWindow)],
+    summary?.identity?.region && ['Region', summary.identity.region],
+    summary?.identity?.role_arn && [
+      'Runs as',
+      <CopyableValue key="role" value={summary.identity.role_arn} className="text-[12.5px]">
+        {arnName(summary.identity.role_arn)}
+      </CopyableValue>,
+    ],
+  ].filter(Boolean);
+  return (
+    <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+      <PanelHeader prominence="quiet" title="Baseline provenance" subtitle="What the verdicts on this identity are built from." />
+      {rows.length === 0 ? (
+        <p className="mt-3 text-[12.5px] text-ink-3">No baseline has been recorded for this identity yet.</p>
+      ) : (
+        <dl className="mt-2 flex flex-col">
+          {rows.map(([label, value]) => (
+            <div key={label} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-3 border-b border-line py-2 last:border-0">
+              <dt className="text-[12px] text-ink-3">{label}</dt>
+              <dd className="min-w-0 text-[12.5px] text-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </Panel>
   );
 }
 
@@ -724,7 +742,8 @@ function ActivityTab({ sourceType, identityName, window }) {
         {!activity.data ? (
           <ChartSkeleton height={150} />
         ) : volume.length === 0 ? (
-          <p className="mt-3 text-[12.5px] text-ink-3">No calls in this window.</p>
+          // A null total means the call store could not be read, which is not "no calls".
+          <p className="mt-3 text-[12.5px] text-ink-3">{total === null ? 'Call history is not available right now.' : 'No calls in this window.'}</p>
         ) : (
           <TrendChart className="mt-3" variant="bar" data={volume} dataKey="calls" label="API calls" height={170} />
         )}
@@ -799,12 +818,21 @@ function ActivityTab({ sourceType, identityName, window }) {
           density="compact"
           skeletonRows={10}
           emptyState={
-            <EmptyState
-              compact
-              icon={Dna}
-              title="No calls in this window"
-              description="This identity made no recorded API calls in the selected window."
-            />
+            total === null ? (
+              <EmptyState
+                compact
+                icon={Dna}
+                title="Call history is not available"
+                description="The genome's call store could not be read. Try again shortly."
+              />
+            ) : (
+              <EmptyState
+                compact
+                icon={Dna}
+                title="No calls in this window"
+                description="This identity made no recorded API calls in the selected window."
+              />
+            )
           }
         />
         {activity.data && (pager.page > 1 || activity.data.nextCursor) && (

@@ -3539,6 +3539,27 @@
           }
         },
         {
+          "name": "Identity summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{genome_source_type}}/{{genome_identity_name}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{genome_source_type}}",
+                "{{genome_identity_name}}"
+              ]
+            }
+          }
+        },
+        {
           "name": "Identity activity",
           "request": {
             "method": "GET",

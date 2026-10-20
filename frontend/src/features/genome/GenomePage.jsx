@@ -4,6 +4,7 @@ import { Download, SearchX, ShieldQuestion } from 'lucide-react';
 import { fetchGenomeSummary, fetchMonitoredFleet } from '../../lib/api/genome';
 import { genomeRoute } from '../../lib/identityLinks';
 import { useDebouncedValue, useQuery } from '../../lib/hooks';
+import { severityMeta } from '../../lib/domain';
 import { exportRowsToCsv, timestampedName } from '../../lib/csv';
 import { NEUTRAL_SERIES, SERIES_TOKENS } from '../../lib/domain';
 import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
@@ -12,18 +13,28 @@ import { Button } from '../../ui/Button';
 import { DataGrid } from '../../ui/DataGrid';
 import { SearchInput, Select } from '../../ui/Field';
 import { Pagination } from '../../ui/Pagination';
+import { ProportionBar } from '../../ui/Meter';
 import { Panel, PanelHeader } from '../../ui/Panel';
 import { ChartSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
 import { MetricTile } from '../../ui/Stat';
 import { EmptyState, ErrorState } from '../../ui/States';
 import { Tag } from '../../ui/Tag';
+import { SegmentedControl } from '../../ui/Tabs';
 import { RefreshButton, TableToolbar } from '../../ui/TableTools';
 import { useToast } from '../../ui/Toast';
 import { RecordBar, ResultCount } from '../../ui/WorkArea';
 import { CompositionDonut } from '../../charts/CompositionDonut';
-import { sourceTypeLabel } from './meta';
+import { TrendChart } from '../../charts/TrendChart';
+import { dimensionLabel, sourceTypeLabel } from './meta';
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const WINDOWS = [
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+];
+const WINDOW_WORDS = { '24h': '24 hours', '7d': '7 days', '30d': '30 days' };
+const DAY_MS = 86400000;
 const DONUT_SLICES = 6;
 
 /**
@@ -63,7 +74,11 @@ export default function GenomePage() {
   const [searchDraft, setSearchDraft] = useState(() => searchParams.get('q') || '');
   const search = useDebouncedValue(searchDraft, 250).trim().toLowerCase();
 
-  const summary = useQuery((signal) => fetchGenomeSummary({}, signal), []);
+  const window = WINDOWS.some((entry) => entry.value === searchParams.get('window')) ? searchParams.get('window') : '24h';
+  /* With 24h the service reads the cards over 24 hours and the charts over 14
+     days; a wider window applies to both. */
+  const chartDays = window === '30d' ? 30 : window === '7d' ? 7 : 14;
+  const summary = useQuery((signal) => fetchGenomeSummary({ window }, signal), [window]);
   const fleet = useQuery((signal) => fetchMonitoredFleet(signal), []);
   const all = useMemo(() => fleet.data?.items ?? [], [fleet.data]);
 
@@ -112,7 +127,7 @@ export default function GenomePage() {
         { header: 'Account', value: (row) => row.account_id },
         { header: 'Region', value: (row) => row.region ?? '' },
         { header: 'Status', value: (row) => row.status ?? '' },
-        { header: 'Last activity (UTC)', value: (row) => row.last_activity_at ?? '' },
+        { header: 'Last seen in CloudTrail (UTC)', value: (row) => row.last_activity_at ?? '' },
       ],
       rows: filtered,
     });
@@ -163,7 +178,7 @@ export default function GenomePage() {
     },
     {
       key: 'seen',
-      header: 'Last activity',
+      header: 'Last seen in CloudTrail',
       width: '18%',
       cell: (row) =>
         row.last_activity_at ? (
@@ -175,7 +190,9 @@ export default function GenomePage() {
             Not available
           </span>
         ) : (
-          <span className="text-[12px] text-ink-3">No calls seen</span>
+          <span className="text-[12px] text-ink-3" title="Discovery's CloudTrail activity; the genome's own call count is on the identity's page">
+            None recorded
+          </span>
         ),
     },
   ];
@@ -188,9 +205,17 @@ export default function GenomePage() {
         title="NHI Genome"
         lede="Each workload identity learns its own normal behaviour from its calls. Open one to see its behavioural fingerprint, its calls and how its baseline got where it is."
         actions={
-          <Button variant="secondary" icon={Download} onClick={onExport} disabled={filtered.length === 0}>
-            Export
-          </Button>
+          <>
+            <SegmentedControl
+              label="Detection window"
+              options={WINDOWS}
+              value={window}
+              onChange={(value) => setParams({ window: value === '24h' ? '' : value })}
+            />
+            <Button variant="secondary" icon={Download} onClick={onExport} disabled={filtered.length === 0}>
+              Export
+            </Button>
+          </>
         }
       />
 
@@ -199,9 +224,19 @@ export default function GenomePage() {
           <ErrorState error={summary.error} onRetry={summary.refetch} title="The behaviour summary failed to load" />
         </Panel>
       ) : summary.isLoading && !summary.data ? (
-        <StatStripSkeleton count={3} />
+        <StatStripSkeleton count={4} />
       ) : (
-        <SummaryCards cards={summary.data.cards} />
+        <>
+          <SummaryCards cards={summary.data.cards} window={window} />
+          <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4">
+              <CoveragePanel cards={summary.data.cards} window={window} />
+              <AnomaliesPerDay days={summary.data.anomaliesByDay} span={chartDays} generatedAt={summary.data.generatedAt} />
+            </div>
+            <DeparturesByType departures={summary.data.departures} span={chartDays} />
+          </div>
+          {summary.data.mostAnomalous.length > 0 && <MostAnomalous entries={summary.data.mostAnomalous} />}
+        </>
       )}
 
       <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
@@ -233,7 +268,7 @@ export default function GenomePage() {
       <Panel prominence="lead" flush className="animate-rise overflow-hidden">
         <RecordBar
           trailing={
-            <TableToolbar>
+            <TableToolbar className="w-full flex-wrap sm:w-auto">
               <SearchInput
                 value={searchDraft}
                 onChange={(value) => {
@@ -251,7 +286,7 @@ export default function GenomePage() {
                 onChange={(event) => setParams({ source: event.target.value, page: '' })}
                 options={typeOptions}
                 aria-label="Workload type"
-                className="w-48"
+                className="min-w-0 flex-1 sm:w-48 sm:flex-none"
               />
               <RefreshButton onRefresh={fleet.refetch} refreshing={fleet.isRefreshing} label="Refresh fleet" />
             </TableToolbar>
@@ -324,40 +359,195 @@ export default function GenomePage() {
   );
 }
 
-function SummaryCards({ cards }) {
+function SummaryCards({ cards, window }) {
   const watched = cards.identities_watched;
   const established = cards.baselines_established;
+  const open = cards.open_anomalies;
   const coverage = Number.isFinite(watched) && watched > 0 && Number.isFinite(established) ? (established / watched) * 100 : null;
+  // Critical anomalies is null until the pipeline scores severities; the tile is shown only once it is measured.
+  const critical = cards.critical_anomalies;
+  const tiles = [
+    <MetricTile
+      key="established"
+      label="Baselines established"
+      value={established}
+      tone="low"
+      meter={coverage}
+      meterLabel="Share of watched identities with an established baseline"
+      caption={Number.isFinite(watched) ? `of ${formatNumber(watched)} identities watched` : 'Normal behaviour learned and watched'}
+    />,
+    <MetricTile
+      key="learning"
+      label="Still learning"
+      value={cards.still_learning}
+      tone="medium"
+      caption="No baseline yet, so no anomaly can be raised"
+    />,
+    <MetricTile
+      key="open"
+      label="Open anomalies"
+      value={open}
+      tone={open > 0 ? 'critical' : 'neutral'}
+      caption={`Raised in the last ${WINDOW_WORDS[window]} and still open`}
+    />,
+    critical !== null && critical !== undefined && (
+      <MetricTile key="critical" label="Critical anomalies" value={critical} tone="critical" caption="Highest-confidence departures" />
+    ),
+  ].filter(Boolean);
   return (
-    <div className="grid gap-3 @min-[30rem]:grid-cols-3">
-      <MetricTile
-        label="Identities watched"
-        value={watched}
-        tone="info"
-        caption="Workload identities in your scope whose calls the genome reads"
-        className="animate-rise"
-      />
-      <MetricTile
-        label="Baselines established"
-        value={established}
-        tone="low"
-        meter={coverage}
-        meterLabel="Share of watched identities with an established baseline"
-        caption={coverage === null ? 'Normal behaviour learned and watched' : `${Math.round(coverage)}% of the watched fleet`}
-        className="animate-rise"
-        data-stagger=""
-        style={{ '--stagger': 1 }}
-      />
-      <MetricTile
-        label="Still learning"
-        value={cards.still_learning}
-        tone="medium"
-        caption="Learning their normal behaviour; nothing is flagged for them yet"
-        className="animate-rise"
-        data-stagger=""
-        style={{ '--stagger': 2 }}
-      />
+    <div className={`grid gap-3 @min-[30rem]:grid-cols-2 ${tiles.length === 4 ? '@min-[54rem]:grid-cols-4' : '@min-[54rem]:grid-cols-3'}`}>
+      {tiles.map((tile, index) => (
+        <div key={tile.key} className="animate-rise" data-stagger="" style={{ '--stagger': index }}>
+          {tile}
+        </div>
+      ))}
     </div>
+  );
+}
+
+function Fact({ label, value }) {
+  return (
+    <div>
+      <dt className="text-[10.5px] font-semibold tracking-[0.085em] text-ink-3 uppercase">{label}</dt>
+      <dd data-numeric="" className="mt-0.5 text-[13px] font-semibold text-ink">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** Established against still learning, plus what the summary measures about the fleet's baselines. */
+function CoveragePanel({ cards, window }) {
+  const established = Number(cards.baselines_established) || 0;
+  const learning = Number(cards.still_learning) || 0;
+  const coverage = cards.baseline_coverage_percent;
+  return (
+    <Panel prominence="quiet" className="animate-rise">
+      <PanelHeader prominence="quiet" title="Baseline coverage" />
+      <ProportionBar
+        className="mt-3"
+        height={10}
+        total={established + learning}
+        ariaLabel={`${established} established and ${learning} learning`}
+        segments={[
+          { key: 'established', label: 'Established', value: established, color: 'var(--t-low)' },
+          { key: 'learning', label: 'Learning', value: learning, color: 'var(--t-medium)' },
+        ]}
+      />
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+        <Fact label="Coverage" value={coverage === null || coverage === undefined ? '-' : `${Math.round(coverage)}%`} />
+        <Fact label="Card window" value={`Last ${WINDOW_WORDS[window]}`} />
+        {cards.mean_confidence_percent !== null && cards.mean_confidence_percent !== undefined && (
+          <Fact label="Mean confidence" value={`${Math.round(cards.mean_confidence_percent)}%`} />
+        )}
+        {cards.drifting_baselines_available && <Fact label="Drifting baselines" value={formatNumber(cards.drifting_baselines)} />}
+      </dl>
+      <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">
+        Only an established baseline can raise an anomaly; identities still learning are watched but never flagged.
+      </p>
+    </Panel>
+  );
+}
+
+/** Anomalies raised per UTC day, open or resolved. Days without one are a measured zero. */
+function AnomaliesPerDay({ days, span, generatedAt }) {
+  const data = useMemo(() => {
+    const counts = new Map(days.map((entry) => [String(entry.day).slice(0, 10), Number(entry.count) || 0]));
+    // The server's clock, not the browser's: the days are UTC days it counted.
+    const end = Date.parse(generatedAt ?? '') || Date.parse(days.at(-1)?.day ?? '') || 0;
+    const today = Math.floor(end / DAY_MS) * DAY_MS;
+    return Array.from({ length: span }, (_, index) => {
+      const iso = new Date(today - (span - 1 - index) * DAY_MS).toISOString().slice(0, 10);
+      const label = new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      return { label, anomalies: counts.get(iso) ?? 0 };
+    });
+  }, [days, span, generatedAt]);
+  const total = data.reduce((sum, entry) => sum + entry.anomalies, 0);
+  return (
+    <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 1 }}>
+      <PanelHeader prominence="quiet" title="Anomalies per day" />
+      {/* Bars, not a smoothed area: these are whole counts per day, and a curve would draw anomalies between days. */}
+      <TrendChart className="mt-3" variant="bar" data={data} dataKey="anomalies" label="Anomalies raised" height={132} />
+      <p className="mt-1 text-[11.5px] text-ink-3">
+        Last {span} days, open or resolved, UTC · {formatNumber(total)} in all.
+      </p>
+    </Panel>
+  );
+}
+
+/** Open departures grouped by the dimension that departed. */
+function DeparturesByType({ departures, span }) {
+  const total = departures.reduce((sum, entry) => sum + (Number(entry.count) || 0), 0);
+  return (
+    <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 2 }}>
+      <PanelHeader prominence="quiet" title="Departures by type" subtitle={`Open anomalies raised in the last ${span} days, by what departed from the baseline.`} />
+      {departures.length === 0 ? (
+        <p className="mt-3 rounded-[var(--radius-control)] border border-dashed border-line px-3 py-6 text-center text-[12.5px] text-ink-3">
+          No open departure in this window.
+        </p>
+      ) : (
+        <ul className="mt-3 flex flex-col">
+          {departures.map((entry) => (
+            <li key={entry.dimension} className="border-b border-line py-2 last:border-0">
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] text-ink">{dimensionLabel(entry.dimension)}</span>
+                  <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-track">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${total ? (entry.count / total) * 100 : 0}%`, background: 'var(--t-series-1)' }}
+                    />
+                  </span>
+                </span>
+                <span data-numeric="" className="shrink-0 text-[12.5px] font-semibold text-ink">
+                  {formatNumber(entry.count)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/** The identities the pipeline scores riskiest; shown only when it has scored some. */
+function MostAnomalous({ entries }) {
+  return (
+    <Panel prominence="quiet" className="animate-rise">
+      <PanelHeader prominence="quiet" title="Most anomalous identities" subtitle="Highest risk score from the latest scoring window first." />
+      <ul className="mt-2 flex flex-col divide-y divide-line">
+        {entries.map((entry) => {
+          const severity = severityMeta(entry.severity);
+          return (
+            <li key={entry.id} className="flex items-center gap-3 py-2">
+              <span className="min-w-0 flex-1">
+                <Link
+                  to={genomeRoute(entry.source_type, entry.identity_name)}
+                  className="block truncate text-[12.5px] font-medium text-ink hover:text-brand"
+                  title={entry.identity_name}
+                >
+                  {entry.display_name || entry.identity_name}
+                </Link>
+                <span className="block truncate text-[11px] text-ink-3">
+                  {sourceTypeLabel(entry.source_type)}
+                  {entry.region ? ` · ${entry.region}` : ''}
+                </span>
+              </span>
+              {Number(entry.anomalous_event_count) > 0 && (
+                <span className="shrink-0 text-[11.5px] text-ink-3">{formatNumber(entry.anomalous_event_count)} anomalous calls</span>
+              )}
+              <span data-numeric="" className="w-8 shrink-0 text-right text-[13px] font-semibold text-ink">
+                {entry.risk_score}
+              </span>
+              <Tag tone={severity.tone} size="sm" dot>
+                {severity.label}
+              </Tag>
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
   );
 }
 
