@@ -284,7 +284,7 @@ export default function DismissedPage() {
       <div className="flex flex-col gap-6">
         <PageHeader title="Accepted exposures" />
         <Panel>
-          <ErrorState error={{ message: detail.message }} title={detail.title} onRetry={query.refetch} />
+          <ErrorState error={{ message: detail.message, code: query.error?.code }} title={detail.title} onRetry={query.refetch} />
         </Panel>
       </div>
     );

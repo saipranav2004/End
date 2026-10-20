@@ -535,7 +535,7 @@ export default function FindingsPage() {
           }
         />
         <Panel>
-          <ErrorState error={{ message: detail.message }} title={detail.title} onRetry={query.refetch} />
+          <ErrorState error={{ message: detail.message, code: query.error?.code }} title={detail.title} onRetry={query.refetch} />
         </Panel>
       </div>
     );
@@ -952,41 +952,65 @@ function PushList({ pushes, onSelect }) {
                   data-numeric=""
                   className="rounded-full bg-surface-3 px-2 py-0.5 text-[11.5px] font-semibold text-ink-2"
                 >
-                  {formatNumber(push.findings.length)} secrets
+                  {formatNumber(push.findings.length)} {push.findings.length === 1 ? 'secret' : 'secrets'}
                 </span>
               </div>
             </div>
 
-            <ul className="mt-2.5 flex flex-col gap-1">
-              {push.findings.map((finding) => {
-                const meta = severityMeta(finding.risk_tier);
-                return (
-                  <li key={findingKey(finding)}>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(finding)}
-                      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="size-1.5 shrink-0 rounded-full"
-                        style={{ background: `var(--t-${meta.tone})` }}
-                      />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2">
-                        {finding.file_path}:{finding.line_number ?? '?'}
-                      </span>
-                      <span className="shrink-0 text-[11.5px] text-ink-3">
-                        {humanizeToken(finding.detector)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <PushFindings findings={push.findings} onSelect={onSelect} />
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/* A push can carry dozens of secrets (a committed .env); the first few are
+   listed and the rest sit behind "+N more" so one push never fills the page. */
+const PUSH_PREVIEW = 5;
+
+function PushFindings({ findings, onSelect }) {
+  const [expanded, setExpanded] = useState(false);
+  const hidden = findings.length - PUSH_PREVIEW;
+  const shown = expanded || hidden <= 1 ? findings : findings.slice(0, PUSH_PREVIEW);
+  return (
+    <>
+      <ul className="mt-2.5 flex flex-col gap-1">
+        {shown.map((finding) => {
+          const meta = severityMeta(finding.risk_tier);
+          return (
+            <li key={findingKey(finding)}>
+              <button
+                type="button"
+                onClick={() => onSelect(finding)}
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ background: `var(--t-${meta.tone})` }}
+                />
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2">
+                  {finding.file_path}:{finding.line_number ?? '?'}
+                </span>
+                <span className="shrink-0 text-[11.5px] text-ink-3">
+                  {humanizeToken(finding.detector)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {hidden > 1 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="mt-1 px-2 text-[11.5px] font-medium text-brand hover:underline"
+        >
+          {expanded ? 'Show fewer' : `+${formatNumber(hidden)} more`}
+        </button>
+      )}
+    </>
   );
 }
 

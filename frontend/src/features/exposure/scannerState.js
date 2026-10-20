@@ -29,6 +29,12 @@ export function findingKey(finding) {
  */
 export function describeExposureError(error) {
   const status = error?.status;
+  if (error?.code === 'TENANT_NOT_PROVISIONED') {
+    return {
+      title: 'Your workspace is still being set up',
+      message: 'Findings show up here once the first credential scan of your repositories has finished.',
+    };
+  }
   if (status === 403) {
     return {
       title: 'Exposed credentials are limited to administrators',

@@ -147,9 +147,19 @@ export function FacetRail({
   );
 }
 
+/* Long groups (dozens of detectors or repositories) show the first few and
+   a "Show all"; an active option is always shown so a filter never hides. */
+const FACET_PREVIEW = 6;
+
 function FacetGroup({ group }) {
   const [open, setOpen] = useState(group.defaultOpen !== false);
+  const [showAll, setShowAll] = useState(false);
   const activeInGroup = group.options.filter((option) => option.active).length;
+  const collapsible = group.options.length > FACET_PREVIEW + 2;
+  const visible =
+    collapsible && !showAll
+      ? group.options.filter((option, index) => index < FACET_PREVIEW || option.active)
+      : group.options;
 
   return (
     <div className="px-3.5 py-3">
@@ -183,7 +193,7 @@ function FacetGroup({ group }) {
             {group.options.length === 0 ? (
               <p className="py-1 text-[11.5px] text-ink-3">Nothing to filter on in this scan.</p>
             ) : (
-              group.options.map((option) => (
+              visible.map((option) => (
                 <label
                   key={option.value}
                   className={cn(
@@ -215,6 +225,15 @@ function FacetGroup({ group }) {
               ))
             )}
           </div>
+          {collapsible && (
+            <button
+              type="button"
+              onClick={() => setShowAll((value) => !value)}
+              className="mt-1 text-[11.5px] font-medium text-brand hover:underline"
+            >
+              {showAll ? 'Show fewer' : `Show all ${formatNumber(group.options.length)}`}
+            </button>
+          )}
           {group.note && (
             <p className="mt-2 text-[11px] leading-relaxed text-ink-3">{group.note}</p>
           )}

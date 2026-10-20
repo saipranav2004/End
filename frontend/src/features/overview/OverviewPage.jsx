@@ -40,7 +40,7 @@ import { SegmentedControl } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 import { ChartSkeleton, DonutSkeleton, ListSkeleton, LoadingAnnouncement, Skeleton, StatStripSkeleton } from '../../ui/Skeleton';
-import { ClearState, EmptyState, InlineError } from '../../ui/States';
+import { ClearState, EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { postureRoute, windowPhrase } from '../../lib/api/posture';
 import { RecentChangesCard } from '../changes/RecentChangesCard';
 import { BandTag, Delta, ScoreRing } from '../posture/parts';
@@ -94,6 +94,18 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
 
   const refreshing =
     overviewQuery.isRefreshing || postureQuery.isRefreshing || genomeQuery.isRefreshing || scopeQuery.isRefreshing;
+
+  /* No tenant tables yet: one calm message instead of a page of failed cards. */
+  if (overviewFailed && overviewQuery.error?.code === 'TENANT_NOT_PROVISIONED') {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Dashboard" />
+        <Panel>
+          <ErrorState error={overviewQuery.error} onRetry={refreshAll} />
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

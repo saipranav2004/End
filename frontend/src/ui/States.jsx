@@ -1,4 +1,4 @@
-import { AlertTriangle, Inbox, RotateCw, ShieldCheck, WifiOff } from 'lucide-react';
+import { AlertTriangle, Hourglass, Inbox, RotateCw, ShieldCheck, WifiOff } from 'lucide-react';
 import { Button } from './Button';
 import { cn } from './cn';
 
@@ -65,7 +65,32 @@ export function ClearState({ title, description, action, compact }) {
   );
 }
 
+/* The tenant's tables do not exist yet: nothing failed and nothing is the
+   person's fault, so this reads as a wait, not an error. */
+const settingUp = (error) => error?.code === 'TENANT_NOT_PROVISIONED';
+
 export function ErrorState({ error, onRetry, title, compact = false, className }) {
+  if (settingUp(error)) {
+    return (
+      <div
+        className={cn('flex flex-col items-center justify-center gap-3 text-center', compact ? 'px-6 py-10' : 'px-6 py-14', className)}
+        role="status"
+      >
+        <span className="grid size-12 place-items-center rounded-full border border-info/25 bg-info-soft text-info">
+          <Hourglass aria-hidden="true" className="size-5" />
+        </span>
+        <h3 className="text-[14px] font-semibold text-ink">Your workspace is still being set up</h3>
+        <p className="max-w-sm text-balance text-[12.5px] leading-relaxed text-ink-3">
+          Data shows up here once the first scan of your accounts has finished. If this stays for more than a day, contact support.
+        </p>
+        {onRetry && (
+          <Button variant="secondary" size="sm" icon={RotateCw} onClick={onRetry} className="mt-1">
+            Check again
+          </Button>
+        )}
+      </div>
+    );
+  }
   const offline = error?.code === 'NETWORK' || error?.code === 'ECONNABORTED';
   const Icon = offline ? WifiOff : AlertTriangle;
 
@@ -99,6 +124,19 @@ export function ErrorState({ error, onRetry, title, compact = false, className }
 
 /** Compact inline variant for panels inside a composed dashboard. */
 export function InlineError({ error, onRetry, label }) {
+  if (settingUp(error)) {
+    return (
+      <div
+        role="status"
+        className="flex items-center gap-3 rounded-[var(--radius-control)] border border-info/25 bg-info-soft px-3 py-2.5"
+      >
+        <Hourglass aria-hidden="true" className="size-4 shrink-0 text-info" />
+        <p className="min-w-0 flex-1 text-[12.5px] text-ink-2">
+          Your workspace is still being set up; this fills in after the first scan.
+        </p>
+      </div>
+    );
+  }
   return (
     <div
       role="alert"
