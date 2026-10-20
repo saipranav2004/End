@@ -3,7 +3,6 @@ package v1
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,20 +30,20 @@ func NewIdentityDetailHandler(service *svcv1.IdentityDetailService) *IdentityDet
 func (h *IdentityDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 
 	id := strings.TrimSpace(mux.Vars(r)["id"])
 	if id == "" {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "identity id is required"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "identity id is required", Error: "INVALID_REQUEST"})
 		return
 	}
 	// Validate UUID format before it reaches "id = $1::uuid" in Postgres —
 	// otherwise a malformed id throws a raw "invalid input syntax for type
 	// uuid" (SQLSTATE 22P02) error that must never reach the client.
 	if !identityUUIDRegex.MatchString(id) {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid identity ID"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid identity ID", Error: "INVALID_REQUEST"})
 		return
 	}
 
@@ -78,7 +77,9 @@ func (h *IdentityDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 		if err != nil || v < 1 || v > maxRelationshipDepth {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: fmt.Sprintf("depth must be an integer between 1 and %d", maxRelationshipDepth)})
+				Message: fmt.Sprintf("depth must be an integer between 1 and %d", maxRelationshipDepth),
+				Error:   "INVALID_REQUEST",
+			})
 			return
 		}
 		depth = v
@@ -86,7 +87,7 @@ func (h *IdentityDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	usedOnly, err := parseOptionalBool(q, "used_only")
 	if err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "used_only must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "used_only must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 
@@ -157,19 +158,16 @@ func (h *IdentityDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
 				Message: "Unsupported tab. Available tabs: overview, permissions, activity, relationships, credentials, raw.",
+				Error:   "INVALID_REQUEST",
 			})
 		case errors.Is(err, svcv1.ErrIdentityNotFound):
 			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{
 				Success: false,
 				Message: fmt.Sprintf("identity with id '%s' not found", id),
+				Error:   "IDENTITY_NOT_FOUND",
 			})
 		default:
-			log.Printf("identity detail failed: %v", err)
-			sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-				Success: false,
-				Message: "Failed to retrieve identity detail",
-				Error:   "IDENTITY_DETAIL_FAILED",
-			})
+			sendServerError(w, err, "Failed to retrieve identity detail", "IDENTITY_DETAIL_FAILED")
 		}
 		return
 	}

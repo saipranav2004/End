@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"log"
 	"net/http"
 
 	"nhi-backend-api/internal/middleware"
@@ -22,7 +21,7 @@ func NewDashboardOverviewHandler(service *svcv1.DashboardOverviewService) *Dashb
 func (h *DashboardOverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 
@@ -32,12 +31,7 @@ func (h *DashboardOverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GetOverview(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		log.Printf("dashboard overview failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "Failed to retrieve dashboard overview",
-			Error:   "DASHBOARD_LOAD_FAILED",
-		})
+		sendServerError(w, err, "Failed to retrieve dashboard overview", "DASHBOARD_LOAD_FAILED")
 		return
 	}
 

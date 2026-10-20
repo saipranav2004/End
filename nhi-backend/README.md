@@ -71,9 +71,14 @@ endpoint except login, refresh and `/health` needs `Authorization: Bearer
 <access token>`. Unknown query parameters are a 400.
 
 Response shapes: inventory, integrations and change tracking answer
-`{success, message, data}`; posture and genome answer `{data, meta}` and errors
-`{error: {code, message}}`; credential exposure answers bare JSON (errors
-`{error, message}`). See [Known issues](#known-issues) for where these differ.
+`{success, message, data}` (errors `{success: false, message, error: CODE}`);
+posture and genome answer `{data, meta}` (errors `{error: {code, message}}`,
+genome adds `request_id`); credential exposure answers bare JSON (errors
+`{error: CODE, message}`). Sign-in failures (401) and crashes (500) use the
+same shape as the API family the path belongs to.
+
+When the tenant's schema is missing a table an endpoint reads (the workspace
+is not fully set up), every API answers **503 `TENANT_NOT_PROVISIONED`**.
 
 ### Health
 
@@ -174,9 +179,9 @@ Reads for every signed-in user; changes for admins.
 | GET | `/credential-exposure/allowlist` | Findings marked safe (the Accepted list). |
 | POST | `/credential-exposure/allowlist` | Marks a finding as safe, with a reason. |
 | DELETE | `/credential-exposure/allowlist` | Restores a finding to the live list. |
-| POST | `/credential-exposure/decisions` | Records an analyst verdict on a finding (real secret / false positive). |
+| POST | `/credential-exposure/decisions` | Records an analyst verdict on a finding (real secret / false positive). The signed-in user is recorded as `decided_by` (a value in the body is ignored); the allowlist records `dismissed_by` the same way. |
 | POST | `/credential-exposure/deep-scan` | Requests a full-history walk of one repository (`{client_id, repository, platform?}`, 202). Written to the tenant's `secscan_deepscan_<platform>` row for the scanner worker - no external call. 404 `CLIENT_NOT_FOUND` when this workspace's scanner has never seen the client on that platform. |
-| GET | `/credential-exposure/deep-scan/status` | Progress of that rescan. |
+| GET | `/credential-exposure/deep-scan/status` | Progress of that rescan; the same object with `status: "not_started"` when none was requested. |
 
 ### Posture (ISPM) - `/ispm/...`
 
@@ -643,7 +648,7 @@ use `uniqExact(event_id)` and row reads use `FINAL`): `event_id`, `source_type`,
 * `limit` default 25, max 100; `cursor` is opaque – copy `meta.next_cursor` into the next request unchanged.
 * `from` inclusive / `to` exclusive, ISO-8601 UTC; default window = last 14 days.
 * Unknown query parameters → `400 VALIDATION_ERROR`; tenant scope/discovery
-  failure → `503 STORE_UNAVAILABLE`; missing monitoring tables or ClickHouse → **200 with nulls / empty lists**.
+  failure → `503 STORE_UNAVAILABLE` (`503 TENANT_NOT_PROVISIONED` when the tenant schema lacks a table); missing monitoring tables or ClickHouse → **200 with nulls / empty lists**.
 
 ### Scan change tracking in detail
 

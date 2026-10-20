@@ -237,7 +237,6 @@ func writeAWSError(w http.ResponseWriter, err error, fallback, fallbackCode stri
 	case errors.Is(err, svcv1.ErrAWSUnavailable):
 		sendJSONResponse(w, http.StatusServiceUnavailable, models.APIResponse{Success: false, Message: "AWS cannot be reached right now. Try again shortly", Error: "AWS_UNAVAILABLE"})
 	default:
-		log.Printf("aws integration: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: fallback, Error: fallbackCode})
+		sendServerError(w, err, fallback, fallbackCode)
 	}
 }

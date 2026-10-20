@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"nhi-backend-api/internal/database"
 	"nhi-backend-api/internal/middleware"
 	"nhi-backend-api/internal/models"
 	svcv1 "nhi-backend-api/internal/services/v1"
@@ -24,6 +25,7 @@ func (h *FilterHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
 			Message: "Unauthorized",
+			Error:   "UNAUTHORIZED",
 		})
 		return
 	}
@@ -34,12 +36,7 @@ func (h *FilterHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 
 	filters, err := h.filterService.GetFilters(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		log.Printf("filter options failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "Failed to retrieve filter options",
-			Error:   "FILTERS_LOAD_FAILED",
-		})
+		sendServerError(w, err, "Failed to retrieve filter options", "FILTERS_LOAD_FAILED")
 		return
 	}
 
@@ -48,6 +45,17 @@ func (h *FilterHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 		Message: "Filter options retrieved successfully",
 		Data:    filters,
 	})
+}
+
+// sendServerError logs err and answers 500, or 503 TENANT_NOT_PROVISIONED
+// when the tenant schema lacks a table this endpoint reads.
+func sendServerError(w http.ResponseWriter, err error, message, code string) {
+	log.Printf("%s: %v", code, err)
+	if database.IsMissingTable(err) {
+		sendJSONResponse(w, http.StatusServiceUnavailable, models.APIResponse{Success: false, Message: database.NotProvisionedMessage, Error: database.NotProvisionedCode})
+		return
+	}
+	sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: message, Error: code})
 }
 
 func sendJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {

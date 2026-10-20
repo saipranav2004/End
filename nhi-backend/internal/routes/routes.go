@@ -51,6 +51,7 @@ func SetupRoutes(h HandlerContainer) *mux.Router {
 		writeJSON(w, http.StatusNotFound, map[string]any{
 			"success": false,
 			"message": "route not found: " + req.Method + " " + req.URL.Path,
+			"error":   "ROUTE_NOT_FOUND",
 		})
 	})
 	r.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

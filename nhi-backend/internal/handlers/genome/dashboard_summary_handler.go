@@ -75,7 +75,7 @@ func (h *DashboardSummaryHandler) Get(w http.ResponseWriter, r *http.Request) {
 		var unavailable *svc.StoreUnavailableError
 		if errors.As(err, &unavailable) {
 			log.Printf("dashboard summary rid=%s: %v", rid, err)
-			writeSummaryError(w, http.StatusServiceUnavailable, models.MonitoringCodeStoreUnavailable, unavailable.Op+" failed", rid)
+			writeUnavailable(w, unavailable, rid)
 			return
 		}
 		log.Printf("dashboard summary rid=%s: unexpected error: %v", rid, err)

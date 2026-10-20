@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"nhi-backend-api/internal/database"
 	models "nhi-backend-api/internal/models/genome"
 	svc "nhi-backend-api/internal/services/genome"
 )
@@ -78,9 +79,19 @@ func writeIdentityServiceError(w http.ResponseWriter, endpoint, rid string, err 
 		writeSummaryError(w, http.StatusNotFound, models.MonitoringCodeIdentityNotFound, "The requested identity was not found", rid)
 	case errors.As(err, &unavailable):
 		log.Printf("%s rid=%s: %v", endpoint, rid, err)
-		writeSummaryError(w, http.StatusServiceUnavailable, models.MonitoringCodeStoreUnavailable, unavailable.Op+" failed", rid)
+		writeUnavailable(w, unavailable, rid)
 	default:
 		log.Printf("%s rid=%s: unexpected error: %v", endpoint, rid, err)
 		writeSummaryError(w, http.StatusInternalServerError, models.MonitoringCodeInternal, "unexpected error", rid)
 	}
+}
+
+// writeUnavailable answers 503: TENANT_NOT_PROVISIONED when the tenant schema
+// lacks a table (the same code as every other API), else STORE_UNAVAILABLE.
+func writeUnavailable(w http.ResponseWriter, unavailable *svc.StoreUnavailableError, rid string) {
+	if database.IsMissingTable(unavailable) {
+		writeSummaryError(w, http.StatusServiceUnavailable, database.NotProvisionedCode, database.NotProvisionedMessage, rid)
+		return
+	}
+	writeSummaryError(w, http.StatusServiceUnavailable, models.MonitoringCodeStoreUnavailable, unavailable.Op+" failed", rid)
 }

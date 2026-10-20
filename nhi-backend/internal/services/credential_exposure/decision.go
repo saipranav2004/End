@@ -2,7 +2,6 @@ package credential_exposure
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	repo "nhi-backend-api/internal/repository/credential_exposure"
@@ -23,16 +22,13 @@ func (s *DecisionService) Save(ctx context.Context, userID, tenantID, dbName, id
 	decision = strings.ToLower(strings.TrimSpace(decision))
 	by = strings.TrimSpace(by)
 	if id == "" || len(id) > 1000 {
-		return fmt.Errorf("finding_id is required and must not exceed 1000 characters")
+		return invalid("finding_id is required and must not exceed 1000 characters")
 	}
 	if decision != "real_secret" && decision != "false_positive" {
-		return fmt.Errorf("decision must be real_secret or false_positive")
-	}
-	if by == "" {
-		by = "dashboard user"
+		return invalid("decision must be real_secret or false_positive")
 	}
 	if len(by) > 300 {
-		return fmt.Errorf("decided_by exceeds 300 characters")
+		return invalid("decided_by exceeds 300 characters")
 	}
 	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {

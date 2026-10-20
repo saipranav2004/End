@@ -9,11 +9,13 @@ import (
 	"nhi-backend-api/internal/scope"
 )
 
-// InvalidAllowlistEntryError is a client mistake in an allowlist request
-// (HTTP 400). Its message is safe to return to the client.
-type InvalidAllowlistEntryError struct{ Msg string }
+// InvalidInputError is a client mistake in a request (HTTP 400). Its message
+// is safe to return to the client.
+type InvalidInputError struct{ Msg string }
 
-func (e *InvalidAllowlistEntryError) Error() string { return e.Msg }
+func (e *InvalidInputError) Error() string { return e.Msg }
+
+func invalid(msg string) error { return &InvalidInputError{Msg: msg} }
 
 type AllowlistService struct {
 	repo     *repo.AllowlistRepository
@@ -34,13 +36,13 @@ func (s *AllowlistService) List(ctx context.Context, userID, tenantID, dbName, c
 
 func (s *AllowlistService) Upsert(ctx context.Context, userID, tenantID, dbName string, req models.AllowlistRequest) (*models.AllowlistEntry, error) {
 	if strings.TrimSpace(req.ClientID) == "" || len(req.ClientID) > 200 || strings.TrimSpace(req.FilePath) == "" || len(req.FilePath) > 1000 || strings.TrimSpace(req.Detector) == "" || len(req.Detector) > 200 || strings.TrimSpace(req.Redacted) == "" || len(req.Redacted) > 500 {
-		return nil, &InvalidAllowlistEntryError{Msg: "client_id, file_path, detector and redacted are required and must fit their database columns"}
+		return nil, &InvalidInputError{Msg: "client_id, file_path, detector and redacted are required and must fit their database columns"}
 	}
 	if len(req.Reason) > 1000 {
-		return nil, &InvalidAllowlistEntryError{Msg: "reason exceeds 1000 characters"}
+		return nil, &InvalidInputError{Msg: "reason exceeds 1000 characters"}
 	}
 	if len(req.DismissedBy) > 200 {
-		return nil, &InvalidAllowlistEntryError{Msg: "dismissed_by exceeds 200 characters"}
+		return nil, &InvalidInputError{Msg: "dismissed_by exceeds 200 characters"}
 	}
 	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {
@@ -51,7 +53,7 @@ func (s *AllowlistService) Upsert(ctx context.Context, userID, tenantID, dbName 
 
 func (s *AllowlistService) Delete(ctx context.Context, userID, tenantID, dbName string, req models.AllowlistRequest) (bool, error) {
 	if strings.TrimSpace(req.ClientID) == "" || len(req.ClientID) > 200 || strings.TrimSpace(req.FilePath) == "" || len(req.FilePath) > 1000 || strings.TrimSpace(req.Detector) == "" || len(req.Detector) > 200 || strings.TrimSpace(req.Redacted) == "" || len(req.Redacted) > 500 {
-		return false, &InvalidAllowlistEntryError{Msg: "client_id, file_path, detector and redacted are required and must fit their database columns"}
+		return false, &InvalidInputError{Msg: "client_id, file_path, detector and redacted are required and must fit their database columns"}
 	}
 	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {

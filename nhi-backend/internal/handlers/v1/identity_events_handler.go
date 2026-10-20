@@ -3,7 +3,6 @@ package v1
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -71,12 +70,12 @@ func eventsBadRequest(w http.ResponseWriter, code, msg string) {
 func (h *IdentityEventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 	id := strings.TrimSpace(mux.Vars(r)["id"])
 	if !identityUUIDRegex.MatchString(id) {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid identity ID"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid identity ID", Error: "INVALID_REQUEST"})
 		return
 	}
 	if rejectUnknownQuery(w, r, identityEventsAllowed) {
@@ -95,15 +94,13 @@ func (h *IdentityEventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			eventsBadRequest(w, "INVALID_TIME_RANGE", timeRangeErr.Msg)
 		case errors.Is(err, svcv1.ErrIdentityNotFound):
 			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{
-				Success: false, Message: fmt.Sprintf("identity with id '%s' not found", id)})
+				Success: false, Message: fmt.Sprintf("identity with id '%s' not found", id), Error: "IDENTITY_NOT_FOUND"})
 		case errors.Is(err, svcv1.ErrEventNotFound):
 			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{
 				Success: false, Message: fmt.Sprintf("event with id '%s' not found for this identity", query.EventID),
 				Error: "EVENT_NOT_FOUND"})
 		default:
-			log.Printf("identity events failed: %v", err)
-			sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-				Success: false, Message: "Failed to retrieve identity events", Error: "IDENTITY_EVENTS_FAILED"})
+			sendServerError(w, err, "Failed to retrieve identity events", "IDENTITY_EVENTS_FAILED")
 		}
 		return
 	}

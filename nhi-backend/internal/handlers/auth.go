@@ -83,7 +83,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Message: "Invalid request payload",
-			Error:   err.Error(),
+			Error:   "INVALID_REQUEST",
 		})
 		return
 	}
@@ -92,6 +92,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Message: "Email or username and password are required",
+			Error:   "INVALID_REQUEST",
 		})
 		return
 	}
@@ -146,6 +147,7 @@ func decodeRefreshRequest(w http.ResponseWriter, r *http.Request) (string, bool)
 		sendJSON(w, http.StatusBadRequest, models.APIResponse{
 			Success: false,
 			Message: "refresh_token is required",
+			Error:   "INVALID_REQUEST",
 		})
 		return "", false
 	}
@@ -189,6 +191,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
 			Message: "Logout failed",
+			Error:   "INTERNAL_ERROR",
 		})
 		return
 	}
@@ -206,6 +209,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
 			Message: "Unauthorized",
+			Error:   "UNAUTHORIZED",
 		})
 		return
 	}

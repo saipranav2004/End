@@ -1,14 +1,12 @@
 package credential_exposure
 
 import (
-	"errors"
-	"log"
 	"net/http"
 	"strings"
 
+	"nhi-backend-api/internal/middleware"
 	models "nhi-backend-api/internal/models/credential_exposure"
 	svc "nhi-backend-api/internal/services/credential_exposure"
-	"nhi-backend-api/internal/middleware"
 )
 
 var allowlistListAllowed = map[string]struct{}{"client_id": {}}
@@ -34,7 +32,7 @@ func (h *AllowlistHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := h.service.List(r.Context(), claims.UserID, claims.TenantID, claims.DBName, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to load allowlist")
+		writeServerError(w, err, "Unable to load allowlist")
 		return
 	}
 	writeJSON(w, http.StatusOK, models.AllowlistListResponse{Entries: entries})
@@ -52,6 +50,7 @@ func (h *AllowlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	req.DismissedBy = claims.UserID // the signed-in user, never the client's claim
 	entry, err := h.service.Upsert(r.Context(), claims.UserID, claims.TenantID, claims.DBName, req)
 	if err != nil {
 		writeAllowlistError(w, "upsert", err)
@@ -83,11 +82,5 @@ func (h *AllowlistHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // writeAllowlistError returns validation errors (safe messages) as 400 and
 // hides everything else (database/resolver detail) behind a generic 500.
 func writeAllowlistError(w http.ResponseWriter, op string, err error) {
-	var invalid *svc.InvalidAllowlistEntryError
-	if errors.As(err, &invalid) {
-		writeAPIError(w, http.StatusBadRequest, invalid.Msg, "INVALID_ALLOWLIST_ENTRY")
-		return
-	}
-	log.Printf("allowlist %s failed: %v", op, err)
-	writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to update the allowlist")
+	writeInvalidOr(w, err, "INVALID_ALLOWLIST_ENTRY", "Unable to update the allowlist")
 }

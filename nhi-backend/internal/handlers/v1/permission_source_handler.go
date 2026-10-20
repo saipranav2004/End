@@ -2,7 +2,6 @@ package v1
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -33,7 +32,7 @@ func NewPermissionSourceHandler(service *svcv1.PermissionSourceService) *Permiss
 func (h *PermissionSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 	if rejectUnknownQuery(w, r, permissionSourceAllowed) {
@@ -54,11 +53,10 @@ func (h *PermissionSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.Find(r.Context(), claims.UserID, claims.TenantID, claims.DBName, credentialID, eventSource, eventName)
 	if err != nil {
 		if errors.Is(err, svcv1.ErrCredentialNotFound) {
-			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "credential not found"})
+			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "credential not found", Error: "CREDENTIAL_NOT_FOUND"})
 			return
 		}
-		log.Printf("permission source failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "Failed to look up the permission source", Error: "PERMISSION_SOURCE_FAILED"})
+		sendServerError(w, err, "Failed to look up the permission source", "PERMISSION_SOURCE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Permission source retrieved successfully", Data: result})

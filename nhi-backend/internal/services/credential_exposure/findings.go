@@ -2,7 +2,6 @@ package credential_exposure
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	models "nhi-backend-api/internal/models/credential_exposure"
@@ -22,13 +21,13 @@ func NewFindingsService(repo *repo.FindingsRepository, resolver *scope.Resolver)
 func (s *FindingsService) List(ctx context.Context, userID, tenantID, dbName string, filter models.FindingsFilter) ([]models.Finding, int, error) {
 	filter.Platform = strings.ToLower(strings.TrimSpace(filter.Platform))
 	if filter.Platform != "" && filter.Platform != "github" && filter.Platform != "codecommit" {
-		return nil, 0, fmt.Errorf("platform must be codecommit or github")
+		return nil, 0, invalid("platform must be codecommit or github")
 	}
 	if filter.Limit < 1 || filter.Limit > 500 {
-		return nil, 0, fmt.Errorf("limit must be between 1 and 500")
+		return nil, 0, invalid("limit must be between 1 and 500")
 	}
 	if filter.Offset < 0 {
-		return nil, 0, fmt.Errorf("offset cannot be negative")
+		return nil, 0, invalid("offset cannot be negative")
 	}
 	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {
@@ -49,10 +48,10 @@ func (s *FindingsService) Summary(ctx context.Context, userID, tenantID, dbName 
 	filter.ClientID = strings.TrimSpace(filter.ClientID)
 	filter.Platform = strings.ToLower(strings.TrimSpace(filter.Platform))
 	if filter.Platform != "" && filter.Platform != "github" && filter.Platform != "codecommit" {
-		return models.FindingsSummary{}, fmt.Errorf("platform must be codecommit or github")
+		return models.FindingsSummary{}, invalid("platform must be codecommit or github")
 	}
 	if len(filter.ClientID) > 200 {
-		return models.FindingsSummary{}, fmt.Errorf("client_id exceeds 200 characters")
+		return models.FindingsSummary{}, invalid("client_id exceeds 200 characters")
 	}
 	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {

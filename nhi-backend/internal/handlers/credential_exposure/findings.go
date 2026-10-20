@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"nhi-backend-api/internal/middleware"
 	models "nhi-backend-api/internal/models/credential_exposure"
 	repo "nhi-backend-api/internal/repository/credential_exposure"
 	svc "nhi-backend-api/internal/services/credential_exposure"
-	"nhi-backend-api/internal/middleware"
 )
 
 var (
@@ -67,11 +67,7 @@ func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.Summary(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		if strings.Contains(err.Error(), "platform must") || strings.Contains(err.Error(), "client_id exceeds") {
-			writeAPIError(w, http.StatusBadRequest, err.Error(), "INVALID_QUERY")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to summarize findings")
+		writeInvalidOr(w, err, "INVALID_QUERY", "Unable to summarize findings")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -100,7 +96,7 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, forceFlag
 			case errors.Is(err, repo.ErrFindingAmbiguous):
 				writeError(w, http.StatusConflict, "AMBIGUOUS_FINDING", "Finding ID matched more than one platform table")
 			default:
-				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to load finding")
+				writeServerError(w, err, "Unable to load finding")
 			}
 			return
 		}
@@ -149,11 +145,7 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, forceFlag
 	}
 	items, count, err := h.service.List(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		if strings.Contains(err.Error(), "platform must") {
-			writeAPIError(w, http.StatusBadRequest, err.Error(), "INVALID_QUERY")
-		} else {
-			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to load findings")
-		}
+		writeInvalidOr(w, err, "INVALID_QUERY", "Unable to load findings")
 		return
 	}
 	writeJSON(w, http.StatusOK, models.FindingsResponse{Count: count, Findings: items, Limit: filter.Limit, Offset: filter.Offset})

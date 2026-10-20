@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,7 +23,7 @@ func NewIdentitiesListHandler(service *svcv1.IdentitiesListService) *IdentitiesL
 func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 
@@ -47,7 +46,7 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("page"); raw != "" {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
-			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page must be a positive integer"})
+			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page must be a positive integer", Error: "INVALID_REQUEST"})
 			return
 		}
 		filter.Page = v
@@ -55,7 +54,7 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("page_size"); raw != "" {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
-			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page_size must be a positive integer"})
+			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page_size must be a positive integer", Error: "INVALID_REQUEST"})
 			return
 		}
 		// Documented maximum is 100 rows per page.
@@ -137,22 +136,17 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if filter.IsPubliclyAccessible, err = parseOptionalBool(q, "is_publicly_accessible"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "is_publicly_accessible must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "is_publicly_accessible must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.MinIdleDays, err = parseOptionalInt(q, "min_idle_days"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "min_idle_days must be an integer"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "min_idle_days must be an integer", Error: "INVALID_REQUEST"})
 		return
 	}
 
 	result, err := h.service.GetIdentities(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		log.Printf("identities list failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "Failed to retrieve identities",
-			Error:   "IDENTITIES_LOAD_FAILED",
-		})
+		sendServerError(w, err, "Failed to retrieve identities", "IDENTITIES_LOAD_FAILED")
 		return
 	}
 

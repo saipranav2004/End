@@ -12,7 +12,7 @@ import (
 
 func TestWriteAllowlistError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeAllowlistError(rec, "upsert", &svc.InvalidAllowlistEntryError{Msg: "reason exceeds 1000 characters"})
+	writeAllowlistError(rec, "upsert", &svc.InvalidInputError{Msg: "reason exceeds 1000 characters"})
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "reason exceeds 1000 characters") {
 		t.Fatalf("validation: %d %s", rec.Code, rec.Body.String())
 	}

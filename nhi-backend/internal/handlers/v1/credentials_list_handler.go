@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +26,7 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
 			Message: "Unauthorized",
+			Error:   "UNAUTHORIZED",
 		})
 		return
 	}
@@ -49,7 +49,7 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("page"); raw != "" {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
-			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page must be a positive integer"})
+			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page must be a positive integer", Error: "INVALID_REQUEST"})
 			return
 		}
 		filter.Page = v
@@ -57,7 +57,7 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("page_size"); raw != "" {
 		v, err := strconv.Atoi(raw)
 		if err != nil || v < 1 {
-			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page_size must be a positive integer"})
+			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "page_size must be a positive integer", Error: "INVALID_REQUEST"})
 			return
 		}
 		// Documented maximum is 100 rows per page.
@@ -117,38 +117,33 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if filter.RotationEnabled, err = parseOptionalBool(q, "rotation_enabled"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "rotation_enabled must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "rotation_enabled must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.RotationOverdue, err = parseOptionalBool(q, "rotation_overdue"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "rotation_overdue must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "rotation_overdue must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.IsOrphaned, err = parseOptionalBool(q, "is_orphaned"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "is_orphaned must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "is_orphaned must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.HasExternalTrust, err = parseOptionalBool(q, "has_external_trust"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "has_external_trust must be true or false"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "has_external_trust must be true or false", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.MinIdleDays, err = parseOptionalInt(q, "min_idle_days"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "min_idle_days must be an integer"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "min_idle_days must be an integer", Error: "INVALID_REQUEST"})
 		return
 	}
 	if filter.MaxDaysUntilExpiry, err = parseOptionalInt(q, "max_days_until_expiry"); err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "max_days_until_expiry must be an integer"})
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "max_days_until_expiry must be an integer", Error: "INVALID_REQUEST"})
 		return
 	}
 
 	result, err := h.credentialsService.GetCredentials(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		log.Printf("credentials list failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{
-			Success: false,
-			Message: "Failed to retrieve credentials",
-			Error:   "CREDENTIALS_LOAD_FAILED",
-		})
+		sendServerError(w, err, "Failed to retrieve credentials", "CREDENTIALS_LOAD_FAILED")
 		return
 	}
 

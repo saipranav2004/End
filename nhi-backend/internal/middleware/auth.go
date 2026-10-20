@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -37,12 +39,12 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Fields(r.Header.Get("Authorization"))
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			respondUnauthorized(w, "Missing or invalid Bearer token")
+			respondUnauthorized(w, r, "Missing or invalid Bearer token")
 			return
 		}
 		claims, err := jwt.ValidateToken(parts[1], m.jwtCfg.Secret)
 		if err != nil {
-			respondUnauthorized(w, "Invalid or expired token")
+			respondUnauthorized(w, r, "Invalid or expired token")
 			return
 		}
 		claims.UserID = strings.TrimSpace(claims.UserID)
@@ -50,24 +52,24 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 		claims.DBName = strings.TrimSpace(claims.DBName)
 		claims.ID = strings.TrimSpace(claims.ID)
 		if !sessionIDRE.MatchString(claims.ID) {
-			respondUnauthorized(w, "Token is missing a valid session id")
+			respondUnauthorized(w, r, "Token is missing a valid session id")
 			return
 		}
 		if claims.UserID == "" || claims.UserID != strings.TrimSpace(claims.Email) || claims.UserID != strings.TrimSpace(claims.Subject) || !tenantIDRE.MatchString(claims.TenantID) || config.ValidateSchemaName(claims.DBName) != nil {
-			respondUnauthorized(w, "Token is missing or has invalid tenant claims")
+			respondUnauthorized(w, r, "Token is missing or has invalid tenant claims")
 			return
 		}
 		if m.validator == nil {
-			respondError(w, http.StatusServiceUnavailable, "Authentication state validation is unavailable", "AUTH_STATE_UNAVAILABLE")
+			respondError(w, r, http.StatusServiceUnavailable, "Authentication state validation is unavailable", "AUTH_STATE_UNAVAILABLE")
 			return
 		}
 		valid, role, err := m.validator.ValidateAuthContext(r.Context(), claims.UserID, claims.TenantID, claims.DBName, claims.ID)
 		if err != nil {
-			respondError(w, http.StatusServiceUnavailable, "Unable to verify account and tenant status", "AUTH_STATE_CHECK_FAILED")
+			respondError(w, r, http.StatusServiceUnavailable, "Unable to verify account and tenant status", "AUTH_STATE_CHECK_FAILED")
 			return
 		}
 		if !valid {
-			respondUnauthorized(w, "Session has ended or account is no longer active")
+			respondUnauthorized(w, r, "Session has ended or account is no longer active")
 			return
 		}
 		claims.Role = role // the database's current role, not the token's
@@ -76,14 +78,46 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
-func respondUnauthorized(w http.ResponseWriter, message string) {
-	respondError(w, http.StatusUnauthorized, message, "UNAUTHORIZED")
+func respondUnauthorized(w http.ResponseWriter, r *http.Request, message string) {
+	respondError(w, r, http.StatusUnauthorized, message, "UNAUTHORIZED")
 }
 
-func respondError(w http.ResponseWriter, status int, message, code string) {
+// respondError answers in the error shape of the API family the path belongs
+// to, so a client of one family parses every error it can receive:
+//
+//	/genome/               {error: {code, message, request_id}}
+//	/ispm/                 {error: {code, message}}
+//	/credential-exposure/  {error: code, message}
+//	everything else        {success: false, message, error: code}
+func respondError(w http.ResponseWriter, r *http.Request, status int, message, code string) {
+	var body any = models.APIResponse{Success: false, Message: message, Error: code}
+	path := r.URL.Path
+	switch {
+	case strings.Contains(path, "/genome/"):
+		rid := requestID(r)
+		w.Header().Set("X-Request-ID", rid)
+		body = map[string]any{"error": map[string]string{"code": code, "message": message, "request_id": rid}}
+	case strings.Contains(path, "/ispm/"):
+		body = map[string]any{"error": map[string]string{"code": code, "message": message}}
+	case strings.Contains(path, "/credential-exposure/"):
+		body = map[string]string{"error": code, "message": message}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(models.APIResponse{Success: false, Message: message, Error: code})
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+var requestIDRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// requestID echoes a well-formed client X-Request-ID or mints one (the
+// genome handlers do the same).
+func requestID(r *http.Request) string {
+	if id := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestIDRE.MatchString(id) {
+		return id
+	}
+	var b [12]byte
+	_, _ = rand.Read(b[:])
+	return "req_" + hex.EncodeToString(b[:])
 }
 
 func GetClaims(r *http.Request) *jwt.CustomClaims {

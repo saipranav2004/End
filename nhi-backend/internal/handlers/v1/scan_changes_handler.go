@@ -2,7 +2,6 @@ package v1
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -48,7 +47,7 @@ const (
 func (h *ScanChangesHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 	if rejectUnknownQuery(w, r, scanListAllowed) {
@@ -60,8 +59,7 @@ func (h *ScanChangesHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.ListScans(r.Context(), claims.UserID, claims.TenantID, claims.DBName, limit)
 	if err != nil {
-		log.Printf("list scans failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "Failed to list scans", Error: "SCANS_LOAD_FAILED"})
+		sendServerError(w, err, "Failed to list scans", "SCANS_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scans retrieved successfully", Data: result})
@@ -75,7 +73,7 @@ var scanIDRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 func (h *ScanChangesHandler) Changes(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 	scanID := strings.TrimSpace(mux.Vars(r)["scan_id"])
@@ -130,8 +128,7 @@ func (h *ScanChangesHandler) Changes(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "Scan not found", Error: "SCAN_NOT_FOUND"})
 		return
 	case err != nil:
-		log.Printf("scan changes failed: %v", err)
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "Failed to retrieve scan changes", Error: "SCAN_CHANGES_LOAD_FAILED"})
+		sendServerError(w, err, "Failed to retrieve scan changes", "SCAN_CHANGES_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scan changes retrieved successfully", Data: result})

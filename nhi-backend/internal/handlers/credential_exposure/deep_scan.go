@@ -2,7 +2,6 @@ package credential_exposure
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 
@@ -50,8 +49,7 @@ func (h *DeepScanHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "CLIENT_NOT_FOUND", "This client has no scanned repositories on that platform in your workspace")
 		return
 	case err != nil:
-		log.Printf("deep-scan request failed: %v", err)
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to request the deep scan")
+		writeServerError(w, err, "Unable to request the deep scan")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, accepted)
@@ -79,11 +77,12 @@ func (h *DeepScanHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.service.Status(r.Context(), claims.UserID, claims.TenantID, claims.DBName, clientID, repoKey, platform)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to load repository scan status")
+		writeServerError(w, err, "Unable to load repository scan status")
 		return
 	}
 	if len(items) == 0 {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "not_started"})
+		// Same shape as a started scan, so clients read one type.
+		writeJSON(w, http.StatusOK, models.DeepScanResult{ClientID: clientID, RepoKey: repoKey, Platform: platform, Status: "not_started"})
 		return
 	}
 	if len(items) > 1 {

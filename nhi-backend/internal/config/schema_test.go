@@ -21,7 +21,7 @@ func TestValidateRequiresDatabasePassword(t *testing.T) {
 	c := &Config{
 		Server:   ServerConfig{Host: "0.0.0.0", Port: 8080},
 		Database: DatabaseConfig{Host: "h", DatabaseName: "nhi_db", User: "u", Schema: "nhi_global"},
-		JWT:      JWTConfig{Secret: "0123456789012345678901234567890123", AccessTTLMinutes: 60, RefreshTTLHours: 168},
+		JWT:      JWTConfig{Secret: "0123456789012345678901234567890123", AccessTTLMinutes: 60, RefreshTTLHours: 168, SessionMaxHours: 720},
 	}
 	if err := c.validate(); err == nil {
 		t.Fatal("validate() = nil with empty database password, want error")

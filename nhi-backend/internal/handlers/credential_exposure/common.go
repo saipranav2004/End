@@ -2,16 +2,19 @@ package credential_exposure
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"nhi-backend-api/internal/database"
 	"nhi-backend-api/internal/middleware"
-	"nhi-backend-api/internal/models"
+	svc "nhi-backend-api/internal/services/credential_exposure"
 )
 
 func requireScannerAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -38,8 +41,30 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]string{"error": code, "message": message})
 }
 
+// writeAPIError is writeError with the arguments the other way round.
 func writeAPIError(w http.ResponseWriter, status int, message, code string) {
-	writeJSON(w, status, models.APIResponse{Success: false, Message: message, Error: code})
+	writeError(w, status, code, message)
+}
+
+// writeInvalidOr answers 400 with the message of a client mistake, else hides
+// the failure behind a logged 500 (503 TENANT_NOT_PROVISIONED when the tenant
+// schema lacks the table).
+func writeInvalidOr(w http.ResponseWriter, err error, invalidCode, failMessage string) {
+	var invalid *svc.InvalidInputError
+	if errors.As(err, &invalid) {
+		writeError(w, http.StatusBadRequest, invalidCode, invalid.Msg)
+		return
+	}
+	writeServerError(w, err, failMessage)
+}
+
+func writeServerError(w http.ResponseWriter, err error, message string) {
+	log.Printf("credential exposure: %s: %v", message, err)
+	if database.IsMissingTable(err) {
+		writeError(w, http.StatusServiceUnavailable, database.NotProvisionedCode, database.NotProvisionedMessage)
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", message)
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {

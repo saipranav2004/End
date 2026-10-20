@@ -19,7 +19,7 @@ func Recoverer(next http.Handler) http.Handler {
 				panic(rec)
 			}
 			log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
-			respondError(w, http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR")
+			respondError(w, r, http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR")
 		}()
 		next.ServeHTTP(w, r)
 	})

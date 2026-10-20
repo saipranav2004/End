@@ -21,7 +21,7 @@ func NewSettingsHandler(service *svcv1.SettingsService) *SettingsHandler {
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 
@@ -31,7 +31,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GetSettings(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "Failed to retrieve settings", Error: "SETTINGS_LOAD_FAILED"})
+		sendServerError(w, err, "Failed to retrieve settings", "SETTINGS_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Settings retrieved successfully", Data: result})
@@ -40,7 +40,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {
-		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "One or more selected filters do not belong to this tenant", Error: "INVALID_SETTINGS"})
 			return
 		}
-		sendJSONResponse(w, http.StatusInternalServerError, models.APIResponse{Success: false, Message: "Failed to update settings", Error: "SETTINGS_UPDATE_FAILED"})
+		sendServerError(w, err, "Failed to update settings", "SETTINGS_UPDATE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Settings updated successfully", Data: result})
