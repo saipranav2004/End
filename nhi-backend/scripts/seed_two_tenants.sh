@@ -15,7 +15,8 @@
 # in the relationships tab at any depth. That is the assertion the e2e script
 # makes.
 #
-# Usage: PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres ./scripts/seed_two_tenants.sh
+# Usage: PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres [SEED_DB_NAME=nhi_seed_test] ./scripts/seed_two_tenants.sh
+# Point the API at it with NHI_DB_NAME=nhi_seed_test.
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -30,7 +31,13 @@ ROOT="$(cd "$HERE/.." && pwd)"
 # bcrypt hash of "StrongPass123!" at default cost
 HASH='$2a$10$f7Q2R6aA0ZRcXPIaLBAjmObMWS9NWPkszwXYpoTVrkoV35R8d46HC'
 
-DB="${NHI_DB_NAME:-nhi_db}"
+# This DROPs and recreates the database, so it never defaults to (or accepts)
+# the real one.
+DB="${SEED_DB_NAME:-nhi_seed_test}"
+case "$DB" in
+  nhi_db|postgres|template0|template1) echo "refusing to drop database '$DB'; set SEED_DB_NAME to a throwaway name" >&2; exit 1 ;;
+esac
+[[ "$DB" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "SEED_DB_NAME must be a plain lower-case name" >&2; exit 1; }
 psql -q -c "DROP DATABASE IF EXISTS $DB;"
 psql -q -c "CREATE DATABASE $DB;"
 
@@ -52,7 +59,7 @@ SQL
 for schema in tenant_a tenant_b; do
   psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/scripts/test_schema.sql"
   psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/001_user_settings.sql"
-  psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/003_accounts_connection.sql"
+  psql -q -d "$DB" -v ON_ERROR_STOP=1 -v schema="$schema" -f "$ROOT/migrations/tenant/004_accounts_connection.sql"
 done
 
 psql -q -d "$DB" -v ON_ERROR_STOP=1 <<SQL

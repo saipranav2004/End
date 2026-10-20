@@ -1,6 +1,6 @@
 -- Apply once per tenant schema (after the scanner has created <schema>.accounts).
 -- Safe to run again:
---   psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql
+--   psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_connection.sql
 --
 -- <schema>.accounts is both the scope table (one row per AWS account, regions
 -- text[], is_default) and the connection record of the Integrations page.

@@ -30,7 +30,7 @@ import (
 //	  go test ./internal/repository -run AWSIntegration -v
 //
 // The test creates two throwaway tenants with their own schemas (applying
-// migrations/tenant/003_accounts_connection.sql to them), uses random account IDs,
+// migrations/tenant/004_accounts_connection.sql to them), uses random account IDs,
 // and drops all of it afterwards. Existing tenants and data are untouched.
 func randomHex(t *testing.T, n int) string {
 	t.Helper()
@@ -75,7 +75,7 @@ func applyTenantMigration(t *testing.T, db *sql.DB, schema string) {
 		client_aws_account_id varchar(12), external_id varchar(255), is_connected boolean DEFAULT false NOT NULL,
 		account_status varchar(20) DEFAULT 'pending' NOT NULL, codecommit_enabled boolean DEFAULT false NOT NULL,
 		github_enabled boolean DEFAULT false NOT NULL, CONSTRAINT account_account_id_unique UNIQUE (account_id))`)
-	raw, err := os.ReadFile("../../migrations/tenant/003_accounts_connection.sql")
+	raw, err := os.ReadFile("../../migrations/tenant/004_accounts_connection.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

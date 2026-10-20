@@ -33,6 +33,16 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
 
 1. **Database** - apply the migrations (each file is safe to run again):
 
+   `scripts/migrate.sh` runs all of the below in order (every tenant schema
+   in `nhi_global.tenants`, or the schemas you name); each file is safe to
+   run again:
+
+   ```sh
+   DSN='postgres://user:pass@host:5432/nhi_db' scripts/migrate.sh   # or: scripts/migrate.sh bimasugam
+   ```
+
+   By hand:
+
    ```sh
    # nhi_db, once
    psql "$DSN" -f migrations/global/001_auth_tenant_registry.sql
@@ -42,10 +52,10 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
 
    # every tenant schema (e.g. bimasugam)
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/001_user_settings.sql
-   psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_regions_array.sql  # converts an old accounts table; no-op otherwise
-   psql "$DSN" -v schema=bimasugam -f migrations/tenant/002_register_global_region.sql  # after inventory data exists
+   psql "$DSN" -v schema=bimasugam -f migrations/tenant/002_accounts_regions_array.sql  # converts an old accounts table; no-op otherwise
+   psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_register_global_region.sql  # after inventory data exists
+   psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_connection.sql  # connection columns on accounts
    psql "$DSN" -v schema=bimasugam -f migrations/tenant/005_register_discovered_regions.sql  # every scanned region selectable
-   psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql  # connection columns on accounts
    ```
 
    The inventory tables (`identities`, `credentials`, ...), posture (`ispm_*`)
@@ -254,7 +264,7 @@ Shared by everything: `cmd/api-server/main.go` (wiring), `internal/routes/routes
 | Credential exposure | `handlers/credential_exposure/` · `services/credential_exposure/` · `repository/credential_exposure/` · `models/credential_exposure/models.go` |
 | Posture (ISPM) | `handlers/postures/` (one file per endpoint + `common.go`) · `services/postures/` · `repository/postures/` · `models/postures/` · `repository/clickhouse/posture_activity.go` |
 | NHI Genome | `handlers/genome/` (one file per endpoint + `common.go`, `identity_route.go`) · `services/genome/` (+ `identity_lookup.go`, `identity_normalizer.go`) · `repository/genome/` (+ `monitoring_events.go`, `common.go`) · `models/genome/` · `config/monitoring_clickhouse.go` |
-| Local tooling | `scripts/seed_two_tenants.sh`, `scripts/e2e_tenant_scope.sh`, `scripts/test_schema.sql` (a local stand-in schema), `scripts/check_rds.sh` |
+| Local tooling | `scripts/migrate.sh` (all migrations, in order), `scripts/seed_two_tenants.sh`, `scripts/e2e_tenant_scope.sh`, `scripts/test_schema.sql` (a local stand-in schema), `scripts/check_rds.sh` |
 
 (Paths are under `internal/` unless they start with `cmd/`, `pkg/`, `migrations/` or `scripts/`.)
 
@@ -322,12 +332,13 @@ document's "Every Data API" flow are structurally impossible to skip.
 ### Running and testing locally
 
 ```bash
-# 1. Postgres, then seed nhi_db with two tenant schemas
+# 1. Postgres, then seed a throwaway database (nhi_seed_test; the script
+#    drops and recreates it and refuses nhi_db) with two tenant schemas
 export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres
 ./scripts/seed_two_tenants.sh
 
 # 2. Point configs/config.yaml at that Postgres and run
-NHI_CONFIG_FILE=configs/config.yaml go run ./cmd/api-server
+NHI_DB_NAME=nhi_seed_test NHI_CONFIG_FILE=configs/config.yaml go run ./cmd/api-server
 
 # 3. Verify the tenant guarantees end to end
 ./scripts/e2e_tenant_scope.sh          # 16 assertions
@@ -460,7 +471,7 @@ above for the full list):
 
 ```sh
 psql "$DSN" -f migrations/global/004_tenant_collector.sql            # nhi_global.tenants columns
-psql "$DSN" -v schema=bimasugam -f migrations/tenant/003_accounts_connection.sql   # per tenant schema
+psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_connection.sql   # per tenant schema
 ```
 
 `nhi_global.tenants` gains `domain_name`, `collector_aws_account_id` (our

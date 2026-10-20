@@ -16,7 +16,7 @@ import "time"
 // (migrations/global/004_tenant_collector.sql); each tenant schema holds
 // accounts, one row per AWS account, which is both the connection record and
 // the scope every other screen filters by (connection columns added by
-// migrations/tenant/003_accounts_connection.sql).
+// migrations/tenant/004_accounts_connection.sql).
 // ─────────────────────────────────────────────────────────────────────────
 
 // Connection status of a tenant, and of one AWS account (account_status).

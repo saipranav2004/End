@@ -2,7 +2,7 @@
 --   psql "$DSN" -v schema=bimasugam -f migrations/tenant/005_register_discovered_regions.sql
 --
 -- Adds to each account's accounts.regions every region the scanner found
--- live identities or credentials in (002 does this for 'global' only).
+-- live identities or credentials in (003 does this for 'global' only).
 --
 -- Why: every screen scopes by accounts.regions, and Settings only offers the
 -- regions listed there. An account scanned in a region that is missing from

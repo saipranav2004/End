@@ -1,6 +1,6 @@
 -- Apply once per tenant schema. Safe to run again; a no-op on a schema that
 -- already uses the array layout:
---   psql "$DSN" -v schema=bimasugam -f migrations/tenant/004_accounts_regions_array.sql
+--   psql "$DSN" -v schema=bimasugam -f migrations/tenant/002_accounts_regions_array.sql
 --
 -- The scope table changed from one row per region
 --   accounts (tenant_id, account_id, region text, is_default)
@@ -28,6 +28,17 @@ BEGIN
     IF NOT has_region THEN
         RAISE NOTICE '%.accounts already uses the regions array', s;
         RETURN;
+    END IF;
+
+    -- The conversion rewrites the rows with only the scope columns. If
+    -- 004_accounts_connection.sql already ran and an account is connected,
+    -- that would erase the connection, so stop and let a person decide.
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = s AND table_name = 'accounts' AND column_name = 'client_role_arn') THEN
+        EXECUTE format('SELECT EXISTS (SELECT 1 FROM %I.accounts WHERE COALESCE(client_role_arn, '''') <> '''')', s) INTO has_regions;
+        IF has_regions THEN
+            RAISE EXCEPTION '%.accounts has connected accounts on the old one-row-per-region layout; converting would erase them. Convert by hand.', s;
+        END IF;
     END IF;
 
     IF NOT has_regions THEN

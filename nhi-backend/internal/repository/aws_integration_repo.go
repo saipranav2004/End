@@ -22,7 +22,7 @@ import (
 // both the scope table every screen filters by (one row per account, regions
 // text[], is_default) and the connection record (client_role_arn,
 // external_id, is_connected, account_status, ...). The connection columns
-// beyond the scanner's are added by migrations/tenant/003_accounts_connection.sql.
+// beyond the scanner's are added by migrations/tenant/004_accounts_connection.sql.
 // globalRegion is the scanner's synthetic region for global resources (IAM).
 const globalRegion = "global"
 
@@ -40,7 +40,7 @@ var (
 	// ErrAWSAccountNotConnected: the account has not passed all checks.
 	ErrAWSAccountNotConnected = errors.New("aws account is not connected")
 	// ErrAWSTablesMissing: a migration has not been applied.
-	ErrAWSTablesMissing = errors.New("aws integration schema is missing: apply migrations/global/004_tenant_collector.sql and, per tenant schema, migrations/tenant/003_accounts_connection.sql")
+	ErrAWSTablesMissing = errors.New("aws integration schema is missing: apply migrations/global/004_tenant_collector.sql and, per tenant schema, migrations/tenant/004_accounts_connection.sql")
 )
 
 // missingSchema maps undefined_table (42P01) and undefined_column (42703) to

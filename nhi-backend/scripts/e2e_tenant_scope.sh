@@ -68,7 +68,7 @@ save() { curl -s -o /dev/null -X PUT -H "Authorization: Bearer $1" -H 'Content-T
 
 # Start from a clean slate so the fallback is genuinely exercised.
 PGHOST="${PGHOST:-127.0.0.1}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" \
-  psql -q -d "${NHI_DB_NAME:-nhi_db}" -c "DELETE FROM tenant_a.user_settings WHERE user_id='alice@acme.test';" >/dev/null
+  psql -q -d "${SEED_DB_NAME:-nhi_seed_test}" -c "DELETE FROM tenant_a.user_settings WHERE user_id='alice@acme.test';" >/dev/null
 
 chk "no saved settings -> source=accounts" "$(source_of "$ALICE")" "accounts"
 save "$ALICE" '{"selected_account_ids":["222222222222"],"selected_regions":["us-east-1"]}'

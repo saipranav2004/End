@@ -1,5 +1,5 @@
 -- Run once per tenant schema after inventory data is present:
---   psql "$DSN" -v schema=tenant_a -f migrations/tenant/002_register_global_region.sql
+--   psql "$DSN" -v schema=tenant_a -f migrations/tenant/003_register_global_region.sql
 -- Register the synthetic AWS "global" region for accounts that have
 -- non-deleted global resources, by adding 'global' to that account's
 -- accounts.regions array (one row per account: tenant_id, account_id,
@@ -8,7 +8,7 @@
 --
 -- Re-runnable: 'global' is added only where it is not already present.
 -- A schema still on the old one-row-per-region layout must run
--- 004_accounts_regions_array.sql first.
+-- 002_accounts_regions_array.sql first.
 BEGIN;
 
 WITH global_account_ids AS (
