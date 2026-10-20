@@ -3,7 +3,11 @@ package credential_exposure
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	models "nhi-backend-api/internal/models/credential_exposure"
 	"nhi-backend-api/internal/scope"
@@ -65,4 +69,80 @@ ORDER BY platform`
 		return nil, fmt.Errorf("iterate repository status: %w", err)
 	}
 	return out, nil
+}
+
+// ErrDeepScanClientNotFound: this tenant's scanner tables have never seen the
+// client, so there is no credential the worker could scan it with.
+var ErrDeepScanClientNotFound = errors.New("deep scan: unknown client_id")
+
+// deepScanPlatforms are the platforms whose secscan_* tables exist per tenant.
+var deepScanPlatforms = []string{"codecommit", "github"}
+
+// ClientPlatforms returns the platforms on which this tenant's scanner has a
+// ledger row or a finding for clientID. A schema without a platform's tables
+// simply does not list it.
+func (r *DeepScanRepository) ClientPlatforms(ctx context.Context, resolved *scope.DataScope, clientID string) ([]string, error) {
+	if resolved == nil || resolved.DB == nil {
+		return nil, errScopeRequired
+	}
+	schema := resolved.QSchema()
+	var out []string
+	for _, p := range deepScanPlatforms {
+		var known bool
+		q := `SELECT EXISTS (SELECT 1 FROM ` + schema + `.secscan_ledger_` + p + ` WHERE client_id = $1)
+		          OR EXISTS (SELECT 1 FROM ` + schema + `.secscan_findings_` + p + ` WHERE client_id = $1)`
+		if err := resolved.DB.QueryRowContext(ctx, q, clientID).Scan(&known); err != nil {
+			if isMissingRelation(err) {
+				continue
+			}
+			return nil, fmt.Errorf("look up scanner client: %w", err)
+		}
+		if known {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// Request asks the scanner worker for a full-history walk of one repository
+// by writing its secscan_deepscan_<platform> row: requested_at set, the last
+// run's result cleared. The worker picks up rows with requested_at set and
+// neither completed_at nor failed_at (README, "Deep-scan contract"). A walk
+// already waiting or running is left alone and reported as such - one
+// statement, so two clicks never reset each other. requestedAt is the
+// scanner's own string format.
+func (r *DeepScanRepository) Request(ctx context.Context, resolved *scope.DataScope, clientID, repoKey, platform string, now time.Time) (requestedAt string, alreadyRunning bool, err error) {
+	if resolved == nil || resolved.DB == nil {
+		return "", false, errScopeRequired
+	}
+	if platform != "codecommit" && platform != "github" {
+		return "", false, fmt.Errorf("deep scan: unsupported platform %q", platform)
+	}
+	table := resolved.QSchema() + `.secscan_deepscan_` + platform
+	q := `INSERT INTO ` + table + ` AS d (client_id, repo_key, platform, requested_at)
+	      VALUES ($1, $2, $3, $4)
+	      ON CONFLICT (client_id, repo_key, platform) DO UPDATE
+	         SET requested_at = EXCLUDED.requested_at, completed_at = NULL, commits_scanned = NULL,
+	             findings = NULL, failed_at = NULL, error = NULL
+	       WHERE d.completed_at IS NOT NULL OR d.failed_at IS NOT NULL
+	      RETURNING d.requested_at`
+	err = resolved.DB.QueryRowContext(ctx, q, clientID, repoKey, platform, dashboardTimestamp(now)).Scan(&requestedAt)
+	if err == nil {
+		return requestedAt, false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("request deep scan: %w", err)
+	}
+	// The conflict row is still waiting or running: report its request time.
+	if err := resolved.DB.QueryRowContext(ctx, `SELECT requested_at FROM `+table+`
+	      WHERE client_id = $1 AND repo_key = $2 AND platform = $3`, clientID, repoKey, platform).Scan(&requestedAt); err != nil {
+		return "", false, fmt.Errorf("read running deep scan: %w", err)
+	}
+	return requestedAt, true, nil
+}
+
+// isMissingRelation reports undefined_table (42P01).
+func isMissingRelation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "42P01"
 }

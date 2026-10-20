@@ -203,52 +203,36 @@ export function describeDeepScanFailure(status) {
 }
 
 /**
- * What a request to start a deep scan failed on.
- *
- * The discovery API proxies the request to the scanner with its own key:
- *   503 SCANNER_UNAVAILABLE   the proxy is not configured on this server
- *   502                       the scanner did not answer (safe to retry)
- *   400 / 404                 the scanner's own answer, passed through
- *   403                       not an administrator
+ * What a request to start a deep scan failed on:
+ *   404 CLIENT_NOT_FOUND   this workspace's scanner has never seen the client
+ *                          on that platform, so nothing could scan it
+ *   400                    the request itself is malformed
+ *   403                    not an administrator
  */
 export function describeDeepScanRequestError(error) {
   const status = error?.status;
   const message = error?.message || '';
-  if (status === 503 || error?.code === 'SCANNER_UNAVAILABLE') {
-    return {
-      title: 'Deep scans are not configured',
-      message:
-        'This server has no connection to the scanner for deep scans, so a history walk cannot be requested. An administrator has to configure it on the server first.',
-      retryable: false,
-      unavailable: status === 503,
-    };
-  }
   if (status === 403) {
     return { title: 'Administrators only', message: 'Your role cannot request deep scans.', retryable: false };
   }
   if (status === 404) {
-    return { title: 'Unknown client or repository', message: message || 'The scanner has no record of this client id.', retryable: false };
+    return {
+      title: 'Unknown client',
+      message: message || 'The scanner has no repositories for this client id in your workspace.',
+      retryable: false,
+    };
   }
   if (status === 400) {
     return {
       title: 'The service refused the request',
-      message:
-        message ||
-        'Either the repository is not one this client has onboarded, or it was given in the wrong shape - a bare name for CodeCommit, owner/repo for GitHub.',
+      message: message || 'The repository was given in the wrong shape - a bare name for CodeCommit, owner/repo for GitHub.',
       retryable: false,
-    };
-  }
-  if (status === 502 || status === 504) {
-    return {
-      title: 'The scanner did not answer',
-      message: 'The request reached the server, but the scanner behind it did not respond. This is safe to retry.',
-      retryable: true,
     };
   }
   if (error?.code === 'NETWORK') {
     return { title: 'Cannot reach the service', message, retryable: true };
   }
-  return { title: 'Could not start the deep scan', message: message || 'The service returned an unexpected error.', retryable: true };
+  return { title: 'Could not request the deep scan', message: message || 'The service returned an unexpected error.', retryable: true };
 }
 
 /* ── Verdicts ─────────────────────────────────────────────────────────────── */

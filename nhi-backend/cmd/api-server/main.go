@@ -208,7 +208,7 @@ func main() {
 	ceFindingsService := svcce.NewFindingsService(ceFindingsRepo, resolver)
 	ceAllowlistService := svcce.NewAllowlistService(ceAllowlistRepo, resolver)
 	ceDecisionService := svcce.NewDecisionService(ceDecisionRepo, resolver)
-	ceDeepScanService := svcce.NewDeepScanService(ceDeepScanRepo, resolver, cfg.Scanner.BaseURL, cfg.Scanner.DashboardKey)
+	ceDeepScanService := svcce.NewDeepScanService(ceDeepScanRepo, resolver)
 
 	ceFindingsHandler := credential_exposure.NewFindingsHandler(ceFindingsService)
 	ceAllowlistHandler := credential_exposure.NewAllowlistHandler(ceAllowlistService)

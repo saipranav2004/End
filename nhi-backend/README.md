@@ -50,7 +50,7 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
 2. **Configuration** - `configs/config.yaml`, overridden by `NHI_*` environment
    variables (see `.env.example`): database, JWT secret, CloudTrail ClickHouse
    (`NHI_CLICKHOUSE_*`), genome ClickHouse (`NHI_MONITORING_CLICKHOUSE_*`), the
-   `aws_integration` block and the secret-scanner URL. No AWS keys go in config
+   and the `aws_integration` block. No AWS keys go in config
    (see [AWS identity](#aws-identity-of-this-service)).
 
 3. **Run** - `go run ./cmd/api-server`. At start-up the log says
@@ -172,7 +172,7 @@ Reads for every signed-in user; changes for admins.
 | POST | `/credential-exposure/allowlist` | Marks a finding as safe, with a reason. |
 | DELETE | `/credential-exposure/allowlist` | Restores a finding to the live list. |
 | POST | `/credential-exposure/decisions` | Records an analyst verdict on a finding (real secret / false positive). |
-| POST | `/credential-exposure/deep-scan` | Asks the scanner to rescan one repository's full history. |
+| POST | `/credential-exposure/deep-scan` | Requests a full-history walk of one repository (`{client_id, repository, platform?}`, 202). Written to the tenant's `secscan_deepscan_<platform>` row for the scanner worker - no external call. 404 `CLIENT_NOT_FOUND` when this workspace's scanner has never seen the client on that platform. |
 | GET | `/credential-exposure/deep-scan/status` | Progress of that rescan. |
 
 ### Posture (ISPM) - `/ispm/...`
@@ -504,6 +504,19 @@ screens only then.
 Secret scanner contract: scan CodeCommit where `codecommit_enabled`, and the
 GitHub token at `github_secret_arn` where `github_enabled`, by assuming
 `client_role_arn` with `external_id`.
+
+#### Deep-scan contract (scanner worker)
+
+The API never calls the scanner. `POST /credential-exposure/deep-scan` upserts
+`<schema>.secscan_deepscan_<platform>` (`client_id`, `repo_key`, `platform`,
+`requested_at` in the scanner's `YYYY-MM-DDTHH:MM:SS+00:00` form) and clears
+the previous run's `completed_at`, `commits_scanned`, `findings`, `failed_at`
+and `error`; a row that is still waiting (no `completed_at`, no `failed_at`) is
+left as it is and reported `already_running`. The platform is the request's,
+else the one the client has ledger rows or findings on, else `github` for an
+`owner/repo` name and `codecommit` otherwise. The worker claims waiting rows
+and writes `completed_at` + `commits_scanned` + `findings`, or `failed_at` +
+`error`; `GET /deep-scan/status` reads the same row.
 
 #### Sync contract (discovery worker)
 

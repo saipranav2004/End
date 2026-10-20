@@ -1,14 +1,7 @@
 package credential_exposure
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -17,28 +10,20 @@ import (
 	"nhi-backend-api/internal/scope"
 )
 
-var ErrScannerProxyUnavailable = errors.New("scanner proxy is not configured")
+// ErrDeepScanClientNotFound is repo.ErrDeepScanClientNotFound, re-exported for the handler.
+var ErrDeepScanClientNotFound = repo.ErrDeepScanClientNotFound
 
+// DeepScanService requests and reports full-history scans. Both sides are the
+// tenant's own secscan_* tables: a request writes the deep-scan row the
+// scanner worker polls, and status reads it back. Nothing leaves this API.
 type DeepScanService struct {
-	repo         *repo.DeepScanRepository
-	resolver     *scope.Resolver
-	baseURL, key string
-	client       *http.Client
+	repo     *repo.DeepScanRepository
+	resolver *scope.Resolver
+	now      func() time.Time
 }
 
-func NewDeepScanService(repo *repo.DeepScanRepository, resolver *scope.Resolver, baseURL, key string) *DeepScanService {
-	return &DeepScanService{
-		repo:     repo,
-		resolver: resolver,
-		baseURL:  strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		key:      strings.TrimSpace(key),
-		client: &http.Client{
-			Timeout: 25 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
-	}
+func NewDeepScanService(repo *repo.DeepScanRepository, resolver *scope.Resolver) *DeepScanService {
+	return &DeepScanService{repo: repo, resolver: resolver, now: time.Now}
 }
 
 func (s *DeepScanService) Status(ctx context.Context, userID, tenantID, dbName, clientID, repoKey, platform string) ([]models.DeepScanResult, error) {
@@ -49,40 +34,58 @@ func (s *DeepScanService) Status(ctx context.Context, userID, tenantID, dbName, 
 	return s.repo.Status(ctx, resolved, clientID, repoKey, platform)
 }
 
-func (s *DeepScanService) Trigger(ctx context.Context, userID, tenantID, dbName string, req models.DeepScanRequest) (int, []byte, error) {
-	// Validate tenant scope even when proxy is unavailable — fail closed on scope, not on proxy config.
-	if _, err := s.resolver.Resolve(ctx, userID, tenantID, dbName); err != nil {
-		return 0, nil, err
-	}
-	if s.baseURL == "" || s.key == "" {
-		return 0, nil, ErrScannerProxyUnavailable
-	}
-	u, err := url.Parse(s.baseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-		return 0, nil, fmt.Errorf("scanner proxy URL must be an https URL")
-	}
-	body, err := json.Marshal(req)
+// Trigger queues the walk. The platform is the request's, else the one the
+// client is known on, else - when it is known on both - read from the name:
+// GitHub repositories are owner/repo, CodeCommit names cannot contain "/".
+func (s *DeepScanService) Trigger(ctx context.Context, userID, tenantID, dbName string, req models.DeepScanRequest) (*models.DeepScanAccepted, error) {
+	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
 	if err != nil {
-		return 0, nil, fmt.Errorf("encode deep scan request: %w", err)
+		return nil, err
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/api/deep-scan", bytes.NewReader(body))
+	known, err := s.repo.ClientPlatforms(ctx, resolved, req.ClientID)
 	if err != nil {
-		return 0, nil, fmt.Errorf("create scanner request: %w", err)
+		return nil, err
 	}
-	hreq.Header.Set("Content-Type", "application/json")
-	hreq.Header.Set("Accept", "application/json")
-	hreq.Header.Set("X-Dashboard-Key", s.key)
-	resp, err := s.client.Do(hreq)
+	platform, err := pickPlatform(req.Platform, req.Repository, known)
 	if err != nil {
-		return 0, nil, fmt.Errorf("scanner aggregator unavailable: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
+	requestedAt, already, err := s.repo.Request(ctx, resolved, req.ClientID, req.Repository, platform, s.now())
 	if err != nil {
-		return 0, nil, fmt.Errorf("read scanner response: %w", err)
+		return nil, err
 	}
-	if len(b) > 1<<20 {
-		return 0, nil, fmt.Errorf("scanner response exceeds limit")
+	return &models.DeepScanAccepted{
+		Status:         "running",
+		ClientID:       req.ClientID,
+		RepoKey:        req.Repository,
+		Platform:       platform,
+		RequestedAt:    requestedAt,
+		AlreadyRunning: already,
+	}, nil
+}
+
+func pickPlatform(asked, repository string, known []string) (string, error) {
+	has := func(p string) bool {
+		for _, k := range known {
+			if k == p {
+				return true
+			}
+		}
+		return false
 	}
-	return resp.StatusCode, b, nil
+	switch {
+	case asked != "":
+		if !has(asked) {
+			return "", ErrDeepScanClientNotFound
+		}
+		return asked, nil
+	case len(known) == 1:
+		return known[0], nil
+	case len(known) == 0:
+		return "", ErrDeepScanClientNotFound
+	case strings.Contains(repository, "/"):
+		return "github", nil
+	default:
+		return "codecommit", nil
+	}
 }

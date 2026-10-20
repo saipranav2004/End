@@ -1,15 +1,14 @@
 package credential_exposure
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
 
+	"nhi-backend-api/internal/middleware"
 	models "nhi-backend-api/internal/models/credential_exposure"
 	svc "nhi-backend-api/internal/services/credential_exposure"
-	"nhi-backend-api/internal/middleware"
 )
 
 var deepScanStatusAllowed = map[string]struct{}{
@@ -40,38 +39,22 @@ func (h *DeepScanHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "client_id and repository are required and must fit their database columns", "INVALID_REQUEST")
 		return
 	}
-	status, body, err := h.service.Trigger(r.Context(), claims.UserID, claims.TenantID, claims.DBName, req)
-	if err != nil {
-		if errors.Is(err, svc.ErrScannerProxyUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, "SCANNER_UNAVAILABLE", "Deep-scan proxy is not configured")
-		} else {
-			writeError(w, http.StatusBadGateway, "SCANNER_UNAVAILABLE", "Unable to reach the scanner aggregator")
-		}
+	req.Platform = strings.ToLower(strings.TrimSpace(req.Platform))
+	if req.Platform != "" && req.Platform != "codecommit" && req.Platform != "github" {
+		writeAPIError(w, http.StatusBadRequest, "Invalid platform: "+req.Platform+". Allowed: codecommit, github", "INVALID_PLATFORM")
 		return
 	}
-	var payload any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		if status == http.StatusBadRequest || status == http.StatusNotFound {
-			code := "SCANNER_REJECTED"
-			// The upstream body is untrusted free text: log it, never echo it.
-			if raw := strings.TrimSpace(string(body)); raw != "" {
-				if len(raw) > 300 {
-					raw = raw[:300]
-				}
-				log.Printf("deep-scan: scanner returned %d: %s", status, raw)
-			}
-			message := "Scanner rejected the deep-scan request"
-			if status == http.StatusNotFound {
-				code = "CLIENT_NOT_FOUND"
-				message = "Unknown client_id"
-			}
-			writeError(w, status, code, message)
-			return
-		}
-		writeError(w, http.StatusBadGateway, "INVALID_SCANNER_RESPONSE", "Scanner aggregator returned invalid JSON")
+	accepted, err := h.service.Trigger(r.Context(), claims.UserID, claims.TenantID, claims.DBName, req)
+	switch {
+	case errors.Is(err, svc.ErrDeepScanClientNotFound):
+		writeError(w, http.StatusNotFound, "CLIENT_NOT_FOUND", "This client has no scanned repositories on that platform in your workspace")
+		return
+	case err != nil:
+		log.Printf("deep-scan request failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to request the deep scan")
 		return
 	}
-	writeJSON(w, status, payload)
+	writeJSON(w, http.StatusAccepted, accepted)
 }
 
 func (h *DeepScanHandler) Status(w http.ResponseWriter, r *http.Request) {

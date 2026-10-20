@@ -2671,7 +2671,7 @@
                 "deep-scan"
               ]
             },
-            "description": "client_id 1-200, repository 1-500. Proxied to scanner; 502/503 SCANNER_UNAVAILABLE.",
+            "description": "client_id 1-200, repository 1-500, optional platform (github | codecommit). Queues a full-history walk in the tenant's secscan_deepscan_<platform> table for the scanner worker; 202 {status, platform, requested_at, already_running}; 404 CLIENT_NOT_FOUND.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"repository\": \"{{repository}}\"\n}",

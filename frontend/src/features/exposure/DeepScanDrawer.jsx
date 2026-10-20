@@ -57,9 +57,8 @@ import {
  * "done", and there is no push notification for completion. Polling the
  * status endpoint is the only mechanism there is, every five seconds.
  *
- * The API proxies the request to the scanner; a server without that proxy
- * configured answers 503, which this drawer then states once at the top
- * instead of letting every row fail on its own. Only rows that are actually running are polled: a completed
+ * The API writes the request into the tenant's deep-scan table, which the
+ * scanner worker picks up. Only rows that are actually running are polled: a completed
  * scan does not change, and re-asking for it every five seconds would be
  * traffic that answers nothing.
  */
@@ -75,7 +74,6 @@ export function DeepScanDrawer({ open, onClose, findings = [] }) {
      the two have different provenance and the reader should be able to tell. */
   const [manualTargets, setManualTargets] = useState([]);
   /* Set when the server says deep scans are not configured (503). */
-  const [unavailable, setUnavailable] = useState(false);
 
   /* One row per repository the service has ever reported a finding against.
      Distinct (client_id, repository), which is the pair the two deep-scan
@@ -123,15 +121,22 @@ export function DeepScanDrawer({ open, onClose, findings = [] }) {
   const onRequest = useCallback(
     async (row) => {
       try {
-        await request(row);
-        notify({
-          title: 'Deep scan accepted',
-          description: `${row.repository} is being walked commit by commit. This screen will follow it.`,
-          variant: 'success',
-        });
+        const accepted = await request(row);
+        notify(
+          accepted?.already_running
+            ? {
+                title: 'Already requested',
+                description: `${row.repository} is already waiting for or in a history walk. This screen will follow it.`,
+                variant: 'info',
+              }
+            : {
+                title: 'Deep scan requested',
+                description: `${row.repository} will be walked commit by commit. This screen will follow it.`,
+                variant: 'success',
+              },
+        );
       } catch (error) {
         const described = describeDeepScanRequestError(error);
-        if (described.unavailable) setUnavailable(true);
         notify({
           title: described.title,
           description: described.message,
@@ -202,16 +207,6 @@ export function DeepScanDrawer({ open, onClose, findings = [] }) {
       }
     >
       <div className="flex flex-col gap-4">
-        {unavailable && (
-          <div role="status" className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-medium/30 bg-medium-soft p-3.5">
-            <AlertTriangle aria-hidden="true" className="mt-px size-4 shrink-0 text-medium" />
-            <p className="text-[12.5px] leading-relaxed text-ink-2">
-              <span className="font-semibold text-ink">Deep scans are not configured on this server.</span> Its
-              connection to the scanner for history walks has not been set up, so a scan cannot be requested from
-              here. Statuses of earlier walks are still shown.
-            </p>
-          </div>
-        )}
         {/* Why anybody would run this, before the controls that run it. A
             control whose cost is "reads every commit you have ever pushed"
             should not be offered without saying what it buys. */}
@@ -281,7 +276,6 @@ export function DeepScanDrawer({ open, onClose, findings = [] }) {
                   pending={pending === row.key}
                   onRequest={() => onRequest(row)}
                   onRefresh={() => refresh(row)}
-                  unavailable={unavailable}
                 />
               ))}
             </ul>
@@ -343,7 +337,7 @@ export function DeepScanDrawer({ open, onClose, findings = [] }) {
  * offers nothing - re-posting would reset it back to the beginning, and
  * somebody watching a progress row would read that as a failure.
  */
-function TargetRow({ row, state, pending, onRequest, onRefresh, unavailable }) {
+function TargetRow({ row, state, pending, onRequest, onRefresh }) {
   const { lock } = useAccess();
   const status = state?.data;
   const meta = deepScanStateMeta(status?.status);
@@ -414,8 +408,7 @@ function TargetRow({ row, state, pending, onRequest, onRefresh, unavailable }) {
             icon={status?.status && status.status !== 'not_started' ? History : Play}
             onClick={onRequest}
             loading={pending}
-            disabled={running || pending || unavailable}
-            title={unavailable ? 'Deep scans are not configured on this server' : undefined}
+            disabled={running || pending}
             locked={running ? undefined : lock('exposure.deepScan')}
           >
             {running
@@ -609,7 +602,7 @@ function useDeepScanStatuses(targets, open) {
     async (row) => {
       setPending(row.key);
       try {
-        const accepted = await startDeepScan({ clientId: row.clientId, repository: row.repository });
+        const accepted = await startDeepScan({ clientId: row.clientId, repository: row.repository, platform: row.platform });
         setStatuses((current) => ({
           ...current,
           [row.key]: {
@@ -620,7 +613,8 @@ function useDeepScanStatuses(targets, open) {
               client_id: row.clientId,
               repo_key: row.repository,
               status: accepted?.status || 'running',
-              requested_at: new Date().toISOString(),
+              platform: accepted?.platform ?? current[row.key]?.data?.platform,
+              requested_at: accepted?.requested_at || new Date().toISOString(),
               /* A fresh request clears the previous run's result, which is what
                  the service does too - keeping the old numbers on screen would
                  attribute them to the run that just started. */

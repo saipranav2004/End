@@ -2,16 +2,16 @@ import client from './client';
 import { ApiError, expectField } from './http';
 
 /*
- * Credential exposure (discovery API, admin only). The secret scanner writes
- * its findings into the tenant's schema; the API serves them here, and proxies
- * deep scans to the scanner with its key - the key never reaches the browser.
+ * Credential exposure (NHI backend, admin only). The secret scanner writes its
+ * findings into the tenant's schema and the API serves them here; a deep-scan
+ * request is written to the tenant's deep-scan table for the scanner worker.
  *
  *   GET    /api/v1/credential-exposure/findings            ?limit (<=500) &offset | ?finding_id
  *   GET    /api/v1/credential-exposure/findings/flagged    findings the model marked false positive
  *   GET    /api/v1/credential-exposure/findings/summary
  *   POST   /api/v1/credential-exposure/decisions           { finding_id, decision }
  *   GET/POST/DELETE /api/v1/credential-exposure/allowlist  accept / list / restore
- *   POST   /api/v1/credential-exposure/deep-scan           { client_id, repository }
+ *   POST   /api/v1/credential-exposure/deep-scan           { client_id, repository, platform? }
  *   GET    /api/v1/credential-exposure/deep-scan/status    ?client_id &repository [&platform]
  *
  * These answer bare JSON, not the { success, data } envelope.
@@ -85,11 +85,14 @@ export async function restoreFinding({ clientId, filePath, detector, redacted })
 
 /**
  * Start the full commit-by-commit history walk of one repository. 202 means
- * accepted, not finished - poll `fetchDeepScanStatus`. `repository` is a bare
- * name for CodeCommit, `owner/repo` for GitHub.
+ * accepted, not finished - poll `fetchDeepScanStatus`; `already_running` says
+ * an earlier request is still waiting. `repository` is a bare name for
+ * CodeCommit, `owner/repo` for GitHub; `platform` is sent when known.
  */
-export async function startDeepScan({ clientId, repository }) {
-  const res = await client.post(`${CE}/deep-scan`, { client_id: clientId, repository });
+export async function startDeepScan({ clientId, repository, platform }) {
+  const body = { client_id: clientId, repository };
+  if (platform) body.platform = platform;
+  const res = await client.post(`${CE}/deep-scan`, body);
   return res?.data ?? {};
 }
 

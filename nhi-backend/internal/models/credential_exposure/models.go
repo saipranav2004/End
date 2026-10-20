@@ -106,6 +106,17 @@ type OKResponse struct {
 type DeepScanRequest struct {
 	ClientID   string `json:"client_id"`
 	Repository string `json:"repository"`
+	Platform   string `json:"platform,omitempty"` // "github" | "codecommit"; inferred when omitted
+}
+
+// DeepScanAccepted is the 202 body: the walk is queued (or was already).
+type DeepScanAccepted struct {
+	Status         string `json:"status"` // "running"
+	ClientID       string `json:"client_id"`
+	RepoKey        string `json:"repo_key"`
+	Platform       string `json:"platform"`
+	RequestedAt    string `json:"requested_at"`
+	AlreadyRunning bool   `json:"already_running"`
 }
 
 type DeepScanResult struct {

@@ -30,7 +30,6 @@ type Config struct {
 	Database   DatabaseConfig   `yaml:"database"`
 	JWT        JWTConfig        `yaml:"jwt"`
 	CORS       CORSConfig       `yaml:"cors"`
-	Scanner    ScannerConfig    `yaml:"scanner"`
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	// AWSIntegration: "Connect AWS Account" (see aws_integration.go).
 	AWSIntegration AWSIntegrationConfig `yaml:"aws_integration"`
@@ -61,11 +60,6 @@ func (c ClickHouseConfig) Enabled() bool {
 type ServerConfig struct {
 	Port int    `yaml:"port"`
 	Host string `yaml:"host"`
-}
-
-type ScannerConfig struct {
-	BaseURL      string `yaml:"base_url"`
-	DashboardKey string `yaml:"dashboard_key"`
 }
 
 type DatabaseConfig struct {
@@ -170,10 +164,6 @@ func (c *Config) applyEnvironment() error {
 	if err := setInt(&c.JWT.RefreshTTLHours, "NHI_JWT_REFRESH_TTL_HOURS"); err != nil {
 		return err
 	}
-	setString(&c.Scanner.BaseURL, "SECRET_SCANNER_BASE_URL")
-	setString(&c.Scanner.DashboardKey, "SECRET_SCANNER_DASHBOARD_KEY")
-	setString(&c.Scanner.BaseURL, "NHI_SCANNER_BASE_URL")
-	setString(&c.Scanner.DashboardKey, "NHI_SCANNER_DASHBOARD_KEY")
 	setString(&c.ClickHouse.Host, "NHI_CLICKHOUSE_HOST")
 	if err := setInt(&c.ClickHouse.Port, "NHI_CLICKHOUSE_PORT"); err != nil {
 		return err
