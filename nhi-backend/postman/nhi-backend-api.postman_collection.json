@@ -110,6 +110,26 @@
           }
         },
         {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            },
+            "description": "200 when Postgres answers (503 otherwise); reports each ClickHouse as ok, down or not_configured.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
           "name": "Login (v1)",
           "request": {
             "method": "POST",
@@ -2572,7 +2592,7 @@
             "description": "client_id<=200, file_path<=1000, detector<=200, redacted<=500 (all required); reason<=1000, dismissed_by<=200 optional. Upsert.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"file_path\": \"src/config.py\",\n  \"detector\": \"AWS\",\n  \"redacted\": \"AKIA****\",\n  \"reason\": \"test key\",\n  \"dismissed_by\": \"analyst@example.com\"\n}",
+              "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"file_path\": \"src/config.py\",\n  \"detector\": \"AWS\",\n  \"redacted\": \"AKIA****\",\n  \"reason\": \"test key\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2640,7 +2660,7 @@
             "description": "decision: real_secret | false_positive. decided_by optional (<=300).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"finding_id\": \"REPLACE_ME\",\n  \"decision\": \"false_positive\",\n  \"decided_by\": \"dashboard user\"\n}",
+              "raw": "{\n  \"finding_id\": \"REPLACE_ME\",\n  \"decision\": \"false_positive\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
