@@ -43,7 +43,7 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
    ```
 
    The inventory tables (`identities`, `credentials`, ...), posture (`ispm_*`)
-   and genome (`baselines`, `alerts`, `alert_feedback`, ...) tables, and the
+   and genome (`baselines`, `baseline_versions`, `alerts`, `identity_risk_scores`) tables, and the
    scanner's `nhi_scans_aws` / `scan_changes`, are written by their workers,
    not created here.
 
@@ -70,7 +70,8 @@ endpoint except login, refresh and `/health` needs `Authorization: Bearer
 
 Response shapes: inventory, integrations and change tracking answer
 `{success, message, data}`; posture and genome answer `{data, meta}` and errors
-`{error: {code, message}}`.
+`{error: {code, message}}`; credential exposure answers bare JSON (errors
+`{error, message}`). See [Known issues](#known-issues) for where these differ.
 
 ### Health
 
@@ -202,11 +203,12 @@ posture worker for the whole tenant.
 ### NHI Genome - `/genome/...`
 
 Each workload identity learns its normal behaviour (a baseline); departures
-from it are raised as anomalies for review.
+from it are raised as anomalies. These five endpoints are read-only - there is
+no anomaly list, review or feedback API.
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/genome/dashboard/summary` | Identities watched, baselines established, still learning, recently baselined (plus the anomaly panels, empty until the pipeline writes alerts). |
+| GET | `/genome/dashboard/summary` | Cards (identities watched, baselines established, `still_learning` = watched without an established baseline, including those with no baseline row yet; `open_anomalies` raised in the card window, 24 hours by default), open departures by dimension and anomalies per day (14 days by default), most anomalous identities (empty until `identity_risk_scores` carries scores) and recently baselined. |
 | GET | `/genome/identities/{source_type}/{identity_name}` | The identity page header, trimmed to what the stores fill: `identity` (discovery's latest snapshot), `baseline_summary` (status, built/required days; absent until a baselines row exists) and `headline_metrics` (calls in `from`/`to`, default 14 days; open anomalies; last seen). Absent values are omitted, not null. |
 | GET | `/genome/identities/{source_type}/{identity_name}/genome` | Its behaviour fingerprint (`dimensions_json`), typical actions, typical resources and hour-of-week schedule. |
 | GET | `/genome/identities/{source_type}/{identity_name}/activity` | Calls per day / hour, recent calls (cursor) and the total. |
@@ -608,7 +610,7 @@ that account in ClickHouse (or `event_log_group`) within
 
 Every response is `{ "data": ..., "meta": { "request_id", "generated_at", "next_cursor" } }`; errors are
 `{ "error": { "code", "message", "request_id" } }`. Data comes from the tenant schema (`baselines`,
-`baseline_versions`, `alerts`, `alert_feedback`, `identity_risk_scores`, `daily_stats`) and the
+`baseline_versions`, `alerts`, `identity_risk_scores`) and the
 monitoring ClickHouse `log_events`. Empty tables give `0` / empty lists / `null` (a legitimate
 "still learning" state), never invented values.
 
@@ -681,3 +683,89 @@ use `uniqExact(event_id)` and row reads use `FINAL`): `event_id`, `source_type`,
   `session_issuer_arn` values, so resolving role sessions to identities, creator
   lookup and permission usage have fixture tests but no real-data test yet.
 - **`scripts/test_schema.sql`** is a local harness, not the production schema.
+
+### Known issues
+
+Verified against this code and the supplied `nhi_db` dump; most severe first
+within each group. File references are under `internal/` unless noted.
+
+**Code - security and tenancy**
+
+1. **Login is not throttled and leaks which emails exist by timing**
+   (`services/auth_service.go:48-55`): an unknown or inactive email returns
+   before bcrypt runs. Fix: compare against a dummy hash, check status after
+   the password, and rate-limit `/login` and `/refresh` per IP and per email.
+2. **The one-account-per-tenant claim is weaker than event scoping**
+   (`repository/aws_integration_repo.go` `claimedByOther` counts only rows with
+   a `client_role_arn`; `repository/v1/identity_lookup_repo.go`
+   `TenantAccountIDs` counts every `accounts` row). bimasugam has a pending
+   row for 548593215839 with no role, so another tenant could connect that
+   account and both would see its CloudTrail events. Genome event queries
+   filter on identity name only. Fix: count any row in the claim check (or
+   scope events to connected rows) and add an `account_id` predicate to the
+   genome queries.
+3. **Role is taken from the token, not re-read** (`middleware/auth.go`): a
+   demoted admin keeps admin endpoints until the access token expires (60 min).
+4. **Reusing a logged-out session's refresh token revokes every session**
+   (`repository/refresh_token_repo.go`): a stale tab after logout signs the
+   user out on all devices. Only treat reuse as theft when the session is not
+   ended.
+5. **Audit identity comes from the client** in credential exposure
+   (`handlers/credential_exposure/decision.go` `decided_by`,
+   `repository/credential_exposure/allowlist.go` `dismissed_by`). Use the JWT
+   user.
+6. **Sessions never expire**: each refresh issues a full 168-hour token.
+
+**Code - robustness and operations**
+
+7. **`scripts/seed_two_tenants.sh` drops `nhi_db` by default** (lines 33-35),
+   the production database name. Default to a test name and refuse `nhi_db`.
+8. **No timeout on Postgres queries**: no `statement_timeout`, and the 15 s
+   server write timeout does not cancel the request context.
+9. **ClickHouse is only connected at start-up**: if it is down at boot it stays
+   off until a restart, and `/health` checks no dependency. Reconnect in the
+   background and add a readiness check.
+10. **Tenant migration numbers do not match their order**: `004` must run before
+    `002`/`003`, and running it after `003` deletes the connection columns'
+    data. Nothing records which migrations ran (no `schema_migrations`).
+11. **A schema missing a table answers 500, 503 or 200 depending on the API**
+    (tenant_demo has no `user_settings`/`accounts`/inventory tables: inventory
+    500, genome 503, posture 200 empty, credential exposure 500). Map it to one
+    503 everywhere.
+12. **Four response envelopes and two error shapes inside credential exposure**;
+    401s and panics always use the v1 shape, even on posture and genome routes.
+13. **Errors classified by message text** in credential exposure
+    (`"required"`, `"must be"`, `"exceeds"` turn any error into a 400 echoing it).
+14. **Smaller**: goroutines without `recover()` in `services/v1/identity_events_service.go`
+    and `activity_tabs.go`; settings handler 500s are not logged; some v1 404s
+    carry no error code; CORS does not expose `X-Request-ID`; Postgres port and
+    `sslmode=require` cannot be overridden; dead code (`PaginatedResponse`,
+    `GetDBName`, `GetTenantID`, `GetStatusByEmail`, `GetUserByID`,
+    `ownedCredsArray`).
+15. **Most real-DB tests are skipped by default** (they need `NHI_TEST_DSN` /
+    ClickHouse); `routes`, `handlers/genome`, `repository/genome` and
+    `repository/credential_exposure` have no tests.
+
+**Data written by other services (seen in the dump)**
+
+16. **EC2 baselines never match an instance**: 48 of 49 `baselines` rows are
+    typed EC2 but keyed by IAM role/user names or a workload key with the role
+    doubled; only the ECS row uses the identity's ARN.
+17. **`identity_risk_scores` has no scores** (10 rows, all null, severity
+    "Unknown"), so most-anomalous and critical-anomaly figures stay empty.
+18. **The scanner records its own `scan_errors` as identity changes** (16 of 16
+    modifications). The API filters these out; the scanner should not diff them.
+19. **The discovery role lacks `organizations:ListParents` and
+    `lambda:GetFunction`** (the error on every identity), and **486 of 519
+    CodeCommit scan jobs failed** on `codecommit:GetDifferences`
+    (`NHIPlatformCollector`); one job is stuck in `processing`.
+20. **Deep-scan tables are empty**: the worker must implement the
+    [deep-scan contract](#deep-scan-contract-scanner-worker).
+21. **Posture rows**: the 3 real ones were written with tenant id `0000...` (so
+    they are hidden); the other 100 are sample identities in accounts
+    111122223333 / 444455556666.
+22. **Tenant registry**: bimasugam `collector_external_id` is `a1b2c3` (under the
+    16-character rule), `domain_name` has no dot; seven users still carry
+    unsalted MD5 password hashes; there is no unique index on `lower(email)`.
+23. **The scanner never writes `accounts.sync_*` / `last_synced_at`**; the API
+    reads the latest completed `nhi_scans_aws` run instead.
