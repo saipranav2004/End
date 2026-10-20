@@ -23,7 +23,7 @@ import { Pagination } from '../../ui/Pagination';
 import { EmptyState, ErrorState } from '../../ui/States';
 import { useToast } from '../../ui/Toast';
 import { IdentityDrawer } from './IdentityDrawer';
-import { ActivityCell, RiskCell, UtilisationCell } from './status';
+import { ActivityCell, UtilisationCell } from './status';
 import {
   API_ENVIRONMENTS,
   API_FUNCTIONAL_CLASSES,
@@ -263,7 +263,7 @@ export default function IdentitiesPage() {
           active: searchParams.get('owner') === entry.owner,
         })),
         onToggle: (value) => toggleParam('owner', value),
-        note: 'The owners holding the most identities. Identities with no owner tag cannot be filtered on; the Risks column marks them.',
+        note: 'The owners holding the most identities. Identities with no owner tag cannot be filtered on; the Owner column reads Unassigned for them.',
         defaultOpen: false,
       },
     ];
@@ -311,7 +311,7 @@ export default function IdentitiesPage() {
       header: 'Identity',
       primary: true,
       sortable: true,
-      width: '31%',
+      width: '35%',
       cell: (row) => {
         const meta = functionalClassMeta(row.functional_class);
         return (
@@ -349,19 +349,13 @@ export default function IdentitiesPage() {
     {
       key: 'posture',
       header: 'Posture',
-      width: '11%',
-      cell: (row) => <PostureCell entry={postureIndex.data?.get(row.arn)} loading={!postureIndex.data && !postureIndex.isError} />,
-    },
-    {
-      key: 'signals',
-      header: 'Risks',
       width: '12%',
-      cell: (row) => <RiskCell identity={row} activityAvailable={activityAvailable} />,
+      cell: (row) => <PostureCell entry={postureIndex.data?.get(row.arn)} loading={!postureIndex.data && !postureIndex.isError} />,
     },
     {
       key: 'owner',
       header: 'Owner',
-      width: '13%',
+      width: '14%',
       sortable: true,
       cell: (row) => (
         <span className="block min-w-0">
@@ -382,7 +376,7 @@ export default function IdentitiesPage() {
     {
       key: 'place',
       header: 'Where',
-      width: '12%',
+      width: '14%',
       sortable: true,
       priority: 'wide',
       cell: (row) => (
@@ -402,7 +396,7 @@ export default function IdentitiesPage() {
     {
       key: 'access',
       header: 'Permissions used',
-      width: '11%',
+      width: '12%',
       sortable: true,
       priority: 'wide',
       cell: (row) => <UtilisationCell identity={row} activityAvailable={activityAvailable} />,
@@ -410,7 +404,7 @@ export default function IdentitiesPage() {
     {
       key: 'activity',
       header: 'Activity',
-      width: '10%',
+      width: '13%',
       sortable: true,
       cell: (row) => <ActivityCell identity={row} activityAvailable={activityAvailable} />,
     },
