@@ -196,7 +196,7 @@ func (s scanRow) Scan(dest ...any) error { return s.rows.Scan(append(dest, s.ext
 // changeAccount and changeRegion read a change's account and region from its
 // ARN (arn:partition:service:region:account:resource).
 const (
-	changeRegion = `COALESCE(NULLIF(split_part(c.entity_arn, ':', 4), ''), 'global')`
+	changeRegion     = `COALESCE(NULLIF(split_part(c.entity_arn, ':', 4), ''), 'global')`
 	changeAccountARN = `NULLIF(split_part(c.entity_arn, ':', 5), '')`
 )
 

@@ -358,10 +358,10 @@ export default function PosturePage() {
     {
       key: 'account',
       header: 'Account',
-      width: '12%',
+      width: '14%',
       priority: 'wide',
       cell: (row) => (
-        <span className="block truncate text-[12.5px] text-ink-2" title={row.account?.id}>
+        <span className="block truncate text-[12.5px] text-ink-2 tabular-nums" title={row.account?.id}>
           {row.account?.name || row.account?.id || '-'}
         </span>
       ),
@@ -383,7 +383,7 @@ export default function PosturePage() {
     {
       key: 'pillar',
       header: 'Weakest area',
-      width: '17%',
+      width: '15%',
       priority: 'wide',
       cell: (row) =>
         row.weakest_pillar ? (

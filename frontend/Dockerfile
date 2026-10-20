@@ -9,8 +9,8 @@
 #   docker build -t nhi-console:latest .
 #
 # Run - the backend upstream is chosen at RUN time:
-#   docker run --rm -p 8080:8080 \
-#     -e API_UPSTREAM=http://nhi-api:8085 \
+#   docker run --rm -p 3000:3000 \
+#     -e API_UPSTREAM=http://nhi-api:8080 \
 #     nhi-console:latest
 #
 # The image holds no secrets: the browser signs in against the discovery API
@@ -63,7 +63,7 @@ ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d \
 
 # Defaults for a compose stack with the backend service named nhi-api. Docker's
 # embedded DNS lives at 127.0.0.11; override DNS_RESOLVER on Kubernetes.
-ENV API_UPSTREAM="http://nhi-api:8085" \
+ENV API_UPSTREAM="http://nhi-api:8080" \
     DNS_RESOLVER="127.0.0.11"
 
 # The default site would otherwise be served alongside ours on the same port.
@@ -74,7 +74,8 @@ COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Port 8080 and the unprivileged user, so the container needs no root and no
+# Port 3000 - the API owns 8080, so the two can share a host or a pod without
+# colliding - and the unprivileged user, so the container needs no root and no
 # NET_BIND_SERVICE capability. `nginx` already exists in this image; the
 # directories it writes to are chowned because a read-only root filesystem plus
 # tmpfs mounts is a reasonable way to run this.
@@ -92,12 +93,12 @@ RUN chown -R nginx:nginx \
 
 USER nginx
 
-EXPOSE 8080
+EXPOSE 3000
 
 # Served by nginx itself, so this reports on the web tier rather than on an
 # upstream that may legitimately be down.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/healthz || exit 1
 
 STOPSIGNAL SIGQUIT
 

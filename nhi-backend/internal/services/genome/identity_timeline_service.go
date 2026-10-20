@@ -19,9 +19,8 @@ import (
 // (backend_api_contract.md §5.6 / §10.3) — the lifecycle timeline derived
 // from the current tables, newest first:
 //
-//   - anomaly                     one item per detection window, dimension and
-//                                 status (alerts grouped; occurred_at = window_end),
-//                                 titled "N active anomalies" while open
+//   - anomaly                     alerts grouped per window_end, dimension and status
+//     (occurred_at = window_end), titled "N active anomalies" while open
 //   - baseline_version_published  one item per version      (baseline_versions.published_at)
 //   - learning_started            baselines.first_seen_date
 //   - baseline_established        baselines.active_since

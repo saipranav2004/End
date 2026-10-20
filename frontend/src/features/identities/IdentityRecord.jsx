@@ -360,7 +360,7 @@ function OverviewPanel({ identityId, query, active, compact }) {
             <DetailList className="mt-1">
               {attributes.map(([key, value]) => (
                 <DetailRow key={key} label={titleCaseEnum(key)} mono>
-                  {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+                  <AttributeValue value={value} />
                 </DetailRow>
               ))}
             </DetailList>
@@ -927,3 +927,39 @@ function CompactActivity({ identityId }) {
   );
 }
 
+/**
+ * A type attribute as discovery recorded it. Lists read one item per line and
+ * objects as their own label/value pairs; anything nested deeper stays JSON.
+ */
+function AttributeValue({ value, depth = 0 }) {
+  if (value === null || value === undefined || value === '') return <span className="text-ink-3">-</span>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="text-ink-3">None</span>;
+    if (value.length === 1 && typeof value[0] !== 'object') return String(value[0]);
+    return (
+      <ul className="flex flex-col gap-1.5">
+        {value.map((item, index) => (
+          <li key={index} className={typeof item === 'object' && item !== null ? 'rounded-[var(--radius-control)] border border-line bg-surface-2 px-2.5 py-1.5' : undefined}>
+            <AttributeValue value={item} depth={depth + 1} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (typeof value === 'object') {
+    if (depth > 1) return JSON.stringify(value);
+    return (
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+        {Object.entries(value).map(([key, item]) => (
+          <div key={key} className="contents">
+            <dt className="font-sans text-[11.5px] text-ink-3">{titleCaseEnum(key)}</dt>
+            <dd className="min-w-0 break-words">
+              <AttributeValue value={item} depth={depth + 1} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+  return String(value);
+}

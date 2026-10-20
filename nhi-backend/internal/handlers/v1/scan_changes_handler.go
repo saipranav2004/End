@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -66,6 +67,10 @@ func (h *ScanChangesHandler) List(w http.ResponseWriter, r *http.Request) {
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scans retrieved successfully", Data: result})
 }
 
+// scanIDRegex is the shape of nhi_scans_aws.scan_id (varchar(200)), e.g.
+// "scan-20261016-201642"; the scanner's ids are not UUIDs.
+var scanIDRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
+
 // Changes handles GET /scans/{scan_id}/changes.
 func (h *ScanChangesHandler) Changes(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r)
@@ -73,8 +78,11 @@ func (h *ScanChangesHandler) Changes(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized"})
 		return
 	}
-	scanID := strings.ToLower(strings.TrimSpace(mux.Vars(r)["scan_id"]))
-	if scanID != repov1.LatestScanID && !credentialUUIDRegex.MatchString(scanID) {
+	scanID := strings.TrimSpace(mux.Vars(r)["scan_id"])
+	if strings.EqualFold(scanID, repov1.LatestScanID) {
+		scanID = repov1.LatestScanID
+	}
+	if !scanIDRegex.MatchString(scanID) {
 		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid scan ID", Error: "INVALID_SCAN_ID"})
 		return
 	}

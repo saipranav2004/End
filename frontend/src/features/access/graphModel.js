@@ -257,9 +257,10 @@ export function pairEdges(store) {
   for (const pair of pairs.values()) {
     const a = accountOf(pair.from);
     const b = accountOf(pair.to);
-    /* Cross-account is either stated by the service (`cross_account`) or
-       plain from the two ARNs: different account ids. Both are facts. */
-    pair.crossAccount = pair.kinds.includes('cross_account') || Boolean(a && b && a !== b);
+    /* Two ARNs with account ids settle it. The service's `cross_account` kind
+       decides only when one side has none: it also tags trust in the
+       account's own root, which would label a same-account pair. */
+    pair.crossAccount = a && b ? a !== b : pair.kinds.includes('cross_account');
     if (pair.kind === 'cross_account' && pair.kinds.includes('assume_role')) pair.kind = 'assume_role';
   }
   return [...pairs.values()];

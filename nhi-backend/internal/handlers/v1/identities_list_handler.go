@@ -66,10 +66,10 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("identity_type")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validIdentityTypes); !ok {
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid identity_type: " + bad + ". Allowed: " + allowedList(validIdentityTypes),
+				Message: "Invalid identity_type: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_IDENTITY_TYPE",
 			})
 			return
@@ -78,10 +78,10 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("functional_class")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validFunctionalClasses); !ok {
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid functional_class: " + bad + ". Allowed: " + allowedList(validFunctionalClasses),
+				Message: "Invalid functional_class: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_FUNCTIONAL_CLASS",
 			})
 			return
@@ -90,10 +90,10 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("environment")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validEnvironments); !ok {
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid environment: " + bad + ". Allowed: " + allowedList(validEnvironments),
+				Message: "Invalid environment: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_ENVIRONMENT",
 			})
 			return
@@ -102,10 +102,10 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("status")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validIdentityStatuses); !ok {
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid status: " + bad + ". Allowed: " + allowedList(validIdentityStatuses),
+				Message: "Invalid status: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_STATUS",
 			})
 			return

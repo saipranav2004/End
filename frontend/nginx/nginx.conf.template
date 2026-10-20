@@ -8,7 +8,7 @@
 # Substituted at start (see NGINX_ENVSUBST_FILTER in the Dockerfile, which
 # limits substitution to exactly these names so nginx's own $variables survive
 # untouched):
-#   ${API_UPSTREAM}       the NHI backend, e.g. http://nhi-api:8085
+#   ${API_UPSTREAM}       the NHI backend, e.g. http://nhi-api:8080
 #   ${DNS_RESOLVER}       127.0.0.11 under Docker, the cluster DNS on K8s
 #
 # One backend serves every API: discovery under /api/v1, posture under
@@ -26,12 +26,12 @@ resolver ${DNS_RESOLVER} valid=30s ipv6=off;
 resolver_timeout 5s;
 
 server {
-    # IPv4 only, deliberately. `listen [::]:8080` makes nginx refuse to start
+    # IPv4 only, deliberately. `listen [::]:3000` makes nginx refuse to start
     # outright on a host without IPv6 - which includes many container runtimes
     # and CI environments - and a container bound to 0.0.0.0 is reachable in a
     # dual-stack network anyway, because the runtime maps the published port.
     # Add the IPv6 line only where IPv6 is known to be present.
-    listen 8080;
+    listen 3000;
     server_name _;
 
     root /usr/share/nginx/html;

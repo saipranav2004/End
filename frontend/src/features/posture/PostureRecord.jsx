@@ -274,7 +274,7 @@ function ScoreSummary({ header, posture, score, band, grade, window, onAlerts })
                 <p className="mt-1 text-[13px] text-ink-2">
                   {failed === 0
                     ? 'Every applicable check passes.'
-                    : `${formatNumber(failed)} failed ${failed === 1 ? 'check costs' : 'checks cost'} ${formatScore(posture.points_lost)} points.`}
+                    : `${formatNumber(failed)} failed ${failed === 1 ? 'check costs' : 'checks cost'} ${formatScore(posture.points_lost)} points${Number(posture.points_lost) > 100 ? '; the score stops at 0' : ''}.`}
                 </p>
                 <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
                   {formatNumber(posture.checks_evaluated)} checks evaluated
@@ -1287,14 +1287,16 @@ function FindingsView({ ctx }) {
  */
 function whyThisScore(name, score, posture, failing) {
   const n = Number(posture.checks_failed) || failing.length;
-  const lost = Number.isFinite(Number(score)) ? Math.max(0, 100 - Number(score)) : null;
+  // points_lost can pass 100; the score stops at 0, so say so rather than show two totals.
+  const raw = Number(posture.points_lost);
+  const lost = Number.isFinite(raw) ? raw : Number.isFinite(Number(score)) ? Math.max(0, 100 - Number(score)) : null;
   const top = [...failing]
     .filter((check) => Number(check.points_if_fixed) > 0)
     .sort((a, b) => Number(b.points_if_fixed) - Number(a.points_if_fixed))
     .slice(0, 3)
     .map((check) => `${check.title} (−${formatScore(check.points_if_fixed)})`);
   if (!n) return posture.why_this_score || '';
-  const head = `${name} scores ${formatScore(score)} out of 100 because ${n} failed ${n === 1 ? 'check costs' : 'checks cost'}${lost !== null ? ` ${formatScore(lost)} points` : ' points'}.`;
+  const head = `${name} scores ${formatScore(score)} out of 100 because ${n} failed ${n === 1 ? 'check costs' : 'checks cost'}${lost !== null ? ` ${formatScore(lost)} points` : ' points'}${lost > 100 ? ', and a score cannot go below 0' : ''}.`;
   if (top.length === 0) return `${head} ${posture.why_this_score || ''}`.trim();
   const biggest = top.length === 1 ? `The biggest is ${top[0]}.` : `The biggest are ${top.slice(0, -1).join(', ')} and ${top.at(-1)}.`;
   return `${head} ${biggest}${n > top.length ? ` All ${n} are listed under Failed checks.` : ''}`;

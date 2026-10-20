@@ -239,6 +239,7 @@ type GenomeHandlers struct {
 	IdentityActivity *genome.IdentityActivityHandler
 	IdentityGenome   *genome.IdentityGenomeHandler
 	IdentityTimeline *genome.IdentityTimelineHandler
+	IdentitySummary  *genome.IdentitySummaryHandler
 }
 
 // registerGenome mounts the genome endpoints. identity_name is an ARN (it
@@ -261,6 +262,10 @@ func registerGenome(router *mux.Router, g *GenomeHandlers) {
 	}
 	if g.IdentityTimeline != nil {
 		get("/identities/{source_type}/{identity_name:.+}/timeline", g.IdentityTimeline.Get)
+	}
+	// Last: identity_name is greedy, so the sub-resource routes must match first.
+	if g.IdentitySummary != nil {
+		get("/identities/{source_type}/{identity_name:.+}", g.IdentitySummary.Get)
 	}
 }
 

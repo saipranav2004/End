@@ -8,7 +8,8 @@ import { canonicalGenomeName, genomeSourceType } from '../identityLinks';
  * baselines / baseline_versions / alerts tables for the timeline):
  *
  *   GET /dashboard/summary                                   ?from &to
- *   GET /identities/{source_type}/{identity_name}/genome     ?from &to &limit
+ *   GET /identities/{source_type}/{identity_name}            ?from &to
+ *   GET .../genome                                           ?from &to &limit
  *   GET .../activity                                         ?from &to &bucket &recent_limit &recent_cursor
  *   GET .../timeline                                         ?limit &cursor
  *
@@ -99,6 +100,27 @@ export async function fetchMonitoredFleet(signal) {
     if (page >= (Number(data?.pagination?.total_pages) || 0)) return { items, complete: true, activityAvailable };
   }
   return { items, complete: false, activityAvailable };
+}
+
+/**
+ * The identity page header: the identity as discovery sees it, its baseline
+ * (absent until the pipeline has a baseline row) and the headline metrics -
+ * calls in the window, open anomalies and the last call (absent until the
+ * identity has been seen).
+ */
+export async function fetchGenomeIdentity(sourceType, identityName, { window } = {}, signal) {
+  const { data } = unwrapGenome(
+    await client.get(identityPath(sourceType, identityName), { params: params(windowRange(window)), signal }),
+  );
+  if (!data || typeof data !== 'object' || !data.identity) throw unexpected();
+  const metrics = data.headline_metrics ?? {};
+  return {
+    identity: data.identity,
+    baseline: data.baseline_summary ?? null,
+    callsInWindow: metrics.calls_in_window ?? null,
+    openAnomalies: metrics.open_anomalies ?? null,
+    lastSeen: metrics.last_seen ?? null,
+  };
 }
 
 /** Call volume per bucket plus one page of recent calls. */

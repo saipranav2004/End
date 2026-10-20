@@ -157,6 +157,7 @@ func main() {
 		IdentityActivity: handlergenome.NewIdentityActivityHandler(svcgenome.NewIdentityActivityService(genomeIdentities, monitoringEvents)),
 		IdentityGenome:   handlergenome.NewIdentityGenomeHandler(svcgenome.NewIdentityGenomeService(genomeIdentities, monitoringEvents)),
 		IdentityTimeline: handlergenome.NewIdentityTimelineHandler(svcgenome.NewIdentityTimelineService(genomeIdentities, repogenome.NewIdentityTimelineRepository())),
+		IdentitySummary:  handlergenome.NewIdentitySummaryHandler(svcgenome.NewIdentitySummaryService(genomeIdentities, repogenome.NewIdentitySummaryRepository(), monitoringEvents)),
 	}
 
 	// Connect AWS Account. The SDK's default chain supplies this process's

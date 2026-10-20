@@ -3,7 +3,7 @@ import { Dna } from 'lucide-react';
 import { fetchGenomeTimeline } from '../../lib/api/genome';
 import { canonicalGenomeName, genomeRoute, genomeSourceType } from '../../lib/identityLinks';
 import { useQuery } from '../../lib/hooks';
-import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
+import { formatDate, formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { Button } from '../../ui/Button';
 import { Tag } from '../../ui/Tag';
 
@@ -41,7 +41,7 @@ export function BehaviourBaseline({ identity }) {
         </Tag>
         <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
           NHI Genome has known this identity’s normal behaviour since{' '}
-          <span title={formatDateTime(established.occurred_at)}>{formatRelative(established.occurred_at)}</span> and flags
+          <span title={formatDateTime(established.occurred_at)}>{formatDate(established.occurred_at)}</span> and flags
           departures from it.
           {open ? (
             <span className="font-medium text-high"> {formatNumber(open)} open {open === 1 ? 'anomaly' : 'anomalies'}.</span>

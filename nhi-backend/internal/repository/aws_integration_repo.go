@@ -222,7 +222,38 @@ func (r *AWSIntegrationRepository) ListAccounts(ctx context.Context, schema stri
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate aws accounts: %w", err)
 	}
+	applyLastScans(ctx, db, schema, out)
 	return out, nil
+}
+
+// applyLastScans makes the scanner's own completed runs count as syncs: the
+// scanner records them in nhi_scans_aws and never touches last_synced_at, so
+// without this an account it scanned yesterday reads "not synced yet". Best
+// effort - a schema without the scanner's table keeps last_synced_at as is.
+func applyLastScans(ctx context.Context, db *sql.DB, schema string, accounts []modelsv1.AWSAccountRecord) {
+	rows, err := db.QueryContext(ctx, `SELECT account_id::text, max(scan_end) FROM `+database.Table(schema, "nhi_scans_aws")+`
+		WHERE upper(status) = 'COMPLETED' AND scan_end IS NOT NULL GROUP BY 1`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	last := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var at time.Time
+		if rows.Scan(&id, &at) == nil {
+			last[id] = at.UTC()
+		}
+	}
+	for i := range accounts {
+		at, ok := last[accounts[i].AccountID]
+		if ok && (accounts[i].LastSyncedAt == nil || at.After(*accounts[i].LastSyncedAt)) {
+			accounts[i].LastSyncedAt = &at
+			if accounts[i].SyncStatus == "idle" {
+				accounts[i].SyncStatus = "succeeded"
+			}
+		}
+	}
 }
 
 // GetAccount returns one of the tenant's accounts, or nil.

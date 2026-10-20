@@ -4,7 +4,7 @@ A handoff note. Covers how "Connect AWS Account" works, which DB tables and
 columns hold the data, how it feeds discovery, and what is done so far.
 
 Backend code: `nhi-backend-merged.zip` (module `nhi-backend-api`, one service,
-`cmd/api-server`, port 8085). Frontend: `frontend-nhi-console.zip`. Branch:
+`cmd/api-server`, port 8080). Frontend: `frontend-nhi-console.zip`. Branch:
 `ccr-73318dc0-otel9f`.
 
 ---
@@ -153,6 +153,6 @@ Error codes and local AWS-cred setup: backend `README.md`.
 - Known gap: access-key inherited policies not shown; posture sub-tab
   duplication; genome evidence endpoints (§6.2/6.3) not implemented.
 
-**Local dev:** `$S/run4/start_all.sh [--restart-apis|--reseed]` (API :8085,
+**Local dev:** `$S/run4/start_all.sh [--restart-apis|--reseed]` (API :8080,
 frontend :3000, preview :3001). Seeds in `$S/seeds/`. Reset integration state:
 `$S/video/reset.sh`.

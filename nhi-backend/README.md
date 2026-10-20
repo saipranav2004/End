@@ -1,6 +1,6 @@
 # NHI Backend API
 
-One Go service (`cmd/api-server`, port 8085) behind the NHI console. It serves
+One Go service (`cmd/api-server`, port 8080) behind the NHI console. It serves
 every API the console uses - inventory, posture, NHI Genome, integrations,
 change tracking and credential exposure - from one process, behind one sign-in.
 

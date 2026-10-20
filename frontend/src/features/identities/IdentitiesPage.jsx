@@ -332,9 +332,10 @@ export default function IdentitiesPage() {
                 <span className="truncate text-[13px] font-semibold text-ink" title={row.arn}>
                   {row.name || row.arn}
                 </span>
-                <RecentChangeMarker change={row.recent_change} />
               </span>
+              {/* The marker sits on the type line so the name keeps the width. */}
               <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                <RecentChangeMarker change={row.recent_change} />
                 <span className="truncate text-[11px] text-ink-3">
                   {identityTypeLabel(row.identity_type)} · {meta.label}
                 </span>
@@ -385,9 +386,13 @@ export default function IdentitiesPage() {
       priority: 'wide',
       cell: (row) => (
         <span className="block min-w-0">
-          <span className="block truncate text-[12.5px] text-ink-2">{environmentLabel(row.environment)}</span>
+          {/* Region first: most identities carry no environment tag, and
+              "No environment" would take the line that says where it runs. */}
+          <span className="block truncate text-[12.5px] text-ink-2">
+            {[row.environment && environmentLabel(row.environment), row.region].filter(Boolean).join(' · ') || '-'}
+          </span>
           <span className="block truncate text-[11px] text-ink-3" title={`Account ${row.account_id}, ${row.region}`}>
-            <span className="font-mono">{row.account_id}</span> · {row.region}
+            <span className="font-mono tabular-nums">{row.account_id}</span>
             {row.status && row.status !== 'active' && row.status !== 'running' ? ` · ${lifecycleMeta(row.status).label}` : ''}
           </span>
         </span>

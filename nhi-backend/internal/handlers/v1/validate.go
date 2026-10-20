@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,47 +64,6 @@ var (
 	}
 
 	// value enums — strict so credential_type=w errors
-	validIdentityTypes = map[string]struct{}{
-		"ec2_instance": {}, "lambda_function": {}, "ecs_task": {}, "eks_pod": {},
-		"batch_job": {}, "iam_user": {}, "iam_role": {}, "rds_instance": {},
-		"s3_bucket": {}, "ebs_volume": {}, "eni": {}, "vpc": {}, "subnet": {},
-		"security_group": {}, "emr_cluster": {}, "sagemaker_notebook": {},
-		"glue_job": {}, "step_function": {}, "api_gateway": {},
-		"cloudformation_stack": {}, "codebuild_project": {}, "codepipeline": {},
-		"ecs_service": {}, "eks_cluster": {}, "elasticache_cluster": {},
-		"redshift_cluster": {}, "dynamodb_table": {}, "kinesis_stream": {},
-		"sqs_queue": {}, "sns_topic": {}, "cloudfront_distribution": {},
-	}
-
-	validFunctionalClasses = map[string]struct{}{
-		"service": {}, "application": {}, "infrastructure": {}, "data": {},
-		"security": {}, "compute": {}, "storage": {}, "network": {},
-	}
-
-	validEnvironments = map[string]struct{}{
-		"production": {}, "staging": {}, "development": {}, "testing": {},
-		"sandbox": {}, "prod": {}, "dev": {}, "qa": {}, "uat": {},
-	}
-
-	validIdentityStatuses = map[string]struct{}{
-		"active": {}, "inactive": {}, "stopped": {}, "terminated": {},
-		"running": {}, "pending": {}, "deleted": {}, "available": {},
-		"creating": {}, "failed": {},
-	}
-
-	validCredentialTypes = map[string]struct{}{
-		"iam_role": {}, "iam_user": {}, "access_key": {}, "certificate": {},
-		"api_key": {}, "secret": {}, "password": {}, "saml_provider": {},
-		"oidc_provider": {}, "managed_policy": {}, "inline_policy": {},
-		"service_account": {}, "service_principal": {}, "oauth_token": {},
-		"ssh_key": {}, "tls_cert": {}, "kms_key": {},
-	}
-
-	validCredentialStatuses = map[string]struct{}{
-		"active": {}, "inactive": {}, "expired": {}, "revoked": {},
-		"rotated": {}, "pending": {}, "deleted": {},
-	}
-
 	validEdgeTypes = map[string]struct{}{
 		"assume_role": {}, "bound_to": {}, "accesses": {}, "trusts": {},
 		"contains": {}, "manages": {}, "attached_to": {}, "uses": {},
@@ -192,19 +152,6 @@ func isValidDate(s string) bool {
 	return false
 }
 
-func validateEnumValues(values []string, allowed map[string]struct{}) (string, bool) {
-	for _, v := range values {
-		low := strings.ToLower(strings.TrimSpace(v))
-		if low == "" {
-			continue
-		}
-		if _, ok := allowed[low]; !ok {
-			return v, false
-		}
-	}
-	return "", true
-}
-
 func validateSingleEnum(value string, allowed map[string]struct{}) (bool, string) {
 	low := strings.ToLower(strings.TrimSpace(value))
 	if low == "" {
@@ -260,4 +207,19 @@ func parseActivityPaging(w http.ResponseWriter, q url.Values) (page, size int, o
 		return bad("page * page_size must not exceed 1000 events; narrow the time range or filter instead")
 	}
 	return page, size, true
+}
+
+var typeTokenRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9 _.:-]{0,63}$`)
+
+// validateTokens accepts filter values such as "login_profile" or a "prod-eu"
+// tag (any case); it returns the first value that is not one. The list
+// filters are not enums: discovery keeps adding types, classes and statuses,
+// and every value only ever reaches a bound parameter.
+func validateTokens(vals []string) (string, bool) {
+	for _, v := range vals {
+		if !typeTokenRegex.MatchString(strings.ToLower(v)) {
+			return v, false
+		}
+	}
+	return "", true
 }

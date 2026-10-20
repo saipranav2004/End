@@ -11,29 +11,17 @@ import { titleCaseEnum } from '../../lib/format';
  * than to a guess.
  */
 
-/* The values each list endpoint accepts for its enum filters. A facet only
-   offers values in these sets: anything else would be answered with 400. */
-export const API_IDENTITY_TYPES = new Set([
-  'ec2_instance', 'lambda_function', 'ecs_task', 'eks_pod', 'batch_job', 'iam_user', 'iam_role',
-  'rds_instance', 's3_bucket', 'ebs_volume', 'eni', 'vpc', 'subnet', 'security_group', 'emr_cluster',
-  'sagemaker_notebook', 'glue_job', 'step_function', 'api_gateway', 'cloudformation_stack',
-  'codebuild_project', 'codepipeline', 'ecs_service', 'eks_cluster', 'elasticache_cluster',
-  'redshift_cluster', 'dynamodb_table', 'kinesis_stream', 'sqs_queue', 'sns_topic', 'cloudfront_distribution',
-]);
-export const API_FUNCTIONAL_CLASSES = new Set([
-  'service', 'application', 'infrastructure', 'data', 'security', 'compute', 'storage', 'network',
-]);
-export const API_ENVIRONMENTS = new Set([
-  'production', 'staging', 'development', 'testing', 'sandbox', 'prod', 'dev', 'qa', 'uat',
-]);
-export const API_IDENTITY_STATUSES = new Set([
-  'active', 'inactive', 'stopped', 'terminated', 'running', 'pending', 'deleted', 'available', 'creating', 'failed',
-]);
-export const API_CREDENTIAL_TYPES = new Set([
-  'iam_role', 'iam_user', 'access_key', 'certificate', 'api_key', 'secret', 'password', 'saml_provider',
-  'oidc_provider', 'managed_policy', 'inline_policy', 'service_account', 'service_principal', 'oauth_token',
-  'ssh_key', 'tls_cert', 'kms_key',
-]);
+/* What the list endpoints accept for their type, category, environment and
+   status filters. These are not enums: discovery keeps adding values
+   (root_account, login_profile, an "exception" category, any environment
+   tag), so a facet offers whatever the data holds and only malformed values
+   (a typo'd shared link) are dropped. Shaped like a Set for splitList. */
+const FILTER_TOKEN = { has: (value) => /^[a-z0-9][a-z0-9 _.:-]{0,63}$/.test(String(value).toLowerCase()) };
+export const API_IDENTITY_TYPES = FILTER_TOKEN;
+export const API_FUNCTIONAL_CLASSES = FILTER_TOKEN;
+export const API_ENVIRONMENTS = FILTER_TOKEN;
+export const API_IDENTITY_STATUSES = FILTER_TOKEN;
+export const API_CREDENTIAL_TYPES = FILTER_TOKEN;
 export const API_CREDENTIAL_STATUSES = ['active', 'inactive', 'expired', 'revoked', 'rotated', 'pending', 'deleted'];
 
 /* ── Identity type ───────────────────────────────────────────────────────── */

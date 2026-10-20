@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       proxy: {
-        '/api': { target: upstream('API_UPSTREAM', 'http://localhost:8085'), changeOrigin: true },
+        '/api': { target: upstream('API_UPSTREAM', 'http://localhost:8080'), changeOrigin: true },
       },
     },
     build: { outDir: 'dist', sourcemap: false },

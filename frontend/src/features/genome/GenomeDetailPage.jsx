@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Boxes, Dna, Fingerprint as FingerprintIcon, History, Network, SearchX } from 'lucide-react';
 import {
   fetchGenomeActivity,
+  fetchGenomeIdentity,
   fetchGenomeProfile,
   fetchGenomeTimeline,
   resolveDiscoveryIdentity,
@@ -11,13 +12,14 @@ import {
 import { accessGraphRoute, identityRoute, parseGenomeId } from '../../lib/identityLinks';
 import { useQuery } from '../../lib/hooks';
 import { severityMeta } from '../../lib/domain';
-import { formatDateTime, formatNumber, formatRelative, titleCaseEnum } from '../../lib/format';
+import { formatDate, formatDateTime, formatNumber, formatRelative, titleCaseEnum } from '../../lib/format';
 import { PageHeader } from '../../shell/PageHeader';
 import { Button } from '../../ui/Button';
 import { CopyableValue } from '../../ui/Copyable';
 import { DataGrid } from '../../ui/DataGrid';
 import { Panel, PanelHeader, SectionLabel } from '../../ui/Panel';
-import { ChartSkeleton, ListSkeleton } from '../../ui/Skeleton';
+import { ChartSkeleton, ListSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
+import { MetricTile } from '../../ui/Stat';
 import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { SegmentedControl, Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
@@ -144,12 +146,16 @@ export default function GenomeDetailPage() {
   return <GenomeIdentity key={`${parsed.sourceType}:${parsed.identityName}`} {...parsed} />;
 }
 
-/** Where the baseline stands, read from the timeline's milestones. */
-function baselineFromTimeline(items) {
+/**
+ * Where the baseline stands: the summary's baselines row says whether it is
+ * established, the timeline's milestones say since when.
+ */
+function baselineState(baseline, items) {
   const established = items.find((item) => item.type === 'baseline_established');
-  if (established) return { key: 'active', label: 'Baseline established', tone: 'low', at: established.occurred_at };
   const learning = items.find((item) => item.type === 'learning_started');
-  if (learning) return { key: 'learning', label: 'Learning', tone: 'medium', at: learning.occurred_at };
+  const active = baseline ? String(baseline.status).toLowerCase() === 'active' : Boolean(established);
+  if (active) return { key: 'active', label: 'Baseline established', tone: 'low', at: established?.occurred_at ?? null };
+  if (baseline || learning) return { key: 'learning', label: 'Learning', tone: 'medium', at: learning?.occurred_at ?? null };
   return { key: 'none', label: 'No baseline yet', tone: 'neutral', at: null };
 }
 
@@ -178,23 +184,30 @@ function GenomeIdentity({ sourceType, identityName }) {
   const setTab = (value) => setParam('tab', value === 'genome' ? '' : value);
 
   const timeline = useTimeline(sourceType, identityName);
-  /* The inventory record behind this identity: its name and scope for the
-     header, and the cross-links. A failure only costs those; the genome views
-     still load. */
+  /* The header: identity, baseline and headline metrics. A failure only costs
+     the header; the tabs still load. */
+  const summary = useQuery(
+    (signal) => fetchGenomeIdentity(sourceType, identityName, { window }, signal),
+    [sourceType, identityName, window],
+  );
+  /* The inventory record behind this identity, for the cross-links to its
+     identity record and access graph. */
   const discovery = useQuery((signal) => resolveDiscoveryIdentity(identityName, signal).catch(() => null), [identityName]);
 
   const openAnomalies = useMemo(
     () => timeline.items.filter((item) => item.type === 'anomaly' && String(item.status).toLowerCase() === 'open'),
     [timeline.items],
   );
-  const openCount = useMemo(
+  const timelineOpen = useMemo(
     () => openAnomalies.reduce((sum, item) => sum + (Number(/^(\d+)/.exec(item.title ?? '')?.[1]) || 1), 0),
     [openAnomalies],
   );
+  // The summary counts open alerts directly; the timeline count stands in while it loads.
+  const openCount = summary.data?.openAnomalies ?? timelineOpen;
 
   /* Every genome endpoint resolves the identity in the caller's scope first,
-     so a 404 from the timeline means the identity is not monitored here. */
-  if (timeline.isError && timeline.error?.status === 404) {
+     so a 404 means the identity is not monitored here. */
+  if ((timeline.isError && timeline.error?.status === 404) || (summary.isError && summary.error?.status === 404)) {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
@@ -222,9 +235,10 @@ function GenomeIdentity({ sourceType, identityName }) {
   }
 
   const record = discovery.data;
-  const state = baselineFromTimeline(timeline.items);
+  const identity = summary.data?.identity;
+  const state = baselineState(summary.data?.baseline ?? null, timeline.items);
   const discoveryId = record?.id ?? null;
-  const title = record?.name || arnName(identityName);
+  const title = identity?.display_name || record?.name || arnName(identityName);
 
   const tabs = [
     { value: 'genome', label: 'Genome' },
@@ -236,7 +250,9 @@ function GenomeIdentity({ sourceType, identityName }) {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={title}
-        lede={[sourceTypeLabel(sourceType), record?.account_id, record?.region].filter(Boolean).join(' · ')}
+        lede={[sourceTypeLabel(sourceType), identity?.account_id ?? record?.account_id, identity?.region ?? record?.region]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             <SegmentedControl
@@ -271,24 +287,29 @@ function GenomeIdentity({ sourceType, identityName }) {
             </Tag>
             {state.at && (
               <span className="text-[11.5px] text-ink-3" title={formatDateTime(state.at)}>
-                {state.key === 'active' ? 'since' : 'started'} {formatRelative(state.at)}
+                {state.key === 'active' ? `since ${formatDate(state.at)}` : `started ${formatRelative(state.at)}`}
               </span>
             )}
-            {record?.status && (
+            {identity?.status && (
               <Tag tone="neutral" size="sm">
-                {record.status}
+                {titleCaseEnum(identity.status)}
               </Tag>
             )}
             <CopyableValue value={identityName} className="max-w-full text-[11.5px] text-ink-3" />
-            {record?.last_activity_at && (
-              <span className="text-[11.5px] text-ink-3" title={formatDateTime(record.last_activity_at)}>
-                Last activity {formatRelative(record.last_activity_at)}
+            {identity?.role_arn && (
+              <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink-3">
+                Runs as
+                <CopyableValue value={identity.role_arn} className="text-[11.5px]">
+                  {arnName(identity.role_arn)}
+                </CopyableValue>
               </span>
             )}
           </div>
         }
         tabs={<Tabs size="sm" tabs={tabs} value={tab} onChange={setTab} />}
       />
+
+      <HeadlineMetrics summary={summary} window={window} onOpenTimeline={() => setTab('timeline')} />
 
       {/* An open departure is the reason anyone opened this record, so it is
           stated above the tabs rather than hidden inside one of them. */}
@@ -336,6 +357,59 @@ function GenomeIdentity({ sourceType, identityName }) {
       {tab === 'genome' && <GenomeTab sourceType={sourceType} identityName={identityName} window={window} />}
       {tab === 'activity' && <ActivityTab sourceType={sourceType} identityName={identityName} window={window} />}
       {tab === 'timeline' && <TimelineTab timeline={timeline} />}
+    </div>
+  );
+}
+
+/** Calls in the window, open anomalies and baseline progress, from the summary. */
+function HeadlineMetrics({ summary, window, onOpenTimeline }) {
+  if (summary.isError && !summary.data) {
+    return <InlineError error={summary.error} onRetry={summary.refetch} label="The identity summary failed to load" />;
+  }
+  if (!summary.data) return <StatStripSkeleton count={3} />;
+  const { callsInWindow, openAnomalies, lastSeen, baseline } = summary.data;
+  const built = Number(baseline?.built_days);
+  const required = Number(baseline?.required_days);
+  const progress = baseline && required > 0 ? Math.min(100, (built / required) * 100) : null;
+  return (
+    <div className="grid gap-3 @min-[30rem]:grid-cols-3">
+      <MetricTile
+        label={`Calls · last ${WINDOW_WORDS[window]}`}
+        value={callsInWindow}
+        tone="info"
+        caption={
+          lastSeen ? (
+            <span title={formatDateTime(lastSeen)}>Last call {formatRelative(lastSeen)}</span>
+          ) : callsInWindow === null ? (
+            'Call history is not available right now'
+          ) : (
+            'No call recorded yet'
+          )
+        }
+        className="animate-rise"
+      />
+      <MetricTile
+        label="Open anomalies"
+        value={openAnomalies}
+        tone={openAnomalies > 0 ? 'critical' : 'low'}
+        caption={openAnomalies > 0 ? 'Departures from its baseline, still open' : 'Nothing open against its baseline'}
+        {...(openAnomalies > 0 ? { as: 'button', type: 'button', onClick: onOpenTimeline } : {})}
+        className="animate-rise"
+        data-stagger=""
+        style={{ '--stagger': 1 }}
+      />
+      <MetricTile
+        label="Baseline learned"
+        value={baseline ? built : null}
+        unit={baseline ? `of ${formatNumber(required)} ${required === 1 ? 'day' : 'days'}` : undefined}
+        tone={!baseline ? 'neutral' : progress !== null && progress >= 100 ? 'low' : 'medium'}
+        meter={progress}
+        meterLabel="Days of behaviour learned against the days the baseline needs"
+        caption={baseline ? `Baseline ${titleCaseEnum(baseline.status).toLowerCase()}` : 'Learning has not started yet'}
+        className="animate-rise"
+        data-stagger=""
+        style={{ '--stagger': 2 }}
+      />
     </div>
   );
 }

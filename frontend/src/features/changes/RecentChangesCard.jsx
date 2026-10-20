@@ -1,9 +1,10 @@
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronRight, GitCompareArrows, History } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, GitCompareArrows, History } from 'lucide-react';
 import { scanChangesRoute } from '../../lib/api/changes';
 import { formatDate, formatNumber, formatRelative } from '../../lib/format';
 import { Button } from '../../ui/Button';
-import { Panel, PanelHeader } from '../../ui/Panel';
+import { Panel } from '../../ui/Panel';
 import { cn } from '../../ui/cn';
 import { CHANGE_META, CHANGE_TYPES, ENTITY_META } from './parts';
 
@@ -25,9 +26,12 @@ const ROW_TONE = {
 
 /**
  * Dashboard card: what the latest discovery scan changed. Hidden until a scan
- * has run; the first scan says so instead of claiming "no changes".
+ * has run; the first scan says so instead of claiming "no changes". A
+ * dropdown: closed it is one line with the counts, open it adds the breakdown.
  */
 export function RecentChangesCard({ recent }) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
   if (!recent) return null;
   const first = !recent.previousScanId;
   const viewAll = scanChangesRoute(recent.lastScanId);
@@ -52,50 +56,66 @@ export function RecentChangesCard({ recent }) {
 
   const highlights = recent.highlights.slice(0, 6);
 
+  const empty = recent.total === 0;
+  const scanLine = (
+    <>
+      Last scan: {scanTimeLabel(recent.lastScanAt)} · {formatRelative(recent.lastScanAt)} · compared with the scan of{' '}
+      {formatDate(recent.previousScanAt)}
+    </>
+  );
+
   return (
     <Panel prominence="default" className="animate-rise">
-      <PanelHeader
-        title="Recent changes"
-        subtitle={
-          <>
-            Last scan: {scanTimeLabel(recent.lastScanAt)} · {formatRelative(recent.lastScanAt)} · compared with the scan of{' '}
-            {formatDate(recent.previousScanAt)}
-          </>
-        }
-        actions={
-          <Button as={Link} to={viewAll} variant="secondary" size="sm" iconRight={ArrowRight}>
-            View all changes
-          </Button>
-        }
-      />
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          disabled={empty}
+          onClick={() => setOpen((value) => !value)}
+          className="group -m-1.5 flex min-w-0 flex-1 items-start gap-2.5 rounded-[var(--radius-control)] p-1.5 text-left transition-colors enabled:hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-default"
+        >
+          {!empty && (
+            <ChevronDown
+              aria-hidden="true"
+              className={cn('mt-0.5 size-4 shrink-0 text-ink-3 transition-transform duration-200', !open && '-rotate-90')}
+            />
+          )}
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-[14.5px] leading-tight font-semibold text-ink">Recent changes</span>
+              {!empty && (
+                <span className="flex flex-wrap items-baseline gap-x-3 text-[12px]">
+                  <span data-numeric="" className="font-semibold text-ink">
+                    {formatNumber(recent.total)} {recent.total === 1 ? 'change' : 'changes'}
+                  </span>
+                  {CHANGE_TYPES.map((type) => (
+                    <span key={type} className="flex items-baseline gap-1">
+                      <span data-numeric="" className={cn('font-semibold', COUNT_TONE[type])}>
+                        {formatNumber(recent.byChangeType[type] ?? 0)}
+                      </span>
+                      <span className="text-ink-3">{CHANGE_META[type].label.toLowerCase()}</span>
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+            <span className="mt-1 block text-[12.5px] text-ink-3">{scanLine}</span>
+          </span>
+        </button>
+        <Button as={Link} to={viewAll} variant="secondary" size="sm" iconRight={ArrowRight}>
+          View all changes
+        </Button>
+      </header>
 
-      {recent.total === 0 ? (
+      {empty ? (
         <p className="mt-4 flex items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface-2 px-4 py-3 text-[13px] text-ink-2">
           <GitCompareArrows aria-hidden="true" className="size-4 shrink-0 text-ink-3" />
           No changes detected in the last scan.
         </p>
       ) : (
-        <div className="mt-4 grid gap-5 @min-[52rem]:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
-          <div className="flex flex-col justify-center gap-3 rounded-[var(--radius-control)] border border-line bg-surface-2 px-4 py-3.5">
-            <div>
-              <p data-numeric="" className="text-[30px] leading-none font-bold text-ink">
-                {formatNumber(recent.total)}
-              </p>
-              <p className="mt-1 text-[12px] text-ink-3">{recent.total === 1 ? 'change' : 'changes'} in the last scan</p>
-            </div>
-            <dl className="flex flex-wrap gap-x-4 gap-y-1">
-              {CHANGE_TYPES.map((type) => (
-                <div key={type} className="flex items-baseline gap-1">
-                  <dd data-numeric="" className={cn('text-[13px] font-semibold', COUNT_TONE[type])}>
-                    {formatNumber(recent.byChangeType[type] ?? 0)}
-                  </dd>
-                  <dt className="text-[11.5px] text-ink-3">{CHANGE_META[type].label.toLowerCase()}</dt>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <ul className="grid content-start gap-2 @min-[40rem]:grid-cols-2">
+        <div id={bodyId} hidden={!open} className="mt-4">
+          <ul className="grid content-start gap-2 @min-[40rem]:grid-cols-2 @min-[64rem]:grid-cols-3">
             {highlights.map((item) => {
               const meta = CHANGE_META[item.changeType] ?? CHANGE_META.MODIFIED;
               const Icon = meta.icon;

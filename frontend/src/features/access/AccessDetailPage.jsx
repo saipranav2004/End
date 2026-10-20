@@ -115,7 +115,8 @@ export default function AccessDetailPage() {
       (relationships.data?.graph?.edges ?? []).filter((edge) => {
         const a = accountOf(edge.source);
         const b = accountOf(edge.target);
-        return edge.edge_type === 'cross_account' || (a && b && a !== b);
+        // Same rule as the graph: account ids decide; the edge type only when one is missing.
+        return a && b ? a !== b : edge.edge_type === 'cross_account';
       }),
     [relationships.data],
   );

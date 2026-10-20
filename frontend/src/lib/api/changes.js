@@ -30,7 +30,8 @@ function shapeChange(row) {
     credentialId: row.credential_id ?? null,
     accountId: row.account_id || '',
     region: row.region || '',
-    summary: row.summary || '',
+    // The scanner writes "(1 fields changed)"; read it as English.
+    summary: (row.summary || '').replace(/\b1 fields\b/g, '1 field'),
     details: row.details && typeof row.details === 'object' && !Array.isArray(row.details) ? row.details : {},
     detectedAt: row.detected_at ?? null,
     evidence: row.cloudtrail_evidence

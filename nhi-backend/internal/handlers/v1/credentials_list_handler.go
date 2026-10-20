@@ -68,10 +68,12 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("credential_type")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validCredentialTypes); !ok {
+		// Not an enum: the scanner keeps adding types (login_profile,
+		// ec2_key_pair, ...), and the value only ever reaches a bound parameter.
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid credential_type: " + bad + ". Allowed: " + allowedList(validCredentialTypes),
+				Message: "Invalid credential_type: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_CREDENTIAL_TYPE",
 			})
 			return
@@ -80,10 +82,10 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := strings.TrimSpace(q.Get("status")); raw != "" {
 		vals := splitAndTrim(raw)
-		if bad, ok := validateEnumValues(vals, validCredentialStatuses); !ok {
+		if bad, ok := validateTokens(vals); !ok {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{
 				Success: false,
-				Message: "Invalid status: " + bad + ". Allowed: " + allowedList(validCredentialStatuses),
+				Message: "Invalid status: " + bad + ". Use letters, digits, spaces, dots, dashes and underscores.",
 				Error:   "INVALID_STATUS",
 			})
 			return
