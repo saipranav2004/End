@@ -111,7 +111,8 @@ type DeepScanRequest struct {
 
 // DeepScanAccepted is the 202 body: the walk is queued (or was already).
 type DeepScanAccepted struct {
-	Status         string `json:"status"` // "running"
+	Accepted       bool   `json:"accepted"` // always true, as the scanner API answers
+	Status         string `json:"status"`   // "running"
 	ClientID       string `json:"client_id"`
 	RepoKey        string `json:"repo_key"`
 	Platform       string `json:"platform"`

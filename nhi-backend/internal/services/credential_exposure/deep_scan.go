@@ -2,6 +2,7 @@ package credential_exposure
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,11 +51,27 @@ func (s *DeepScanService) Trigger(ctx context.Context, userID, tenantID, dbName 
 	if err != nil {
 		return nil, err
 	}
+	// The scanner's own checks (integration guide, POST /api/deep-scan 400s).
+	switch platform {
+	case "github":
+		if !githubRepoRE.MatchString(req.Repository) {
+			return nil, invalid("GitHub repositories are given as owner/repo, e.g. acme/payments-api")
+		}
+	case "codecommit":
+		onboarded, err := s.repo.RepositoryKnown(ctx, resolved, req.ClientID, req.Repository, platform)
+		if err != nil {
+			return nil, err
+		}
+		if !onboarded {
+			return nil, invalid("That repository is not one of this client's onboarded CodeCommit repositories")
+		}
+	}
 	requestedAt, already, err := s.repo.Request(ctx, resolved, req.ClientID, req.Repository, platform, s.now())
 	if err != nil {
 		return nil, err
 	}
 	return &models.DeepScanAccepted{
+		Accepted:       true,
 		Status:         "running",
 		ClientID:       req.ClientID,
 		RepoKey:        req.Repository,
@@ -63,6 +80,8 @@ func (s *DeepScanService) Trigger(ctx context.Context, userID, tenantID, dbName 
 		AlreadyRunning: already,
 	}, nil
 }
+
+var githubRepoRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 func pickPlatform(asked, repository string, known []string) (string, error) {
 	has := func(p string) bool {

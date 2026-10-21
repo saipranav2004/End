@@ -188,14 +188,14 @@ Reads for every signed-in user; changes for admins.
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/credential-exposure/findings` | Secrets the scanner found in GitHub / CodeCommit, live (not marked safe, not model-flagged). |
+| GET | `/credential-exposure/findings` | Secrets the scanner found in GitHub / CodeCommit, live (not marked safe, not model-flagged), newest first. Same 37 fields as the scanner's own API; timestamps always carry an offset (rows stored without one are UTC). |
 | GET | `/credential-exposure/findings/flagged` | Findings the detection model scored as false positives. |
 | GET | `/credential-exposure/findings/summary` | Counts by risk and repositories affected. |
 | GET | `/credential-exposure/allowlist` | Findings marked safe (the Accepted list). |
 | POST | `/credential-exposure/allowlist` | Marks a finding as safe, with a reason. |
 | DELETE | `/credential-exposure/allowlist` | Restores a finding to the live list. |
 | POST | `/credential-exposure/decisions` | Records an analyst verdict on a finding (real secret / false positive). The signed-in user is recorded as `decided_by` (a value in the body is ignored); the allowlist records `dismissed_by` the same way. |
-| POST | `/credential-exposure/deep-scan` | Requests a full-history walk of one repository (`{client_id, repository, platform?}`, 202). Written to the tenant's `secscan_deepscan_<platform>` row for the scanner worker - no external call. 404 `CLIENT_NOT_FOUND` when this workspace's scanner has never seen the client on that platform. |
+| POST | `/credential-exposure/deep-scan` | Requests a full-history walk of one repository (`{client_id, repository, platform?}`, 202). Written to the tenant's `secscan_deepscan_<platform>` row for the scanner worker - no external call. Answers `{accepted: true, status: "running", ...}`. 400 `INVALID_REPOSITORY` when a GitHub repository is not `owner/repo` or a CodeCommit repository is not one of the client's onboarded repositories; 404 `CLIENT_NOT_FOUND` when this workspace's scanner has never seen the client on that platform. A walk already waiting or running is left alone (`already_running: true`). |
 | GET | `/credential-exposure/deep-scan/status` | Progress of that rescan; the same object with `status: "not_started"` when none was requested. |
 
 ### Posture (ISPM) - `/ispm/...`

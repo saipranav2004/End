@@ -56,7 +56,7 @@ func (r *FindingsRepository) List(ctx context.Context, resolved *scope.DataScope
 	listArgs := append([]any(nil), args...)
 	listArgs = append(listArgs, filter.Limit, filter.Offset)
 	query := "SELECT " + findingColumns + " FROM (" + base + ") f" + clause +
-		fmt.Sprintf(" ORDER BY created_at DESC, finding_id ASC LIMIT $%d OFFSET $%d", len(listArgs)-1, len(listArgs))
+		" ORDER BY "+scannerTimeOrder("created_at")+fmt.Sprintf(", finding_id ASC LIMIT $%d OFFSET $%d", len(listArgs)-1, len(listArgs))
 	rows, err := resolved.DB.QueryContext(ctx, query, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query credential exposure findings: %w", err)
@@ -145,7 +145,8 @@ func scanFinding(row interface{ Scan(...any) error }) (models.Finding, error) {
 	f.CommitMessage, f.CommitAuthoredAt = stringPtr(message), stringPtr(authoredAt)
 	f.RepoVisibility, f.RepoPushedAt = stringPtr(visibility), stringPtr(pushedAt)
 	f.MLDecision, f.MLModelVersion = stringPtr(mlDecision), stringPtr(mlVersion)
-	f.AnalystDecision, f.AnalystDecidedAt, f.AnalystDecidedBy = stringPtr(analystDecision), stringPtr(analystAt), stringPtr(analystBy)
+	f.AnalystDecision, f.AnalystDecidedAt, f.AnalystDecidedBy = stringPtr(analystDecision), scannerTimePtr(stringPtr(analystAt)), stringPtr(analystBy)
+	f.CreatedAt = scannerTime(f.CreatedAt)
 	f.FilesChanged, f.Additions, f.Deletions = nullableIntPtr(filesChanged), nullableIntPtr(additions), nullableIntPtr(deletions)
 	f.RepoStars, f.RepoForks, f.MLScore = nullableIntPtr(stars), nullableIntPtr(forks), floatPtr(mlScore)
 	return f, nil

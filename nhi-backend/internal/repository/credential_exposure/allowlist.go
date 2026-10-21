@@ -24,7 +24,7 @@ func (r *AllowlistRepository) List(ctx context.Context, resolved *scope.DataScop
 		query += ` WHERE client_id=$1`
 		args = append(args, clientID)
 	}
-	query += ` ORDER BY dismissed_at DESC,client_id,file_path,detector`
+	query += ` ORDER BY ` + scannerTimeOrder("dismissed_at") + `,client_id,file_path,detector`
 	rows, err := resolved.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query dashboard allowlist: %w", err)
@@ -36,6 +36,7 @@ func (r *AllowlistRepository) List(ctx context.Context, resolved *scope.DataScop
 		if err := rows.Scan(&item.ClientID, &item.FilePath, &item.Detector, &item.Redacted, &item.Reason, &item.DismissedBy, &item.DismissedAt); err != nil {
 			return nil, fmt.Errorf("scan dashboard allowlist: %w", err)
 		}
+		item.DismissedAt = scannerTime(item.DismissedAt)
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {

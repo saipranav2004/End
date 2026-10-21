@@ -51,7 +51,7 @@ ORDER BY platform`
 		if err := rows.Scan(&item.ClientID, &item.RepoKey, &item.Platform, &requested, &completed, &commits, &findings, &failed, &errText, &lastCommit, &updated, &pendingCommit, &pendingSince); err != nil {
 			return nil, fmt.Errorf("scan repository status: %w", err)
 		}
-		item.RequestedAt, item.CompletedAt, item.FailedAt, item.Error = strPtr(requested), strPtr(completed), strPtr(failed), strPtr(errText)
+		item.RequestedAt, item.CompletedAt, item.FailedAt, item.Error = scannerTimePtr(strPtr(requested)), scannerTimePtr(strPtr(completed)), scannerTimePtr(strPtr(failed)), strPtr(errText)
 		item.CommitsScanned, item.Findings = intPtr(commits), intPtr(findings)
 		item.LastCommitID, item.UpdatedAt, item.PendingCommitID, item.PendingSince = strPtr(lastCommit), strPtr(updated), strPtr(pendingCommit), strPtr(pendingSince)
 		item.Status = "not_started"
@@ -102,6 +102,25 @@ func (r *DeepScanRepository) ClientPlatforms(ctx context.Context, resolved *scop
 		}
 	}
 	return out, nil
+}
+
+// RepositoryKnown reports whether the scanner has onboarded repoKey for the
+// client on platform: it has a ledger row or a finding for it.
+func (r *DeepScanRepository) RepositoryKnown(ctx context.Context, resolved *scope.DataScope, clientID, repoKey, platform string) (bool, error) {
+	if resolved == nil || resolved.DB == nil {
+		return false, errScopeRequired
+	}
+	if platform != "codecommit" && platform != "github" {
+		return false, fmt.Errorf("deep scan: unsupported platform %q", platform)
+	}
+	schema := resolved.QSchema()
+	var known bool
+	q := `SELECT EXISTS (SELECT 1 FROM ` + schema + `.secscan_ledger_` + platform + ` WHERE client_id = $1 AND repo_key = $2)
+	          OR EXISTS (SELECT 1 FROM ` + schema + `.secscan_findings_` + platform + ` WHERE client_id = $1 AND repository = $2)`
+	if err := resolved.DB.QueryRowContext(ctx, q, clientID, repoKey).Scan(&known); err != nil {
+		return false, fmt.Errorf("look up scanner repository: %w", err)
+	}
+	return known, nil
 }
 
 // Request asks the scanner worker for a full-history walk of one repository

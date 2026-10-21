@@ -230,7 +230,7 @@ export function describeDeepScanRequestError(error) {
   }
   if (status === 400) {
     return {
-      title: 'The service refused the request',
+      title: 'This repository cannot be deep-scanned',
       message: message || 'The repository was given in the wrong shape - a bare name for CodeCommit, owner/repo for GitHub.',
       retryable: false,
     };
