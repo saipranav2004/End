@@ -17,6 +17,11 @@ type AnalyticsRow struct {
 	Count       uint64
 }
 
+// maxAnalyticsRows caps the groups the activity summary is built from.
+// ponytail: past it the smallest groups are left out of the percentages;
+// move the aggregation into ClickHouse if a principal ever gets near it.
+const maxAnalyticsRows = 20000
+
 // AnalyticsRows is PDF function C: the aggregation query.
 func (c *Repository) AnalyticsRows(ctx context.Context, sub Subject, sc Scope) ([]AnalyticsRow, error) {
 	where, args, ok := buildFilter(sub, sc)
@@ -26,7 +31,8 @@ func (c *Repository) AnalyticsRows(ctx context.Context, sub Subject, sc Scope) (
 	q := fmt.Sprintf(`SELECT source_ip, aws_region, event_source, event_name, error_code,
 			toHour(event_time) AS hour, count() AS call_count
 		FROM %s WHERE %s
-		GROUP BY source_ip, aws_region, event_source, event_name, error_code, hour`, c.table, where)
+		GROUP BY source_ip, aws_region, event_source, event_name, error_code, hour
+		ORDER BY call_count DESC LIMIT %d`, c.table, where, maxAnalyticsRows)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()

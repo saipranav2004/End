@@ -260,8 +260,7 @@ func TestIntegrationActivityTabWithRealEvents(t *testing.T) {
 	activity := NewActivityService(chr, repov1.NewIdentityLookupRepository())
 	ctx := context.Background()
 
-	const devUser = "arn:aws:iam::884264984984:user/abhishek.tiwari"
-	const devKey = "AKIA43YSM4GMD3N4DTTS"
+	devUser, devKey := ctFixture(t)
 	tr, _ := ResolveTimeRange("90d")
 	resp := activity.IdentityActivity(ctx, resolved, &repov1.ActivitySubject{Keys: []string{devUser, devKey}}, tr, "", 1, 50)
 	mustJSON(t, "activity", resp)
@@ -305,7 +304,7 @@ func TestIntegrationActivityTabWithRealEvents(t *testing.T) {
 
 	// last-seen lookups: found, cached on repeat, absent for unknown keys
 	req := activity.ForRequest(resolved)
-	keys := []string{devUser, devKey, "arn:aws:iam::884264984984:user/ispm-user"}
+	keys := []string{devUser, devKey, quietARN}
 	first := req.LastSeen(ctx, keys)
 	second := req.LastSeen(ctx, keys)
 	if _, ok := first[devUser]; !ok {
@@ -314,7 +313,7 @@ func TestIntegrationActivityTabWithRealEvents(t *testing.T) {
 	if _, ok := first[devKey]; !ok {
 		t.Fatalf("access key missing from last seen: %v", first)
 	}
-	if _, ok := first["arn:aws:iam::884264984984:user/ispm-user"]; ok {
+	if _, ok := first[quietARN]; ok {
 		t.Fatal("ispm-user has no events, must be absent")
 	}
 	if len(second) != len(first) || !second[devUser].Equal(first[devUser]) {
@@ -336,7 +335,8 @@ func TestIntegrationActivityPagingAndEnrichment(t *testing.T) {
 	}
 	activity := NewActivityService(chr, repov1.NewIdentityLookupRepository())
 	ctx := context.Background()
-	subj := &repov1.ActivitySubject{Keys: []string{"arn:aws:iam::884264984984:user/abhishek.tiwari"}}
+	devUser, _ := ctFixture(t)
+	subj := &repov1.ActivitySubject{Keys: []string{devUser}}
 	tr, _ := ResolveTimeRange("90d")
 
 	p1 := activity.IdentityActivity(ctx, resolved, subj, tr, "", 1, 3)
@@ -362,7 +362,7 @@ func TestIntegrationActivityPagingAndEnrichment(t *testing.T) {
 	// Every event names its caller; this user is not in the tenant inventory,
 	// so the names are null but the raw ARN and type are there.
 	for _, e := range p1.RecentEvents {
-		if e.CallerARN != "arn:aws:iam::884264984984:user/abhishek.tiwari" || e.CallerType == nil || *e.CallerType != "IAMUser" {
+		if e.CallerARN != devUser || e.CallerType == nil || *e.CallerType != "IAMUser" {
 			t.Fatalf("caller fields: %+v", e.EventPrincipal)
 		}
 		if e.IdentityName != nil || e.CredentialName != nil {
@@ -378,4 +378,19 @@ func TestIntegrationActivityPagingAndEnrichment(t *testing.T) {
 	if len(svc.RecentEvents) == 0 || svc.RecentEvents[0].CallerARN != "resource-explorer-2.amazonaws.com" || *svc.RecentEvents[0].CallerType != "AWSService" {
 		t.Fatalf("service principal events: %+v", svc.RecentEvents)
 	}
+}
+
+// quietARN is an identity with no CloudTrail events.
+const quietARN = "arn:aws:iam::000000000000:user/no-events"
+
+// ctFixture names an IAM user with CloudTrail events and its access key ID,
+// from NHI_TEST_CT_USER_ARN / NHI_TEST_CT_ACCESS_KEY (kept out of the code:
+// they identify a real person in the dev account).
+func ctFixture(t *testing.T) (userARN, accessKey string) {
+	t.Helper()
+	userARN, accessKey = os.Getenv("NHI_TEST_CT_USER_ARN"), os.Getenv("NHI_TEST_CT_ACCESS_KEY")
+	if userARN == "" || accessKey == "" {
+		t.Skip("NHI_TEST_CT_USER_ARN and NHI_TEST_CT_ACCESS_KEY not set")
+	}
+	return userARN, accessKey
 }

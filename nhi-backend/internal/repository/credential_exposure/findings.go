@@ -56,7 +56,7 @@ func (r *FindingsRepository) List(ctx context.Context, resolved *scope.DataScope
 	listArgs := append([]any(nil), args...)
 	listArgs = append(listArgs, filter.Limit, filter.Offset)
 	query := "SELECT " + findingColumns + " FROM (" + base + ") f" + clause +
-		" ORDER BY "+scannerTimeOrder("created_at")+fmt.Sprintf(", finding_id ASC LIMIT $%d OFFSET $%d", len(listArgs)-1, len(listArgs))
+		" ORDER BY " + scannerTimeOrder("created_at") + fmt.Sprintf(", finding_id ASC LIMIT $%d OFFSET $%d", len(listArgs)-1, len(listArgs))
 	rows, err := resolved.DB.QueryContext(ctx, query, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query credential exposure findings: %w", err)

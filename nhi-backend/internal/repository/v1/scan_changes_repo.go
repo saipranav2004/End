@@ -58,20 +58,22 @@ func isMissingRelation(err error) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "42P01"
 }
 
-// completedScans is every visible completed run with its predecessor; $1 is
-// the caller's accounts. nhi_scans_aws has no start time; scan_end stands in.
+// completedScans is every visible finished run with its predecessor; $1 is
+// the caller's accounts. PARTIAL runs count (some resources failed, but what
+// they found did change), as in the reference API. nhi_scans_aws has no start
+// time; scan_end stands in.
 func completedScans(sc *scope.DataScope) string {
-	return fmt.Sprintf(`SELECT s.id, s.scan_id::text AS scan_id, s.account_id::text AS account_id, s.scan_end,
+	return fmt.Sprintf(`SELECT s.id, s.scan_id::text AS scan_id, lower(s.status) AS status, s.account_id::text AS account_id, s.scan_end,
 		       LAG(s.scan_id::text) OVER w AS previous_scan_id, LAG(s.scan_end) OVER w AS previous_at
 		FROM %s s
-		WHERE upper(s.status) = 'COMPLETED' AND s.scan_end IS NOT NULL
+		WHERE upper(s.status) IN ('COMPLETED', 'PARTIAL') AND s.scan_end IS NOT NULL
 		  AND s.account_id = ANY($1::text[])
 		WINDOW w AS (PARTITION BY s.account_id ORDER BY s.scan_end, s.id)`, sc.Table("nhi_scans_aws"))
 }
 
 // scanSelect reads visible scans in ScanInfo column order.
 func scanSelect(sc *scope.DataScope) string {
-	return `SELECT s.scan_id, 'completed', s.account_id, s.scan_end, s.scan_end, s.previous_scan_id, s.previous_at
+	return `SELECT s.scan_id, s.status, s.account_id, s.scan_end, s.scan_end, s.previous_scan_id, s.previous_at
 		FROM (` + completedScans(sc) + `) s WHERE true`
 }
 

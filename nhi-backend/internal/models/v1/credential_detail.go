@@ -53,6 +53,10 @@ type OverviewCredential struct {
 	DaysUntilExpiry       *int       `json:"days_until_expiry"`
 	MaxSessionDuration    *int       `json:"max_session_duration"`
 	PermissionBoundaryARN *string    `json:"permission_boundary_arn"`
+	// The list's flags, so a credential opened by link shows them too.
+	RotationOverdue  bool `json:"rotation_overdue"`
+	IsOrphaned       bool `json:"is_orphaned"`        // bound to no identity
+	HasExternalTrust bool `json:"has_external_trust"` // trust policy admits another account
 }
 
 type BoundIdentity struct {

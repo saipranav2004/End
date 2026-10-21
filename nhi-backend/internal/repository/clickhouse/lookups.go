@@ -32,6 +32,11 @@ type AccessEdge struct {
 
 const maxAccessEdges = 500
 
+// maxUsedPermissions caps the (action, resource) pairs read per request.
+// ponytail: the least-used pairs past the cap are dropped from "used"; raise
+// it if a principal really calls this many distinct things in the window.
+const maxUsedPermissions = 5000
+
 // UsedPermissions is PDF function E: successful calls only.
 func (c *Repository) UsedPermissions(ctx context.Context, sub Subject, sc Scope) ([]UsedPermission, error) {
 	where, args, ok := buildFilter(sub, sc)
@@ -42,7 +47,8 @@ func (c *Repository) UsedPermissions(ctx context.Context, sub Subject, sc Scope)
 			min(event_time), max(event_time), count(),
 			groupUniqArray(source_ip), groupUniqArray(aws_region)
 		FROM %s WHERE %s AND error_code = ''
-		GROUP BY event_source, event_name, resource_arn`, c.table, where)
+		GROUP BY event_source, event_name, resource_arn
+		ORDER BY count() DESC LIMIT %d`, c.table, where, maxUsedPermissions)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -154,17 +160,18 @@ var creationEvents = []string{
 	"CreateDocument", "CreateServer", "CreateJobDefinition",
 	"CreateEnvironment", "CreateInstances", "CreateDetector",
 	"CreateRepository",
-	"CreateRole", "CreateUser", "CreateInstanceProfile",
+	"CreateRole", "CreateUser", "CreateInstanceProfile", "CreateServiceLinkedRole",
 }
 
 // CreatorARN is PDF function H: who created the resource, or "" if unknown.
+// Only a successful creation counts: a denied attempt created nothing.
 func (c *Repository) CreatorARN(ctx context.Context, identityARN string, accounts []string) (string, error) {
 	if identityARN == "" || len(accounts) == 0 {
 		return "", nil
 	}
 	q := fmt.Sprintf(`SELECT caller_arn FROM %s
 		WHERE resource_arn = {arn:String} AND event_name IN {events:Array(String)}
-		  AND caller_arn != '' AND account_id IN {accounts:Array(String)}
+		  AND caller_arn != '' AND error_code = '' AND account_id IN {accounts:Array(String)}
 		ORDER BY event_time ASC LIMIT 1`, c.table)
 
 	ctx, cancel := c.withTimeout(ctx)
@@ -228,7 +235,7 @@ func (c *Repository) CreatorsByARNs(ctx context.Context, arns []string, accounts
 	}
 	q := fmt.Sprintf(`SELECT resource_arn, argMin(caller_arn, event_time) FROM %s
 		WHERE resource_arn IN {arns:Array(String)} AND event_name IN {events:Array(String)}
-		  AND caller_arn != '' AND account_id IN {accounts:Array(String)}
+		  AND caller_arn != '' AND error_code = '' AND account_id IN {accounts:Array(String)}
 		GROUP BY resource_arn`, c.table)
 
 	for start := 0; start < len(arns); start += bulkChunk {

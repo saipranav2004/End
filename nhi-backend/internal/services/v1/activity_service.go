@@ -325,6 +325,9 @@ func dedupeKeys(keys []string) []string {
 // looked for (scans normally run far more often than this).
 const evidenceWindow = 30 * 24 * time.Hour
 
+// changeEvidenceBudget is the most time evidence lookups may add to a request.
+const changeEvidenceBudget = 3 * time.Second
+
 // AttachChangeEvidence sets cloudtrail_evidence on CREATED and DELETED
 // identity and credential changes whose call CloudTrail recorded in the 30
 // days up to the scan. Best effort: without ClickHouse nothing is attached.
@@ -332,6 +335,9 @@ func (r *RequestActivity) AttachChangeEvidence(ctx context.Context, changes []mo
 	if len(changes) == 0 || !r.Available() {
 		return
 	}
+	// Evidence is a nicety: a slow ClickHouse must not hold up the changes.
+	ctx, cancel := context.WithTimeout(ctx, changeEvidenceBudget)
+	defer cancel()
 	sc, ok := r.scopeFor(ctx)
 	if !ok {
 		return

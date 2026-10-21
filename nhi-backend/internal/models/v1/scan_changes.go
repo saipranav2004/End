@@ -134,8 +134,11 @@ type ScanListResponse struct {
 // EntityChangesResponse is tab=changes of an identity or a credential:
 // newest first, at most EntityChangesLimit rows.
 type EntityChangesResponse struct {
-	Tab     string       `json:"tab"`
-	Changes []ScanChange `json:"changes"`
+	Tab string `json:"tab"`
+	// The entity's ARN, as the reference contract names it per tab.
+	IdentityARN   string       `json:"identity_arn,omitempty"`
+	CredentialARN string       `json:"credential_arn,omitempty"`
+	Changes       []ScanChange `json:"changes"`
 	// Truncated: older changes exist beyond the limit.
 	Truncated bool `json:"truncated"`
 	// ChangeTrackingAvailable is false until the change tables exist.

@@ -76,6 +76,11 @@ func entityChanges(ctx context.Context, repo *repov1.ScanChangesRepository, reso
 	if repo == nil || subject == nil {
 		return out, nil
 	}
+	if column == "identity_id" {
+		out.IdentityARN = subject.ARN
+	} else {
+		out.CredentialARN = subject.ARN
+	}
 	changes, truncated, available, err := repo.EntityChanges(ctx, resolved, column, subject.ID, subject.ARN, models.EntityChangesLimit)
 	if err != nil {
 		return nil, fmt.Errorf("entity changes: %w", err)

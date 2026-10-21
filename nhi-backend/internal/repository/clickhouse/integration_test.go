@@ -14,16 +14,14 @@ import (
 )
 
 // Integration tests run read-only queries against the real ClickHouse named in
-// .env (NHI_CLICKHOUSE_*). They skip when it is not configured or reachable.
-// Expectations match the dev data: account 548593215839, IAM user
-// abhishek.tiwari whose AssumeRole calls were all AccessDenied, and AWS
-// service callers such as resource-explorer-2.amazonaws.com.
-const (
-	devAccount = "548593215839"
-	devUser    = "arn:aws:iam::884264984984:user/abhishek.tiwari"
-	devKey     = "AKIA43YSM4GMD3N4DTTS"
-	devService = "resource-explorer-2.amazonaws.com"
-)
+// .env (NHI_CLICKHOUSE_*). They skip when it is not configured or reachable,
+// or when the dev fixtures are not named: NHI_TEST_CT_ACCOUNT (an account with
+// events), NHI_TEST_CT_USER_ARN (an IAM user in it whose AssumeRole calls were
+// all denied) and NHI_TEST_CT_ACCESS_KEY (that user's access key ID). They
+// are read from the environment so no real person's identifiers live here.
+var devAccount, devUser, devKey string
+
+const devService = "resource-explorer-2.amazonaws.com"
 
 func integrationClient(t *testing.T) *Repository {
 	t.Helper()
@@ -31,6 +29,10 @@ func integrationClient(t *testing.T) *Repository {
 	host := os.Getenv("NHI_CLICKHOUSE_HOST")
 	if host == "" {
 		t.Skip("NHI_CLICKHOUSE_HOST not set")
+	}
+	devAccount, devUser, devKey = os.Getenv("NHI_TEST_CT_ACCOUNT"), os.Getenv("NHI_TEST_CT_USER_ARN"), os.Getenv("NHI_TEST_CT_ACCESS_KEY")
+	if devAccount == "" || devUser == "" || devKey == "" {
+		t.Skip("NHI_TEST_CT_ACCOUNT, NHI_TEST_CT_USER_ARN and NHI_TEST_CT_ACCESS_KEY not set")
 	}
 	port, _ := strconv.Atoi(os.Getenv("NHI_CLICKHOUSE_PORT"))
 	cfg := config.ClickHouseConfig{
