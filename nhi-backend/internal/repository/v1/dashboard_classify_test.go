@@ -79,7 +79,10 @@ func TestClassifyCredentialsStaleAndUsedActions(t *testing.T) {
 			"AKIAX":         {{Service: "ec2", Action: "RunInstances"}},
 		},
 	}
-	stale, used := classifyCredentials(context.Background(), rows, src, testNow)
+	stale, used, utilization := classifyCredentials(context.Background(), rows, src, testNow)
+	if len(utilization) != 5 || utilization[0].Bucket != "used_7d" {
+		t.Fatalf("utilization buckets = %+v", utilization)
+	}
 	if stale != 2 { // idle (never used, old) + access key (last used 100d ago)
 		t.Fatalf("stale = %d, want 2", stale)
 	}

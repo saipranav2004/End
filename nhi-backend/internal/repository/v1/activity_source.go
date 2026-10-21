@@ -37,6 +37,10 @@ type ActivitySource interface {
 	// AccessEdges returns the resources successfully called by any of the keys
 	// between since and until (a zero until means now), with call counts.
 	AccessEdges(ctx context.Context, keys []string, since, until time.Time) []chrepo.AccessEdge
+	// AccountVolume returns events per UTC day since the given time in those
+	// of the accounts that belong to the tenant; ok is false when the query
+	// could not run or failed.
+	AccountVolume(ctx context.Context, accounts []string, since time.Time) (points []chrepo.VolumePoint, ok bool)
 }
 
 // UsageWindowDays is the look-back for "what did this credential actually use":
@@ -58,6 +62,9 @@ func (noActivity) UsedActionSets(context.Context, []string, time.Time) map[strin
 }
 func (noActivity) UsedPermissions(context.Context, []string, time.Time) []chrepo.UsedPermission {
 	return nil
+}
+func (noActivity) AccountVolume(context.Context, []string, time.Time) ([]chrepo.VolumePoint, bool) {
+	return nil, false
 }
 func (noActivity) AccessEdges(context.Context, []string, time.Time, time.Time) []chrepo.AccessEdge {
 	return nil

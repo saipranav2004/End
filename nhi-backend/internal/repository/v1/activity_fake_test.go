@@ -61,4 +61,8 @@ func (f *fakeActivity) AccessEdges(_ context.Context, _ []string, since, _ time.
 	return f.edges
 }
 
+func (f *fakeActivity) AccountVolume(context.Context, []string, time.Time) ([]chrepo.VolumePoint, bool) {
+	return nil, false
+}
+
 var _ ActivitySource = (*fakeActivity)(nil)

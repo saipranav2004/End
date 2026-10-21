@@ -278,6 +278,32 @@ func (r *RequestActivity) AccessEdges(ctx context.Context, keys []string, since,
 	return out
 }
 
+func (r *RequestActivity) AccountVolume(ctx context.Context, accounts []string, since time.Time) ([]chrepo.VolumePoint, bool) {
+	if !r.Available() {
+		return nil, false
+	}
+	// Only the tenant's own accounts, whatever the caller passed.
+	tenant := map[string]bool{}
+	for _, a := range r.tenantAccounts(ctx) {
+		tenant[a] = true
+	}
+	var mine []string
+	for _, a := range accounts {
+		if tenant[a] {
+			mine = append(mine, a)
+		}
+	}
+	if len(mine) == 0 {
+		return nil, false
+	}
+	out, err := r.svc.ch.AccountVolume(ctx, chrepo.Scope{Accounts: mine, Start: since})
+	if err != nil {
+		r.fail("account volume", err)
+		return nil, false
+	}
+	return out, true
+}
+
 func dedupeKeys(keys []string) []string {
 	seen := make(map[string]struct{}, len(keys))
 	out := make([]string, 0, len(keys))

@@ -63,6 +63,9 @@ func (r *DashboardOverviewRepository) GetOverview(ctx context.Context, resolved 
 			CredentialTypes:             []models.TypeCountFilter{},
 			TopOwners:                   []models.OwnerCountItem{},
 			CredentialsExpiringSoon:     []models.ExpiringCredentialItem{},
+			TrustEdgesByType:            []models.EdgeTypeCount{},
+			EventVolume:                 []models.GrowthPoint{},
+			CredentialUtilization:       []models.BucketCount{},
 		},
 	}
 	if resolved == nil || resolved.DB == nil {
@@ -82,6 +85,8 @@ func (r *DashboardOverviewRepository) GetOverview(ctx context.Context, resolved 
 			func() error { return r.loadIdentityCharts(runCtx, resolved, resp) },
 			func() error { return r.loadCredentialCharts(runCtx, resolved, resp) },
 			func() error { return r.loadGrowthCharts(runCtx, resolved, resp) },
+			func() error { return r.loadTrustEdges(runCtx, resolved, resp) },
+			func() error { r.loadEventVolume(runCtx, resolved, resp, src); return nil },
 		); err != nil {
 			return nil, err
 		}
@@ -177,8 +182,10 @@ func (r *DashboardOverviewRepository) loadKPIs(ctx context.Context, resolved *sc
 	if err != nil {
 		return err
 	}
-	staleCredentials, usedActions := classifyCredentials(ctx, credRows, src, now)
+	staleCredentials, usedActions, utilization := classifyCredentials(ctx, credRows, src, now)
 	resp.KPIs.StaleCredentials = staleCredentials
+	resp.KPIs.ActiveCredentials = totalCredentials - staleCredentials
+	resp.Charts.CredentialUtilization = utilization
 
 	// accounts_scanned: distinct accounts across both identities and credentials.
 	acctQuery := fmt.Sprintf(`
@@ -306,13 +313,14 @@ func classifyIdentities(ctx context.Context, rows []identityActivityRow, src Act
 
 type credentialActivityRow struct {
 	baseline *time.Time
+	lastUsed *time.Time // AWS's own last-used date from the scanner
 	keys     []string
 }
 
 func (r *DashboardOverviewRepository) loadCredentialActivityRows(ctx context.Context, tenantDB *sql.DB, schema string, queryArgs []any) ([]credentialActivityRow, error) {
 	query := fmt.Sprintf(`
 		SELECT COALESCE(c.arn, ''), COALESCE(c.name, ''), COALESCE(c.credential_type, ''),
-		       COALESCE(c.created_at_aws, c.first_seen_at)
+		       COALESCE(c.created_at_aws, c.first_seen_at), c.last_used_at
 		FROM %s.credentials c
 		WHERE c.account_id = ANY($1::text[]) AND c.region = ANY($2::text[])
 		  AND c.deleted_at IS NULL`, schema)
@@ -324,8 +332,8 @@ func (r *DashboardOverviewRepository) loadCredentialActivityRows(ctx context.Con
 	var out []credentialActivityRow
 	for rows.Next() {
 		var arn, name, ctype string
-		var baseline sql.NullTime
-		if err := rows.Scan(&arn, &name, &ctype, &baseline); err != nil {
+		var baseline, lastUsed sql.NullTime
+		if err := rows.Scan(&arn, &name, &ctype, &baseline, &lastUsed); err != nil {
 			return nil, fmt.Errorf("scan credential activity row: %w", err)
 		}
 		row := credentialActivityRow{keys: credentialActivityKeys(arn, name, ctype)}
@@ -333,14 +341,38 @@ func (r *DashboardOverviewRepository) loadCredentialActivityRows(ctx context.Con
 			t := baseline.Time
 			row.baseline = &t
 		}
+		if lastUsed.Valid {
+			t := lastUsed.Time
+			row.lastUsed = &t
+		}
 		out = append(out, row)
 	}
 	return out, rows.Err()
 }
 
-// classifyCredentials returns the stale credential count and the total of
-// distinct actions used across all credentials (for permission utilisation).
-func classifyCredentials(ctx context.Context, rows []credentialActivityRow, src ActivitySource, now time.Time) (stale, usedActions int) {
+// utilizationBuckets is the fixed order of charts.credential_utilization.
+var utilizationBuckets = []string{"used_7d", "used_30d", "used_90d", "idle_90d", "never_used"}
+
+// utilizationBucket places a credential by its last use: the later of the
+// CloudTrail last-seen time and AWS's own last-used date.
+func utilizationBucket(lastUse *time.Time, now time.Time) string {
+	switch {
+	case lastUse == nil:
+		return "never_used"
+	case lastUse.After(now.AddDate(0, 0, -7)):
+		return "used_7d"
+	case lastUse.After(now.AddDate(0, 0, -30)):
+		return "used_30d"
+	case lastUse.After(now.AddDate(0, 0, -90)):
+		return "used_90d"
+	}
+	return "idle_90d"
+}
+
+// classifyCredentials returns the stale credential count, the total of
+// distinct actions used across all credentials (for permission utilisation)
+// and the credentials per last-use bucket.
+func classifyCredentials(ctx context.Context, rows []credentialActivityRow, src ActivitySource, now time.Time) (stale, usedActions int, utilization []models.BucketCount) {
 	var allKeys []string
 	for _, row := range rows {
 		allKeys = append(allKeys, row.keys...)
@@ -352,17 +384,83 @@ func classifyCredentials(ctx context.Context, rows []credentialActivityRow, src 
 		used = src.UsedActionSets(ctx, allKeys, usageSince(now))
 	}
 	cutoff := now.AddDate(0, 0, -staleThresholdDays)
+	counts := map[string]int{}
 	for _, row := range rows {
 		baseline := row.baseline
+		lastUse := row.lastUsed
 		if last := latestOf(seen, row.keys); last != nil {
 			baseline = last
+			if lastUse == nil || last.After(*lastUse) {
+				lastUse = last
+			}
 		}
 		if baseline != nil && baseline.Before(cutoff) {
 			stale++
 		}
+		counts[utilizationBucket(lastUse, now)]++
 		usedActions += distinctUsedCount(used, row.keys)
 	}
-	return stale, usedActions
+	utilization = make([]models.BucketCount, 0, len(utilizationBuckets))
+	for _, b := range utilizationBuckets {
+		utilization = append(utilization, models.BucketCount{Bucket: b, Count: counts[b]})
+	}
+	return stale, usedActions, utilization
+}
+
+// loadTrustEdges counts the active trust edges in the selected accounts, in
+// total and per edge type. A schema without trust_edges reports none.
+func (r *DashboardOverviewRepository) loadTrustEdges(ctx context.Context, resolved *scope.DataScope, resp *models.DashboardOverviewResponse) error {
+	q := fmt.Sprintf(`SELECT LOWER(COALESCE(NULLIF(edge_type, ''), 'unknown')), COUNT(*)::int
+		FROM %s.trust_edges
+		WHERE account_id = ANY($1::text[]) AND COALESCE(is_active, true)
+		GROUP BY 1 ORDER BY 2 DESC, 1`, resolved.QSchema())
+	rows, err := resolved.DB.QueryContext(ctx, q, resolved.QueryArgs()[0])
+	if err != nil {
+		if isMissingRelation(err) {
+			return nil
+		}
+		return fmt.Errorf("query trust edges: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item models.EdgeTypeCount
+		if err := rows.Scan(&item.EdgeType, &item.Count); err != nil {
+			return fmt.Errorf("scan trust edge count: %w", err)
+		}
+		resp.Charts.TrustEdgesByType = append(resp.Charts.TrustEdgesByType, item)
+		resp.KPIs.TrustEdges += item.Count
+		if item.EdgeType == "cross_account" {
+			resp.KPIs.CrossAccountTrustEdges += item.Count
+		}
+	}
+	return rows.Err()
+}
+
+// eventVolumeDays is the window of charts.event_volume.
+const eventVolumeDays = 30
+
+// loadEventVolume fills charts.event_volume from CloudTrail, one point per
+// day of the window (zero-filled), or leaves it empty when CloudTrail cannot
+// be read. Region selection does not apply: CloudTrail records IAM calls in
+// us-east-1, so a region filter would hide them.
+func (r *DashboardOverviewRepository) loadEventVolume(ctx context.Context, resolved *scope.DataScope, resp *models.DashboardOverviewResponse, src ActivitySource) {
+	if !src.Available() || len(resolved.AccountIDs) == 0 {
+		return
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	start := today.AddDate(0, 0, -(eventVolumeDays - 1))
+	points, ok := src.AccountVolume(ctx, resolved.AccountIDs, start)
+	if !ok {
+		return
+	}
+	byDay := make(map[string]int, len(points))
+	for _, p := range points {
+		byDay[p.Date] = int(p.Count)
+	}
+	for d := start; !d.After(today); d = d.AddDate(0, 0, 1) {
+		day := d.Format("2006-01-02")
+		resp.Charts.EventVolume = append(resp.Charts.EventVolume, models.GrowthPoint{Date: day, Count: byDay[day]})
+	}
 }
 
 func (r *DashboardOverviewRepository) loadIdentityCharts(ctx context.Context, resolved *scope.DataScope, resp *models.DashboardOverviewResponse) error {
@@ -516,7 +614,7 @@ func (r *DashboardOverviewRepository) loadCredentialCharts(ctx context.Context, 
 
 	// credentials_expiring_soon
 	expQuery := fmt.Sprintf(`
-		SELECT COALESCE(name, arn, id::text), expires_at,
+		SELECT id::text, COALESCE(name, arn, id::text), expires_at,
 		       GREATEST(CEIL(EXTRACT(EPOCH FROM (expires_at - NOW())) / 86400), 0)::int
 		FROM %s.credentials c
 		WHERE c.account_id = ANY($1::text[]) AND c.region = ANY($2::text[])
@@ -531,7 +629,7 @@ func (r *DashboardOverviewRepository) loadCredentialCharts(ctx context.Context, 
 	defer expRows.Close()
 	for expRows.Next() {
 		var item models.ExpiringCredentialItem
-		if err := expRows.Scan(&item.CredentialName, &item.ExpiresAt, &item.DaysRemaining); err != nil {
+		if err := expRows.Scan(&item.CredentialID, &item.CredentialName, &item.ExpiresAt, &item.DaysRemaining); err != nil {
 			return fmt.Errorf("scan credentials_expiring_soon row: %w", err)
 		}
 		resp.Charts.CredentialsExpiringSoon = append(resp.Charts.CredentialsExpiringSoon, item)

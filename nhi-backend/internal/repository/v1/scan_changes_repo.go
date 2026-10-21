@@ -451,10 +451,16 @@ func (r *ScanChangesRepository) RecentChangeFlags(ctx context.Context, sc *scope
 		case entityType == kind && changeType == models.ChangeDeleted:
 			continue // a deleted row is not in the list
 		}
-		// entity_id belongs to the change's own entity type.
-		if entityType == kind {
+		// entity_id belongs to the change's own entity type, except that a
+		// permission, binding or trust-edge change carries the identity it
+		// belongs to: that identity is modified.
+		switch {
+		case entityType == kind:
 			mark(id, flag)
 			mark(arn, flag)
+		case kind == "identity" && entityType != "credential":
+			mark(id, models.ChangeModified)
+			mark(arn, models.ChangeModified)
 		}
 	}
 	return out, rows.Err()

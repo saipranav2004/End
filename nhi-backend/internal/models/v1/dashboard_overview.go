@@ -28,6 +28,12 @@ type DashboardKPIs struct {
 	ShadowIdentities         int     `json:"shadow_identities"`
 	AccountsScanned          int     `json:"accounts_scanned"`
 	PermissionUtilizationPct float64 `json:"permission_utilization_pct"`
+	// ActiveCredentials is total_credentials minus stale_credentials.
+	ActiveCredentials int `json:"active_credentials"`
+	// TrustEdges counts active trust edges in the selected accounts;
+	// CrossAccountTrustEdges those of edge_type cross_account.
+	TrustEdges             int `json:"trust_edges"`
+	CrossAccountTrustEdges int `json:"cross_account_trust_edges"`
 }
 
 type DashboardCharts struct {
@@ -43,6 +49,24 @@ type DashboardCharts struct {
 	CredentialTypes             []TypeCountFilter        `json:"credential_types"`
 	TopOwners                   []OwnerCountItem         `json:"top_owners"`
 	CredentialsExpiringSoon     []ExpiringCredentialItem `json:"credentials_expiring_soon"`
+	// TrustEdgesByType: active trust edges per edge_type, largest first.
+	TrustEdgesByType []EdgeTypeCount `json:"trust_edges_by_type"`
+	// EventVolume: CloudTrail events per UTC day over the last 30 days in the
+	// selected accounts (empty when CloudTrail cannot be read).
+	EventVolume []GrowthPoint `json:"event_volume"`
+	// CredentialUtilization: credentials by last use, in the fixed bucket
+	// order used_7d, used_30d, used_90d, idle_90d, never_used.
+	CredentialUtilization []BucketCount `json:"credential_utilization"`
+}
+
+type EdgeTypeCount struct {
+	EdgeType string `json:"edge_type"`
+	Count    int    `json:"count"`
+}
+
+type BucketCount struct {
+	Bucket string `json:"bucket"`
+	Count  int    `json:"count"`
 }
 
 type AccountCountItem struct {
@@ -66,6 +90,7 @@ type OwnerCountItem struct {
 }
 
 type ExpiringCredentialItem struct {
+	CredentialID   string    `json:"credential_id"`
 	CredentialName string    `json:"credential_name"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	DaysRemaining  int       `json:"days_remaining"`

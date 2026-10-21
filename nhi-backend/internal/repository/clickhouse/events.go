@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	ch "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 const maxEventLimit = 1000
@@ -141,6 +143,34 @@ func (c *Repository) VolumeChart(ctx context.Context, sub Subject, sc Scope) ([]
 		var n uint64
 		if err := rows.Scan(&d, &n); err != nil {
 			return nil, fmt.Errorf("clickhouse volume scan: %w", err)
+		}
+		out = append(out, VolumePoint{Date: d.Format("2006-01-02"), Count: n})
+	}
+	return out, rows.Err()
+}
+
+// AccountVolume is the number of events per UTC day in the given accounts
+// since start: the tenant-wide "event volume" trend.
+func (c *Repository) AccountVolume(ctx context.Context, sc Scope) ([]VolumePoint, error) {
+	if len(sc.Accounts) == 0 {
+		return nil, nil
+	}
+	tc, ta := timeFilter(sc)
+	q := fmt.Sprintf(`SELECT toDate(event_time) AS date, count() AS count
+		FROM %s WHERE account_id IN {accounts:Array(String)}%s GROUP BY date ORDER BY date`, c.table, tc)
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	rows, err := c.conn.Query(ctx, q, append([]any{ch.Named("accounts", sc.Accounts)}, ta...)...)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse account volume: %w", err)
+	}
+	defer rows.Close()
+	var out []VolumePoint
+	for rows.Next() {
+		var d time.Time
+		var n uint64
+		if err := rows.Scan(&d, &n); err != nil {
+			return nil, fmt.Errorf("clickhouse account volume scan: %w", err)
 		}
 		out = append(out, VolumePoint{Date: d.Format("2006-01-02"), Count: n})
 	}
