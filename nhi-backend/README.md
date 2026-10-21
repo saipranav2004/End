@@ -120,9 +120,11 @@ is not fully set up), every API answers **503 `TENANT_NOT_PROVISIONED`**.
 
 ### Dashboard
 
+Scan changes, the Changes tabs and `recent_changes` also carry the reference contract's field names (`scan_time`, `summary.created`/`deleted`/`modified`/`by_entity`, `changes[].id`/`entity_id`, evidence `created_by`/`created_at`, `identity_arn`/`credential_arn`, `last_scan_time`) next to ours, so clients written against either work.
+
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/dashboard/overview` | KPIs and charts for the selected scope, plus `recent_changes`: what the latest discovery scan changed (null before the first scan). |
+| GET | `/dashboard/overview` | KPIs and charts for the selected scope, plus `recent_changes`: what the latest discovery scan changed (null before the first scan). Includes `kpis.active_credentials` (total minus stale), `kpis.trust_edges` / `cross_account_trust_edges` (active `trust_edges` in the selected accounts), `charts.trust_edges_by_type`, `charts.event_volume` (CloudTrail events per UTC day, last 30 days, selected accounts, zero-filled; empty when CloudTrail cannot be read; regions do not apply because IAM calls are recorded in us-east-1) and `charts.credential_utilization` (credentials by last use - CloudTrail or AWS's own last-used date, whichever is later: `used_7d`, `used_30d`, `used_90d`, `idle_90d`, `never_used`). |
 
 ### Scan change tracking
 
@@ -133,7 +135,7 @@ discovery scanner writes `nhi_scans_aws` (one row per run) and `scan_changes`
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/scans` | Newest completed scans with their change counts (`limit`, default 20, max 50). |
-| GET | `/scans/{scan_id}/changes` | One scan (`scan_id` or `latest`): its summary (totals by change type and entity type) and a page of its changes. Filters `change_type` (CREATED / DELETED / MODIFIED), `entity_type` (identity / credential / permission / binding / trust_edge), `page`, `limit` (max 100). 404 `SCAN_NOT_FOUND`. |
+| GET | `/scans/{scan_id}/changes` | One scan (`scan_id` or `latest`): its summary (totals by change type and entity type) and a page of its changes. Filters `change_type` (CREATED / DELETED / MODIFIED), `entity_type` (identity / credential / permission / binding / trust_edge), `page`, `limit` (max 100). 404 `SCAN_NOT_FOUND`. COMPLETED and PARTIAL scans are listed (`status`). |
 | GET | `/identities/{id}?tab=changes` | Every change recorded for one identity, newest first (max 50), with the CloudTrail call behind each creation or deletion (`cloudtrail_evidence`). |
 | GET | `/credentials/{id}?tab=changes` | The same for one credential. |
 
@@ -355,6 +357,9 @@ These skip unless pointed at a tenant (a SKIP means nothing was tested):
 ```bash
 export NHI_TEST_TENANT_DB=<tenant schema name> NHI_TEST_TENANT_ID=<tenant uuid> NHI_TEST_USER_ID=<user email>
 # ClickHouse comes from .env (NHI_CLICKHOUSE_*); use NHI_CLICKHOUSE_PROTOCOL=http|native
+# CloudTrail fixtures: an account with events, an IAM user in it whose AssumeRole
+# calls were denied, and that user's access key ID
+export NHI_TEST_CT_ACCOUNT=<account id> NHI_TEST_CT_USER_ARN=<user arn> NHI_TEST_CT_ACCESS_KEY=<key id>
 go test ./internal/repository/clickhouse ./internal/services/v1 ./internal/handlers/v1 -count=1 -v
 ```
 
