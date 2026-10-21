@@ -25,20 +25,36 @@ var (
 	refreshByIP  = ratelimit.New(1, 60)       // tabs refresh about hourly
 )
 
-// clientIP is the caller's address. X-Real-IP (set by the console's nginx) is
-// trusted only when the direct peer is a private or loopback address, i.e.
-// the request came through our own proxy; otherwise anyone could forge it.
+// clientIP is the caller's address. Forwarding headers are trusted only when
+// the direct peer is a private or loopback address (our own proxies);
+// otherwise anyone could forge them. Behind proxies the client is the
+// right-most public address in X-Forwarded-For: each proxy appends the peer it
+// saw, so entries left of it may be forged but that one was not. A load
+// balancer in front of the console's nginx would otherwise make every user
+// share the balancer's address (and its rate limit).
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if peer, err := netip.ParseAddr(host); err == nil && (peer.IsLoopback() || peer.IsPrivate()) {
-		if real, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
-			return real.String()
+	if !trustedPeer(host) {
+		return host
+	}
+	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		if ip, err := netip.ParseAddr(strings.TrimSpace(hops[i])); err == nil && !trustedPeer(ip.String()) {
+			return ip.String()
 		}
 	}
+	if real, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
+		return real.String()
+	}
 	return host
+}
+
+func trustedPeer(addr string) bool {
+	ip, err := netip.ParseAddr(addr)
+	return err == nil && (ip.IsLoopback() || ip.IsPrivate())
 }
 
 // tooManyAttempts answers 429 with Retry-After when any limiter is empty.
