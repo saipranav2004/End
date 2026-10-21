@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Activity, AlertTriangle, DatabaseZap, Globe, Network } from 'lucide-react';
 import { fetchIdentity, fetchIdentityEvents } from '../../lib/api/inventory';
 import { useQuery } from '../../lib/hooks';
@@ -12,14 +12,21 @@ import { Pagination } from '../../ui/Pagination';
 import { ListSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
 import { ClearState, EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { Code, Tag } from '../../ui/Tag';
-import { bindingLabel, credentialTypeMeta, eventRange } from '../identities/meta';
+import { bindingLabel, credentialTypeMeta } from '../identities/meta';
+import { activeEventFilters, activityRange, eventQuery, eventRange, rangeQuery } from './eventState';
 
 /**
  * The sections of `GET /api/v1/identities/{id}/events` other than the
  * timeline, and the summary that heads every activity view. Every figure is
  * the API's own aggregate over the selected window - nothing is counted from
- * a loaded page.
+ * a loaded page. Each section takes the whole event state and sends its range
+ * and filters, so a section answers the same question as the event list.
  */
+
+/** One cache key for the window and every filter. */
+function filterKey(state) {
+  return JSON.stringify(eventQuery(state));
+}
 
 function Unavailable() {
   return (
@@ -46,15 +53,18 @@ function SectionState({ query, children, rows = 5 }) {
  * with the API's read_write filter, so it holds for the whole window rather
  * than for the rows on screen.
  */
-export function ActivitySummary({ identityId, range: rangeValue }) {
-  const range = eventRange(rangeValue);
+export function ActivitySummary({ identityId, state }) {
+  const range = eventRange(state);
+  const windowQuery = rangeQuery(state);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const activityParams = useMemo(() => activityRange(state), [state.range, state.from, state.to]);
   const countsQuery = useQuery(
     async (signal) => {
       const [all, reads, errors, ips] = await Promise.all([
-        fetchIdentityEvents(identityId, 'timeline', { timeRange: range.value, pageSize: 1 }, signal),
-        fetchIdentityEvents(identityId, 'timeline', { timeRange: range.value, readWrite: 'read', pageSize: 1 }, signal),
-        fetchIdentityEvents(identityId, 'errors', { timeRange: range.value, pageSize: 1 }, signal),
-        fetchIdentityEvents(identityId, 'ips', { timeRange: range.value }, signal),
+        fetchIdentityEvents(identityId, 'timeline', { ...windowQuery, pageSize: 1 }, signal),
+        fetchIdentityEvents(identityId, 'timeline', { ...windowQuery, readWrite: 'read', pageSize: 1 }, signal),
+        fetchIdentityEvents(identityId, 'errors', { ...windowQuery, pageSize: 1 }, signal),
+        fetchIdentityEvents(identityId, 'ips', windowQuery, signal),
       ]);
       return {
         available: all.data_available !== false,
@@ -65,12 +75,12 @@ export function ActivitySummary({ identityId, range: rangeValue }) {
         publicIps: (ips.ips ?? []).filter((ip) => ip.kind === 'public').length,
       };
     },
-    [identityId, range.value],
+    [identityId, state.range, state.from, state.to],
     { enabled: Boolean(identityId) },
   );
   const shapeQuery = useQuery(
-    (signal) => fetchIdentity(identityId, 'activity', { time_range: `${range.days}d`, page_size: 1 }, signal),
-    [identityId, range.days],
+    (signal) => fetchIdentity(identityId, 'activity', { ...activityParams, page_size: 1 }, signal),
+    [identityId, activityParams],
     { enabled: Boolean(identityId) },
   );
 
@@ -120,9 +130,12 @@ export function ActivitySummary({ identityId, range: rangeValue }) {
           value={counts.errors}
           tone={counts.errors > 0 ? 'critical' : 'low'}
           caption={
-            analytics?.access_denied_rate_pct !== null && analytics?.access_denied_rate_pct !== undefined
-              ? `${analytics.access_denied_rate_pct}% denied by policy`
-              : 'Calls answered with an error'
+            [
+              typeof analytics?.error_rate_pct === 'number' ? `${analytics.error_rate_pct}% of calls` : null,
+              typeof analytics?.access_denied_rate_pct === 'number' ? `${analytics.access_denied_rate_pct}% denied by policy` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Calls answered with an error'
           }
           className="animate-rise"
           data-stagger=""
@@ -237,8 +250,8 @@ export function ActivitySummary({ identityId, range: rangeValue }) {
 
 /* ── Heatmap ─────────────────────────────────────────────────────────────── */
 
-export function HeatmapSection({ identityId, range }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'heatmap', { timeRange: range }, signal), [identityId, range]);
+export function HeatmapSection({ identityId, state }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'heatmap', eventQuery(state), signal), [identityId, filterKey(state)]);
   const grid = useMemo(() => {
     const cells = query.data?.heatmap ?? [];
     const byAction = new Map();
@@ -309,11 +322,19 @@ export function HeatmapSection({ identityId, range }) {
 
 /* ── Resources ───────────────────────────────────────────────────────────── */
 
-export function ResourcesSection({ identityId, range, onFilter }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'resources', { timeRange: range }, signal), [identityId, range]);
+export function ResourcesSection({ identityId, state, onFilter }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'resources', eventQuery(state), signal), [identityId, filterKey(state)]);
   const rows = query.data?.resources_accessed ?? [];
   return (
     <SectionState query={query}>
+      {typeof query.data?.total_resources === 'number' && (
+        <p className="mb-3 text-[12.5px] text-ink-3">
+          <span data-numeric="" className="font-semibold text-ink">
+            {formatNumber(query.data.total_resources)}
+          </span>{' '}
+          {query.data.total_resources === 1 ? 'resource' : 'resources'} reached {eventRange(state).phrase}.
+        </p>
+      )}
       <DataGrid
         caption="Resources this identity reached"
         rows={rows}
@@ -325,7 +346,7 @@ export function ResourcesSection({ identityId, range, onFilter }) {
             key: 'resource',
             header: 'Resource',
             primary: true,
-            width: '30%',
+            width: '26%',
             cell: (row) => (
               <span className="block min-w-0" title={row.resource_arn}>
                 <span className="block truncate text-[12.5px] font-medium text-ink">{row.resource_name || row.resource_arn}</span>
@@ -351,9 +372,20 @@ export function ResourcesSection({ identityId, range, onFilter }) {
           {
             key: 'actions',
             header: 'Actions',
-            width: '22%',
+            width: '16%',
             priority: 'wide',
             cell: (row) => <ActionList actions={row.actions} />,
+          },
+          {
+            key: 'first',
+            header: 'First access',
+            width: '10%',
+            priority: 'wide',
+            cell: (row) => (
+              <span className="text-[12px] whitespace-nowrap text-ink-2" title={formatDateTime(row.first_access)}>
+                {formatRelativeShort(row.first_access)}
+              </span>
+            ),
           },
           { key: 'reads', header: 'Reads', align: 'right', width: '8%', cell: (row) => <Num value={row.read_count} /> },
           { key: 'writes', header: 'Writes', align: 'right', width: '8%', cell: (row) => <Num value={row.write_count} tone={row.write_count > 0 ? 'text-high' : undefined} /> },
@@ -384,8 +416,8 @@ const IP_KIND = {
   unknown: { label: 'Not an IP', tone: 'neutral' },
 };
 
-export function IpsSection({ identityId, range, onFilter }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'ips', { timeRange: range }, signal), [identityId, range]);
+export function IpsSection({ identityId, state, onFilter }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'ips', eventQuery(state), signal), [identityId, filterKey(state)]);
   const rows = query.data?.ips ?? [];
   return (
     <SectionState query={query}>
@@ -424,12 +456,11 @@ export function IpsSection({ identityId, range, onFilter }) {
 
 /* ── Errors ──────────────────────────────────────────────────────────────── */
 
-export function ErrorsSection({ identityId, range }) {
-  const [page, setPage] = useState(1);
-  const [size, setSize] = useState(25);
+/* Paged with the shared state, so a new filter or range goes back to page 1. */
+export function ErrorsSection({ identityId, state, patch }) {
   const query = useQuery(
-    (signal) => fetchIdentityEvents(identityId, 'errors', { timeRange: range, page, pageSize: size }, signal),
-    [identityId, range, page, size],
+    (signal) => fetchIdentityEvents(identityId, 'errors', eventQuery(state, { page: state.page, pageSize: state.size }), signal),
+    [identityId, filterKey(state), state.page, state.size],
   );
   const data = query.data;
   const summary = data?.summary;
@@ -439,7 +470,11 @@ export function ErrorsSection({ identityId, range }) {
   return (
     <SectionState query={query}>
       {summary?.total_errors === 0 ? (
-        <ClearState compact title="No failed calls" description="Every call in this window succeeded." />
+        <ClearState
+          compact
+          title="No failed calls"
+          description={activeEventFilters(state).length > 0 ? 'No failed call in this window matches the filters applied.' : 'Every call in this window succeeded.'}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           <div className="grid gap-3 rounded-[var(--radius-control)] border border-line bg-surface-2 p-4 sm:grid-cols-3">
@@ -488,7 +523,7 @@ export function ErrorsSection({ identityId, range }) {
                   key: 'event',
                   header: 'Call',
                   primary: true,
-                  width: '26%',
+                  width: '22%',
                   cell: (row) => (
                     <span className="flex min-w-0 items-center gap-2">
                       <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-critical" />
@@ -502,7 +537,7 @@ export function ErrorsSection({ identityId, range }) {
                 {
                   key: 'error',
                   header: 'Error',
-                  width: '34%',
+                  width: '24%',
                   cell: (row) => (
                     <span className="block min-w-0" title={row.error_message}>
                       <span className="block truncate text-[12.5px] font-medium text-critical">{row.error_code}</span>
@@ -513,11 +548,30 @@ export function ErrorsSection({ identityId, range }) {
                 {
                   key: 'resource',
                   header: 'Resource',
-                  width: '20%',
+                  width: '16%',
                   priority: 'wide',
                   cell: (row) => (
                     <span className="block truncate text-[12px] text-ink-2" title={row.resource_arn}>
                       {row.resource_name || row.resource_arn || '-'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'credential',
+                  header: 'Credential',
+                  width: '13%',
+                  priority: 'wide',
+                  cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{row.credential_name || '-'}</span>,
+                },
+                {
+                  key: 'source',
+                  header: 'Source',
+                  width: '13%',
+                  priority: 'wide',
+                  cell: (row) => (
+                    <span className="block min-w-0">
+                      <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || '-'}</span>
+                      <span className="block truncate text-[11px] text-ink-3">{row.aws_region || '-'}</span>
                     </span>
                   ),
                 },
@@ -527,15 +581,12 @@ export function ErrorsSection({ identityId, range }) {
             />
             {(data?.pagination?.total_count ?? 0) > 0 && (
               <Pagination
-                page={page}
-                pageSize={size}
+                page={state.page}
+                pageSize={state.size}
                 total={data.pagination.total_count}
                 unit="failed calls"
-                onPageChange={setPage}
-                onPageSizeChange={(value) => {
-                  setSize(value);
-                  setPage(1);
-                }}
+                onPageChange={(page) => patch({ page })}
+                onPageSizeChange={(size) => patch({ size })}
               />
             )}
           </div>
@@ -547,8 +598,8 @@ export function ErrorsSection({ identityId, range }) {
 
 /* ── Cross-account ───────────────────────────────────────────────────────── */
 
-export function CrossAccountSection({ identityId, range }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'cross_account', { timeRange: range }, signal), [identityId, range]);
+export function CrossAccountSection({ identityId, state }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'cross_account', eventQuery(state), signal), [identityId, filterKey(state)]);
   const rows = query.data?.cross_account_activity ?? [];
   return (
     <SectionState query={query}>
@@ -597,11 +648,19 @@ export function CrossAccountSection({ identityId, range }) {
 
 /* ── Sessions ────────────────────────────────────────────────────────────── */
 
-export function SessionsSection({ identityId, range }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'sessions', { timeRange: range }, signal), [identityId, range]);
+export function SessionsSection({ identityId, state }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'sessions', eventQuery(state), signal), [identityId, filterKey(state)]);
   const rows = query.data?.sessions ?? [];
   return (
     <SectionState query={query}>
+      {typeof query.data?.total_sessions === 'number' && (
+        <p className="mb-3 text-[12.5px] text-ink-3">
+          <span data-numeric="" className="font-semibold text-ink">
+            {formatNumber(query.data.total_sessions)}
+          </span>{' '}
+          {query.data.total_sessions === 1 ? 'session' : 'sessions'} {eventRange(state).phrase}.
+        </p>
+      )}
       {query.data?.truncated && (
         <p className="mb-3 rounded-[var(--radius-control)] border border-medium/25 bg-medium-soft px-3 py-2 text-[12px] text-ink-2">
           The window held more events than are read to build sessions, so the oldest sessions may be incomplete. Narrow the time
@@ -619,13 +678,15 @@ export function SessionsSection({ identityId, range }) {
             key: 'session',
             header: 'Session',
             primary: true,
-            width: '24%',
+            width: '20%',
             cell: (row) => (
               <span className="block min-w-0">
                 <span className="block truncate font-mono text-[12.5px] text-ink">{row.session_name || '-'}</span>
-                <span className="block truncate text-[11px] text-ink-3" title={row.credential_arn}>
-                  as {row.credential_name || row.credential_arn || '-'}
-                </span>
+                {(row.credential_name || row.credential_arn) && (
+                  <span className="block truncate text-[11px] text-ink-3" title={row.credential_arn}>
+                    as {row.credential_name || row.credential_arn}
+                  </span>
+                )}
               </span>
             ),
           },
@@ -637,17 +698,18 @@ export function SessionsSection({ identityId, range }) {
             cell: (row) => <span className="text-[12px] text-ink-2">{row.duration_minutes > 0 ? `${formatNumber(row.duration_minutes)} min` : 'Under 1 min'}</span>,
           },
           { key: 'events', header: 'Calls', align: 'right', width: '8%', cell: (row) => <Num value={row.event_count} /> },
+          { key: 'services', header: 'Services', width: '14%', cell: (row) => <ServiceChips services={row.services} /> },
           {
             key: 'what',
             header: 'Actions',
-            width: '26%',
+            width: '16%',
             priority: 'wide',
             cell: (row) => <ActionList actions={row.actions} />,
           },
           {
             key: 'ips',
             header: 'From',
-            width: '18%',
+            width: '14%',
             priority: 'wide',
             cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{(row.source_ips ?? []).join(', ') || '-'}</span>,
           },
@@ -730,8 +792,8 @@ function SessionLanes({ sessions }) {
 
 /* ── Credentials used ────────────────────────────────────────────────────── */
 
-export function CredentialsUsedSection({ identityId, range, onFilter }) {
-  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'credentials', { timeRange: range }, signal), [identityId, range]);
+export function CredentialsUsedSection({ identityId, state, onFilter }) {
+  const query = useQuery((signal) => fetchIdentityEvents(identityId, 'credentials', eventQuery(state), signal), [identityId, filterKey(state)]);
   const rows = query.data?.credentials_used ?? [];
   return (
     <SectionState query={query}>
@@ -783,6 +845,21 @@ function When({ at }) {
   return (
     <span className="text-[12px] whitespace-nowrap text-ink-2" title={formatDateTime(at)}>
       {formatRelative(at)}
+    </span>
+  );
+}
+
+function ServiceChips({ services }) {
+  const list = services ?? [];
+  if (list.length === 0) return <span className="text-[12px] text-ink-3">-</span>;
+  return (
+    <span className="flex min-w-0 flex-wrap gap-1" title={list.join(', ')}>
+      {list.slice(0, 3).map((service) => (
+        <Tag key={service} tone="neutral" size="sm">
+          {service}
+        </Tag>
+      ))}
+      {list.length > 3 && <span className="self-center text-[11px] text-ink-3">+{list.length - 3}</span>}
     </span>
   );
 }

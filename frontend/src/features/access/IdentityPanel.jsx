@@ -461,6 +461,7 @@ function ActivityPane({ activity, total }) {
   const analytics = activity?.analytics ?? {};
   const services = analytics.top_services ?? [];
   const actions = analytics.top_actions ?? [];
+  const regions = analytics.active_regions ?? [];
   const busiest = services[0]?.count || 1;
   return (
     <>
@@ -479,6 +480,22 @@ function ActivityPane({ activity, total }) {
           tone={analytics.access_denied_rate_pct > 0 ? 'critical' : 'neutral'}
         />
       </dl>
+
+      {regions.length > 0 && (
+        <div>
+          <SectionLabel>Regions</SectionLabel>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {regions.map((entry) => (
+              <li key={entry.region} className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 truncate font-mono text-[11px] text-ink-2">{entry.region}</span>
+                <span data-numeric="" className="shrink-0 text-[11px] text-ink-3">
+                  {formatNumber(entry.count)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {actions.length > 0 && (
         <div>

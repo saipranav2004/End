@@ -94,8 +94,9 @@ export async function fetchIdentity(id, tab = 'overview', extra = {}, signal) {
 
 /**
  * One section of the identity's CloudTrail events.
- * query: { timeRange, service, action, result, resource, sourceIp, credential,
- *          readWrite, page, pageSize, eventId }
+ * query: { timeRange, startDate, endDate, service, action, result, resource,
+ *          sourceIp, credential, readWrite, page, pageSize, eventId }
+ * startDate and endDate are sent only with timeRange 'custom'.
  */
 export async function fetchIdentityEvents(id, section, query = {}, signal) {
   const res = await client.get(`${V1}/identities/${encodeURIComponent(id)}/events`, {
@@ -103,6 +104,8 @@ export async function fetchIdentityEvents(id, section, query = {}, signal) {
     params: params({
       section,
       time_range: query.timeRange,
+      start_date: query.timeRange === 'custom' ? query.startDate : undefined,
+      end_date: query.timeRange === 'custom' ? query.endDate : undefined,
       service: query.service,
       action: query.action,
       result: query.result && query.result !== 'all' ? query.result : undefined,

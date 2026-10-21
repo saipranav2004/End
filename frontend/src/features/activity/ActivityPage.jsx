@@ -41,7 +41,7 @@ export default function ActivityPage() {
     (picked) => {
       const next = new URLSearchParams(searchParams);
       Object.keys(EVENT_DEFAULTS).forEach((key) => {
-        if (key !== 'range' && key !== 'view') next.delete(key);
+        if (!['range', 'from', 'to', 'view'].includes(key)) next.delete(key);
       });
       next.set('identity', picked.id);
       setSearchParams(next, { replace: false });
@@ -81,7 +81,7 @@ export default function ActivityPage() {
         </Panel>
       ) : (
         <>
-          <ActivitySummary identityId={identityId} range={state.range} />
+          <ActivitySummary identityId={identityId} state={state} />
           <Panel prominence="lead" flush className="animate-rise overflow-hidden">
             <EventTimeline identityId={identityId} state={state} patch={patch} clearFilters={clearFilters} leading={picker} />
           </Panel>
