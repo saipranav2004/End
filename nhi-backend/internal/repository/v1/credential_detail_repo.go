@@ -873,7 +873,7 @@ func relationshipLabel(edgeType, direction string) string {
 	case et == "BOUND_TO" && direction == "inbound":
 		return "Used by"
 	case et == "BOUND_TO" && direction == "outbound":
-		return "Bound to"
+		return "Uses"
 	case strings.Contains(et, "ASSUME") && direction == "outbound":
 		return "Can assume"
 	case strings.Contains(et, "ASSUME") && direction == "inbound":
@@ -882,11 +882,42 @@ func relationshipLabel(edgeType, direction string) string {
 		return "Trusted service"
 	case et == "SERVICE_TRUST" && direction == "outbound":
 		return "Trusted by"
+	case et == "CROSS_ACCOUNT" && direction == "outbound":
+		return "Trusts another account"
+	case et == "CROSS_ACCOUNT" && direction == "inbound":
+		return "Trusted by another account"
+	case et == "PASS_ROLE" && direction == "outbound":
+		return "Can hand a role to a service"
+	case et == "PASS_ROLE" && direction == "inbound":
+		return "Can be handed to a service by"
+	case strings.HasPrefix(et, "FEDERATED_") && direction == "inbound":
+		return "Signed in through " + federationName(et)
+	case strings.HasPrefix(et, "FEDERATED_") && direction == "outbound":
+		return "Lets users sign in through " + federationName(et)
+	case et == "ACCESSES" && direction == "outbound":
+		return "Used"
+	case et == "ACCESSES" && direction == "inbound":
+		return "Used by"
+	case et == "CREATED_BY" && direction == "outbound":
+		return "Created by"
+	case et == "CREATED_BY" && direction == "inbound":
+		return "Created"
 	case et == "":
 		return "Related"
 	default:
 		return strings.Title(strings.ToLower(strings.ReplaceAll(et, "_", " ")))
 	}
+}
+
+// federationName is the sign-in system of a FEDERATED_* edge type.
+func federationName(edgeType string) string {
+	switch strings.TrimPrefix(edgeType, "FEDERATED_") {
+	case "SAML":
+		return "SAML (company single sign-on)"
+	case "OIDC":
+		return "OIDC (web identity)"
+	}
+	return "an identity provider"
 }
 
 func (r *CredentialDetailRepository) loadEdgesTouching(ctx context.Context, tenantDB *sql.DB, schema string, arns []string, edgeTypes []string) ([]graphEdgeRow, error) {
@@ -897,18 +928,37 @@ func (r *CredentialDetailRepository) loadEdgesTouching(ctx context.Context, tena
 	typeFilter := ""
 	if len(edgeTypes) > 0 {
 		args = append(args, pqStringArray(edgeTypes))
-		typeFilter = "AND edge_type = ANY($2)"
+		typeFilter = "AND LOWER(edge_type) = ANY($2)"
 	}
 
 	// Configured edges carry no observation time: created_at is when the
 	// discovery run wrote the row, not when the relationship was last used,
 	// so it is not reported as last_observed_at.
+	//
+	// The scanner records which credential an identity runs as (an EC2
+	// instance's role, a function's execution role) in identity_credentials,
+	// not in trust_edges; those rows are the bound_to edges, so a walk can go
+	// identity -> its role -> whatever the role reaches. Bindings to a
+	// deleted identity or credential are left out.
+	bindingFilter := ""
+	if len(edgeTypes) > 0 {
+		bindingFilter = "AND 'bound_to' = ANY($2)"
+	}
 	query := fmt.Sprintf(`
-		SELECT source_arn, target_arn, COALESCE(edge_type,'')
-		FROM %s.trust_edges
-		WHERE (source_arn = ANY($1) OR target_arn = ANY($1))
-		  AND source_arn IS NOT NULL AND target_arn IS NOT NULL %s
-		ORDER BY edge_type, source_arn, target_arn`, schema, typeFilter)
+		SELECT source_arn, target_arn, edge_type FROM (
+			SELECT source_arn, target_arn, LOWER(COALESCE(edge_type,'')) AS edge_type
+			FROM %[1]s.trust_edges
+			WHERE (source_arn = ANY($1) OR target_arn = ANY($1))
+			  AND source_arn IS NOT NULL AND target_arn IS NOT NULL %[2]s
+			UNION
+			SELECT ic.identity_arn, ic.credential_arn, 'bound_to'
+			FROM %[1]s.identity_credentials ic
+			JOIN %[1]s.identities i ON i.id::text = ic.identity_id::text AND i.deleted_at IS NULL
+			JOIN %[1]s.credentials c ON c.id::text = ic.credential_id::text AND c.deleted_at IS NULL
+			WHERE (ic.identity_arn = ANY($1) OR ic.credential_arn = ANY($1))
+			  AND COALESCE(ic.identity_arn, '') <> '' AND COALESCE(ic.credential_arn, '') <> '' %[3]s
+		) e
+		ORDER BY edge_type, source_arn, target_arn`, schema, typeFilter, bindingFilter)
 
 	rows, err := tenantDB.QueryContext(ctx, query, args...)
 	if err != nil {
