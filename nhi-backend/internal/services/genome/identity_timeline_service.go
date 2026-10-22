@@ -69,11 +69,11 @@ func (s *IdentityTimelineService) GetTimeline(ctx context.Context, userID, tenan
 	keys := id.allKeys() // identity key, then the shared workload key
 
 	var entries []timelineEntry
-	if alerts, err := s.repo.Alerts(ctx, sc, keys); readOK("identity timeline alerts", err) {
+	if alerts, err := s.repo.Alerts(ctx, sc, keys); readOK(ctx, "identity timeline alerts", err) {
 		entries = append(entries, anomalyEntries(alerts)...)
 	}
 	versionsKey := id.Key
-	if row, err := s.repo.BaselineMilestones(ctx, sc, keys); readOK("identity timeline baseline", err) && row != nil {
+	if row, err := s.repo.BaselineMilestones(ctx, sc, keys); readOK(ctx, "identity timeline baseline", err) && row != nil {
 		versionsKey = row.Key
 		if row.FirstSeenDate != nil {
 			entries = append(entries, milestone(models.TimelineTypeLearningStarted, *row.FirstSeenDate))
@@ -82,7 +82,7 @@ func (s *IdentityTimelineService) GetTimeline(ctx context.Context, userID, tenan
 			entries = append(entries, milestone(models.TimelineTypeBaselineEstablished, *row.ActiveSince))
 		}
 	}
-	if versions, err := s.repo.PublishedVersions(ctx, sc, versionsKey); readOK("identity timeline versions", err) {
+	if versions, err := s.repo.PublishedVersions(ctx, sc, versionsKey); readOK(ctx, "identity timeline versions", err) {
 		for _, v := range versions {
 			desc := "Version " + strconv.FormatInt(v.Version, 10)
 			entries = append(entries, timelineEntry{

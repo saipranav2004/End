@@ -31,7 +31,7 @@ func (h *DashboardOverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GetOverview(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		sendServerError(w, err, "Failed to retrieve dashboard overview", "DASHBOARD_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve dashboard overview", "DASHBOARD_LOAD_FAILED")
 		return
 	}
 

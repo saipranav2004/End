@@ -3,7 +3,7 @@ package genome
 import (
 	"context"
 	"errors"
-	"log"
+	"nhi-backend-api/internal/logging"
 
 	repo "nhi-backend-api/internal/repository/genome"
 	"nhi-backend-api/internal/scope"
@@ -112,12 +112,12 @@ const APIBasePath = "/api/v1/genome"
 // eventsReadOK reports whether a ClickHouse read succeeded; failures are
 // logged and leave the dependent fields null (graceful degradation, like
 // readOK for the PostgreSQL tables). A not-configured store is not logged.
-func eventsReadOK(op string, err error) bool {
+func eventsReadOK(ctx context.Context, op string, err error) bool {
 	if err == nil {
 		return true
 	}
 	if !errors.Is(err, repo.ErrMonitoringEventsNotConfigured) {
-		log.Printf("%s: monitoring clickhouse read failed: %v", op, err)
+		logging.FromContext(ctx).Warn("monitoring clickhouse read failed, field left null", "op", op, "err", err, "degraded", true)
 	}
 	return false
 }

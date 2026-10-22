@@ -1,9 +1,10 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"runtime/debug"
+
+	"nhi-backend-api/internal/logging"
 )
 
 // Recoverer turns a handler panic into a logged JSON 500 instead of a dropped
@@ -18,7 +19,7 @@ func Recoverer(next http.Handler) http.Handler {
 			if rec == http.ErrAbortHandler {
 				panic(rec)
 			}
-			log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+			logging.FromContext(r.Context()).Error("panic serving request", "method", r.Method, "path", r.URL.Path, "panic", rec, "stack", string(debug.Stack()))
 			respondError(w, r, http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR")
 		}()
 		next.ServeHTTP(w, r)

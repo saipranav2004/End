@@ -3,7 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 
 	models "nhi-backend-api/internal/models/v1"
 	repov1 "nhi-backend-api/internal/repository/v1"
@@ -26,7 +26,7 @@ func (s *DashboardOverviewService) GetOverview(ctx context.Context, userID, tena
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.repo.GetOverview(ctx, resolved, s.activity.ForRequest(resolved))
+	result, err := s.repo.GetOverview(ctx, resolved, s.activity.ForRequest(ctx, resolved))
 	if err != nil {
 		return nil, fmt.Errorf("get tenant-scoped dashboard: %w", err)
 	}
@@ -34,7 +34,7 @@ func (s *DashboardOverviewService) GetOverview(ctx context.Context, userID, tena
 	// still loads, without the card.
 	if s.changes != nil {
 		if rc, err := s.changes.RecentChanges(ctx, resolved); err != nil {
-			log.Printf("dashboard overview: recent changes: %v", err)
+			logging.FromContext(ctx).Warn("dashboard recent changes failed, serving without the card", "err", err)
 		} else {
 			result.RecentChanges = rc
 		}

@@ -93,7 +93,7 @@ func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.Summary(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		writeInvalidOr(w, err, "INVALID_QUERY", "Unable to summarize findings")
+		writeInvalidOr(w, r, err, "INVALID_QUERY", "Unable to summarize findings")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -122,7 +122,7 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, list stri
 			case errors.Is(err, repo.ErrFindingAmbiguous):
 				writeError(w, http.StatusConflict, "AMBIGUOUS_FINDING", "Finding ID matched more than one platform table")
 			default:
-				writeServerError(w, err, "Unable to load finding")
+				writeServerError(w, r, err, "Unable to load finding")
 			}
 			return
 		}
@@ -173,7 +173,7 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, list stri
 	}
 	items, count, err := h.service.List(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		writeInvalidOr(w, err, "INVALID_QUERY", "Unable to load findings")
+		writeInvalidOr(w, r, err, "INVALID_QUERY", "Unable to load findings")
 		return
 	}
 	writeJSON(w, http.StatusOK, models.FindingsResponse{Count: count, Findings: items, Limit: filter.Limit, Offset: filter.Offset})

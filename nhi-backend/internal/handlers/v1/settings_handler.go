@@ -31,7 +31,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GetSettings(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		sendServerError(w, err, "Failed to retrieve settings", "SETTINGS_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve settings", "SETTINGS_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Settings retrieved successfully", Data: result})
@@ -63,7 +63,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 			sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "One or more selected filters do not belong to this tenant", Error: "INVALID_SETTINGS"})
 			return
 		}
-		sendServerError(w, err, "Failed to update settings", "SETTINGS_UPDATE_FAILED")
+		sendServerError(w, r, err, "Failed to update settings", "SETTINGS_UPDATE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Settings updated successfully", Data: result})

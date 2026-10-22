@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -112,7 +112,7 @@ func runAll(ctx context.Context, cancel context.CancelFunc, fns ...func() error)
 			// per-request recovery and would crash the whole process.
 			defer func() {
 				if rec := recover(); rec != nil {
-					log.Printf("dashboard loader panic: %v\n%s", rec, debug.Stack())
+					logging.FromContext(ctx).Error("dashboard loader panic", "panic", rec, "stack", string(debug.Stack()))
 					once.Do(func() { firstErr = fmt.Errorf("dashboard loader panic: %v", rec); cancel() })
 				}
 			}()

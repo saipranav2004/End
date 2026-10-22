@@ -39,7 +39,7 @@ func (h *IdentityHistoryHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id, win)
 	if err != nil {
-		fail(w, "load identity history", err)
+		fail(w, r, "load identity history", err)
 		return
 	}
 	respond(w, env, true)

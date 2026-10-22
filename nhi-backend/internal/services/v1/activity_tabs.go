@@ -2,7 +2,7 @@ package v1
 
 import (
 	"context"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"sync"
 	"time"
 
@@ -96,7 +96,7 @@ func normalizePaging(page, size int) activityPaging {
 func (a *ActivityService) loadLookup(ctx context.Context, resolved *scope.DataScope, accounts []string) *repov1.IdentityLookup {
 	l, err := a.lookup.Load(ctx, resolved.DB, resolved.QSchema(), accounts)
 	if err != nil {
-		log.Printf("identity lookup for activity events: %v (showing raw callers)", err)
+		logging.FromContext(ctx).Warn("identity lookup for activity events failed, showing raw callers", "err", err)
 		return nil
 	}
 	return l
@@ -108,7 +108,7 @@ func (a *ActivityService) loadLookup(ctx context.Context, resolved *scope.DataSc
 func (a *ActivityService) IdentityActivity(ctx context.Context, resolved *scope.DataScope, subj *repov1.ActivitySubject, tr *ResolvedTimeRange, service string, page, pageSize int) *models.IdentityActivityResponse {
 	p := normalizePaging(page, pageSize)
 	resp := emptyIdentityActivity(tr, p)
-	req := a.ForRequest(resolved)
+	req := a.ForRequest(ctx, resolved)
 	if !req.Available() || subj == nil {
 		return resp
 	}
@@ -138,7 +138,7 @@ func (a *ActivityService) IdentityActivity(ctx context.Context, resolved *scope.
 func (a *ActivityService) CredentialActivity(ctx context.Context, resolved *scope.DataScope, subj *repov1.ActivitySubject, tr *ResolvedTimeRange, service string, page, pageSize int) *models.ActivityResponse {
 	p := normalizePaging(page, pageSize)
 	resp := emptyCredentialActivity(tr, p)
-	req := a.ForRequest(resolved)
+	req := a.ForRequest(ctx, resolved)
 	if !req.Available() || subj == nil {
 		return resp
 	}

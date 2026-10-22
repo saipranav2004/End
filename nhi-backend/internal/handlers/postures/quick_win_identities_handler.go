@@ -44,7 +44,7 @@ func (h *QuickWinIdentitiesHandler) Get(w http.ResponseWriter, r *http.Request) 
 	}
 	env, err := h.service.Get(r.Context(), c, ruleID, limit, cursor)
 	if err != nil {
-		fail(w, "load quick-win identities", err)
+		fail(w, r, "load quick-win identities", err)
 		return
 	}
 	respond(w, env, true)

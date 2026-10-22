@@ -1,11 +1,12 @@
 package genome
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
+	"nhi-backend-api/internal/logging"
 	"strings"
 	"time"
 
@@ -72,16 +73,16 @@ func parseIdentityWindow(q url.Values, now time.Time) (svc.TimeWindow, error) {
 // writeIdentityServiceError maps service failures of the identity endpoints:
 // unknown identity → 404 IDENTITY_NOT_FOUND, store failure → 503
 // STORE_UNAVAILABLE, anything else → 500 INTERNAL_ERROR.
-func writeIdentityServiceError(w http.ResponseWriter, endpoint, rid string, err error) {
+func writeIdentityServiceError(ctx context.Context, w http.ResponseWriter, endpoint, rid string, err error) {
 	var unavailable *svc.StoreUnavailableError
 	switch {
 	case errors.Is(err, svc.ErrIdentityNotFound):
 		writeSummaryError(w, http.StatusNotFound, models.MonitoringCodeIdentityNotFound, "The requested identity was not found", rid)
 	case errors.As(err, &unavailable):
-		log.Printf("%s rid=%s: %v", endpoint, rid, err)
+		logging.FromContext(ctx).Warn("genome store unavailable", "endpoint", endpoint, "err", err)
 		writeUnavailable(w, unavailable, rid)
 	default:
-		log.Printf("%s rid=%s: unexpected error: %v", endpoint, rid, err)
+		logging.FromContext(ctx).Error("genome request failed", "endpoint", endpoint, "err", err)
 		writeSummaryError(w, http.StatusInternalServerError, models.MonitoringCodeInternal, "unexpected error", rid)
 	}
 }

@@ -13,10 +13,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
+	"nhi-backend-api/internal/logging"
 	"regexp"
 	"sort"
 	"strconv"
@@ -74,7 +75,7 @@ var (
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("posture api: encode response: %v", err)
+		slog.Error("posture api: encode response", "err", err)
 		status, body = http.StatusInternalServerError,
 			[]byte(`{"error":{"code":"internal_error","message":"failed to encode response"}}`)
 	}
@@ -92,7 +93,7 @@ func invalid(w http.ResponseWriter, field, message string) {
 }
 
 // fail translates a service error into the documented error body.
-func fail(w http.ResponseWriter, what string, err error) {
+func fail(w http.ResponseWriter, r *http.Request, what string, err error) {
 	var pe *svc.ParamError
 	switch {
 	case errors.As(err, &pe):
@@ -108,7 +109,7 @@ func fail(w http.ResponseWriter, what string, err error) {
 	case errors.Is(err, svc.ErrConflict):
 		writeError(w, http.StatusConflict, codeConflict, "the finding was changed by someone else; reload it and try again", "If-Match")
 	default:
-		log.Printf("posture api: %s failed: %v", what, err)
+		logging.FromContext(r.Context()).Error("posture api failed", "what", what, "err", err)
 		writeError(w, http.StatusInternalServerError, codeInternal, "failed to "+what, "")
 	}
 }

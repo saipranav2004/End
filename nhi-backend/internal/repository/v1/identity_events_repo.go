@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"nhi-backend-api/internal/logging"
 
 	"github.com/lib/pq"
 
@@ -105,7 +106,7 @@ func (r *IdentityEventsRepository) GrantFor(ctx context.Context, resolved *scope
 	}
 	var entries []map[string]interface{}
 	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &entries)
+		logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(raw, &entries))
 	}
 	return grantResponse(bestGrant(entries, service, eventName)), nil
 }

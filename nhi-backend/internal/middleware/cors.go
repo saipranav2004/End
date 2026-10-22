@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/rs/cors"
@@ -16,7 +16,7 @@ func SetupCORS(cfg config.CORSConfig) func(http.Handler) http.Handler {
 		// Only matters when the console is served from another origin; behind
 		// the console's nginx (same origin) CORS is not used at all.
 		origins = []string{"http://localhost:3000", "http://localhost:5173"}
-		log.Printf("cors: no allowed origins configured; allowing only %v (set NHI_CORS_ALLOWED_ORIGINS)", origins)
+		slog.Warn("cors: no allowed origins configured, allowing only the defaults (set NHI_CORS_ALLOWED_ORIGINS)", "origins", origins)
 	}
 
 	c := cors.New(cors.Options{

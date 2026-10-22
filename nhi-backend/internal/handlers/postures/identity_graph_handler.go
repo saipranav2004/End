@@ -62,7 +62,7 @@ func (h *IdentityGraphHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id, f)
 	if err != nil {
-		fail(w, "load identity graph", err)
+		fail(w, r, "load identity graph", err)
 		return
 	}
 	respond(w, env, true)

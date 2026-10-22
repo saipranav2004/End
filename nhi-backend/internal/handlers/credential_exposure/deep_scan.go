@@ -49,7 +49,7 @@ func (h *DeepScanHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "CLIENT_NOT_FOUND", "This client has no scanned repositories on that platform in your workspace")
 		return
 	case err != nil:
-		writeInvalidOr(w, err, "INVALID_REPOSITORY", "Unable to request the deep scan")
+		writeInvalidOr(w, r, err, "INVALID_REPOSITORY", "Unable to request the deep scan")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, accepted)
@@ -77,7 +77,7 @@ func (h *DeepScanHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.service.Status(r.Context(), claims.UserID, claims.TenantID, claims.DBName, clientID, repoKey, platform)
 	if err != nil {
-		writeServerError(w, err, "Unable to load repository scan status")
+		writeServerError(w, r, err, "Unable to load repository scan status")
 		return
 	}
 	if len(items) == 0 {

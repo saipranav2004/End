@@ -20,11 +20,15 @@ type Repository struct {
 
 // New wraps the client. It returns nil when ClickHouse is not available, so a
 // nil Repository means "activity data disabled"; check Enabled before use.
-func New(client *chclient.Client) *Repository {
+func New(client *chclient.Client, opts ...Option) *Repository {
 	if client == nil {
 		return nil
 	}
-	return &Repository{conn: client.Conn(), table: client.Table(), timeout: client.Timeout(), client: client}
+	r := &Repository{conn: client.Conn(), table: client.Table(), timeout: client.Timeout(), client: client}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Enabled reports whether ClickHouse queries can run: configured and

@@ -167,7 +167,7 @@ func (h *IdentityDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 				Error:   "IDENTITY_NOT_FOUND",
 			})
 		default:
-			sendServerError(w, err, "Failed to retrieve identity detail", "IDENTITY_DETAIL_FAILED")
+			sendServerError(w, r, err, "Failed to retrieve identity detail", "IDENTITY_DETAIL_FAILED")
 		}
 		return
 	}

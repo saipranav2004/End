@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
+	"nhi-backend-api/internal/logging"
 	"sort"
 	"strings"
 
@@ -48,17 +48,17 @@ func writeAPIError(w http.ResponseWriter, status int, message, code string) {
 // writeInvalidOr answers 400 with the message of a client mistake, else hides
 // the failure behind a logged 500 (503 TENANT_NOT_PROVISIONED when the tenant
 // schema lacks the table).
-func writeInvalidOr(w http.ResponseWriter, err error, invalidCode, failMessage string) {
+func writeInvalidOr(w http.ResponseWriter, r *http.Request, err error, invalidCode, failMessage string) {
 	var invalid *svc.InvalidInputError
 	if errors.As(err, &invalid) {
 		writeError(w, http.StatusBadRequest, invalidCode, invalid.Msg)
 		return
 	}
-	writeServerError(w, err, failMessage)
+	writeServerError(w, r, err, failMessage)
 }
 
-func writeServerError(w http.ResponseWriter, err error, message string) {
-	log.Printf("credential exposure: %s: %v", message, err)
+func writeServerError(w http.ResponseWriter, r *http.Request, err error, message string) {
+	logging.FromContext(r.Context()).Error("credential exposure: "+message, "err", err)
 	if database.IsMissingTable(err) {
 		writeError(w, http.StatusServiceUnavailable, database.NotProvisionedCode, database.NotProvisionedMessage)
 		return

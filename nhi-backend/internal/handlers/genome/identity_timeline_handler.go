@@ -64,7 +64,7 @@ func (h *IdentityTimelineHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeIdentityServiceError(w, "identity timeline", rid, err)
+		writeIdentityServiceError(r.Context(), w, "identity timeline", rid, err)
 		return
 	}
 	writeSummaryJSON(w, http.StatusOK, models.MonitoringEnvelope{

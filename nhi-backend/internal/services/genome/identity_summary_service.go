@@ -63,18 +63,18 @@ func (s *IdentitySummaryService) GetIdentity(ctx context.Context, userID, tenant
 	}
 
 	// ---- PostgreSQL monitoring tables -------------------------------------
-	if b, err := s.repo.BaselineSummary(ctx, sc, keys); readOK("identity baseline summary", err) && b != nil {
+	if b, err := s.repo.BaselineSummary(ctx, sc, keys); readOK(ctx, "identity baseline summary", err) && b != nil {
 		out.BaselineSummary = &models.IdentityBaselineSummary{Status: b.Status, BuiltDays: b.BuiltDays, RequiredDays: b.RequiredDays}
 	}
-	if n, err := s.repo.OpenAlertCount(ctx, sc, keys); readOK("identity open alerts", err) {
+	if n, err := s.repo.OpenAlertCount(ctx, sc, keys); readOK(ctx, "identity open alerts", err) {
 		out.HeadlineMetrics.OpenAnomalies = intPtr(n)
 	}
 
 	// ---- ClickHouse log_events ------------------------------------------------
-	if calls, err := s.events.TotalCalls(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName, p.Window.From, p.Window.To); eventsReadOK("identity calls in window", err) {
+	if calls, err := s.events.TotalCalls(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName, p.Window.From, p.Window.To); eventsReadOK(ctx, "identity calls in window", err) {
 		out.HeadlineMetrics.CallsInWindow = &calls
 	}
-	if last, err := s.events.LastSeen(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName); eventsReadOK("identity last seen", err) {
+	if last, err := s.events.LastSeen(ctx, res.scope.AccountIDs, id.Key.SourceType, id.Key.IdentityName); eventsReadOK(ctx, "identity last seen", err) {
 		out.HeadlineMetrics.LastSeen = last
 	}
 	return out, nil

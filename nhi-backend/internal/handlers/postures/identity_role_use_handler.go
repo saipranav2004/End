@@ -35,7 +35,7 @@ func (h *IdentityRoleUseHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id)
 	if err != nil {
-		fail(w, "load identity role use", err)
+		fail(w, r, "load identity role use", err)
 		return
 	}
 	respond(w, env, true)

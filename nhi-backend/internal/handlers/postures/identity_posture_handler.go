@@ -39,7 +39,7 @@ func (h *IdentityPostureHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id, win)
 	if err != nil {
-		fail(w, "load identity posture", err)
+		fail(w, r, "load identity posture", err)
 		return
 	}
 	respond(w, env, true)

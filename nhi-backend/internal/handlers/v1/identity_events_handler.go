@@ -100,7 +100,7 @@ func (h *IdentityEventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 				Success: false, Message: fmt.Sprintf("event with id '%s' not found for this identity", query.EventID),
 				Error: "EVENT_NOT_FOUND"})
 		default:
-			sendServerError(w, err, "Failed to retrieve identity events", "IDENTITY_EVENTS_FAILED")
+			sendServerError(w, r, err, "Failed to retrieve identity events", "IDENTITY_EVENTS_FAILED")
 		}
 		return
 	}

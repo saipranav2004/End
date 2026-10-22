@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -53,7 +53,7 @@ func (h *AWSIntegrationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	result, err := h.service.Get(r.Context(), svcv1.AWSCaller{TenantID: claims.TenantID, Schema: claims.DBName, Actor: claims.UserID}, canManageAWS(claims.Role))
 	if err != nil {
-		writeAWSError(w, err, "Failed to load the AWS connection", "AWS_INTEGRATION_LOAD_FAILED")
+		writeAWSError(w, r, err, "Failed to load the AWS connection", "AWS_INTEGRATION_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "AWS connection retrieved", Data: result})
@@ -70,7 +70,7 @@ func (h *AWSIntegrationHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.Verify(r.Context(), caller, req.RoleARN, req.Regions)
 	if err != nil {
-		writeAWSError(w, err, "Failed to verify the AWS connection", "AWS_VERIFY_FAILED")
+		writeAWSError(w, r, err, "Failed to verify the AWS connection", "AWS_VERIFY_FAILED")
 		return
 	}
 	message := "Some checks need attention"
@@ -95,7 +95,7 @@ func (h *AWSIntegrationHandler) UpdateRegions(w http.ResponseWriter, r *http.Req
 	}
 	account, err := h.service.UpdateRegions(r.Context(), caller, accountID, req.Regions)
 	if err != nil {
-		writeAWSError(w, err, "Failed to update the regions", "AWS_REGIONS_UPDATE_FAILED")
+		writeAWSError(w, r, err, "Failed to update the regions", "AWS_REGIONS_UPDATE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Regions updated", Data: account})
@@ -116,7 +116,7 @@ func (h *AWSIntegrationHandler) Exposure(w http.ResponseWriter, r *http.Request)
 	}
 	result, err := h.service.SetExposure(r.Context(), caller, accountID, req)
 	if err != nil {
-		writeAWSError(w, err, "Failed to update exposed-credential scanning", "AWS_EXPOSURE_UPDATE_FAILED")
+		writeAWSError(w, r, err, "Failed to update exposed-credential scanning", "AWS_EXPOSURE_UPDATE_FAILED")
 		return
 	}
 	message := "Exposed-credential scanning updated"
@@ -137,7 +137,7 @@ func (h *AWSIntegrationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.RequestSync(r.Context(), caller, accountID)
 	if err != nil {
-		writeAWSError(w, err, "Failed to start the sync", "AWS_SYNC_FAILED")
+		writeAWSError(w, r, err, "Failed to start the sync", "AWS_SYNC_FAILED")
 		return
 	}
 	message := "Sync queued"
@@ -158,7 +158,7 @@ func (h *AWSIntegrationHandler) Remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.RemoveAccount(r.Context(), caller, accountID); err != nil {
-		writeAWSError(w, err, "Failed to remove the account", "AWS_REMOVE_FAILED")
+		writeAWSError(w, r, err, "Failed to remove the account", "AWS_REMOVE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "AWS account removed", Data: map[string]string{"account_id": accountID}})
@@ -210,7 +210,7 @@ func decodeAWSBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 
 // writeAWSError maps service errors to responses. Messages are written for
 // the person on the setup page; internal detail stays in the server log.
-func writeAWSError(w http.ResponseWriter, err error, fallback, fallbackCode string) {
+func writeAWSError(w http.ResponseWriter, r *http.Request, err error, fallback, fallbackCode string) {
 	var invalidARN *awsconnect.ErrInvalidRoleARN
 	var invalidRegions *awsconnect.ErrInvalidRegions
 	var invalidSecret *awsconnect.ErrInvalidSecretARN
@@ -231,12 +231,12 @@ func writeAWSError(w http.ResponseWriter, err error, fallback, fallbackCode stri
 		sendJSONResponse(w, http.StatusTooManyRequests, models.APIResponse{Success: false, Message: "A connection check is already running. Wait for it to finish", Error: "AWS_VERIFY_IN_PROGRESS"})
 	case errors.Is(err, repository.ErrAWSTablesMissing), errors.Is(err, svcv1.ErrAWSTenantNotConfigured):
 		if errors.Is(err, repository.ErrAWSTablesMissing) {
-			log.Printf("aws integration: %v", err)
+			slog.Warn("aws integration: tenant tables missing", "err", err)
 		}
 		sendJSONResponse(w, http.StatusServiceUnavailable, models.APIResponse{Success: false, Message: "AWS connections are not set up for your workspace yet. Contact support", Error: "AWS_PLATFORM_NOT_CONFIGURED"})
 	case errors.Is(err, svcv1.ErrAWSUnavailable):
 		sendJSONResponse(w, http.StatusServiceUnavailable, models.APIResponse{Success: false, Message: "AWS cannot be reached right now. Try again shortly", Error: "AWS_UNAVAILABLE"})
 	default:
-		sendServerError(w, err, fallback, fallbackCode)
+		sendServerError(w, r, err, fallback, fallbackCode)
 	}
 }

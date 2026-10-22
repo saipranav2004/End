@@ -303,7 +303,7 @@ func TestIntegrationActivityTabWithRealEvents(t *testing.T) {
 	}
 
 	// last-seen lookups: found, cached on repeat, absent for unknown keys
-	req := activity.ForRequest(resolved)
+	req := activity.ForRequest(ctx, resolved)
 	keys := []string{devUser, devKey, quietARN}
 	first := req.LastSeen(ctx, keys)
 	second := req.LastSeen(ctx, keys)

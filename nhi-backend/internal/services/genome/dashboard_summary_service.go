@@ -2,7 +2,7 @@ package genome
 
 import (
 	"context"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"sort"
 	"strings"
 	"time"
@@ -126,7 +126,7 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 
 	// ---- baseline cards ----------------------------------------------------
 	baselines, err := s.repo.BaselineStates(ctx, sc, keys)
-	if readOK("dashboard summary baselines", err) {
+	if readOK(ctx, "dashboard summary baselines", err) {
 		established := 0
 		for _, id := range ids {
 			if b, ok := set.baselineFor(baselines, id); ok && b.Status == "active" {
@@ -141,7 +141,7 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 	}
 
 	// ---- open anomalies (cards window) -------------------------------------
-	if n, err := s.repo.CountOpenAlerts(ctx, sc, keys, p.Cards.From, p.Cards.To); readOK("dashboard summary open alerts", err) {
+	if n, err := s.repo.CountOpenAlerts(ctx, sc, keys, p.Cards.From, p.Cards.To); readOK(ctx, "dashboard summary open alerts", err) {
 		out.Cards.OpenAnomalies = intPtr(n)
 	}
 	// critical_anomalies and mean_provenance_confidence come from ClickHouse
@@ -151,7 +151,7 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 
 	// ---- most anomalous identities -----------------------------------------
 	risk, err := s.repo.LatestRiskScores(ctx, sc, keys)
-	riskOK := readOK("dashboard summary risk scores", err)
+	riskOK := readOK(ctx, "dashboard summary risk scores", err)
 	if riskOK {
 		type scored struct {
 			idx int
@@ -198,13 +198,13 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 
 	// ---- departures by dimension / anomalies per day (charts window) -------
 	dims, err := s.repo.OpenAlertsByDimension(ctx, sc, keys, p.Charts.From, p.Charts.To)
-	if readOK("dashboard summary alerts by dimension", err) {
+	if readOK(ctx, "dashboard summary alerts by dimension", err) {
 		for _, d := range dims {
 			out.DeparturesByDimension = append(out.DeparturesByDimension, models.DashboardDimensionCount{Dimension: d.Dimension, Count: d.Count})
 		}
 	}
 	days, err := s.repo.AlertsByDay(ctx, sc, keys, p.Charts.From, p.Charts.To)
-	if readOK("dashboard summary alerts by day", err) {
+	if readOK(ctx, "dashboard summary alerts by day", err) {
 		for _, d := range days {
 			out.AnomaliesByDay = append(out.AnomaliesByDay, models.DashboardDayCount{Day: d.Day.Format("2006-01-02"), Count: d.Count})
 		}
@@ -214,7 +214,7 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 	// §4.1: "the most recent 10 identities where the baseline became active
 	// or a new version was published" — one row per identity, newest event.
 	recent, err := s.repo.RecentlyBaselined(ctx, sc, keys, summaryRecentFeedRows)
-	if readOK("dashboard summary recently baselined", err) {
+	if readOK(ctx, "dashboard summary recently baselined", err) {
 		seen := map[int]struct{}{}
 		for _, ev := range recent {
 			idx, known := set.indexOf(ev.Key)
@@ -240,14 +240,14 @@ func (s *DashboardSummaryService) GetSummary(ctx context.Context, userID, tenant
 
 // readOK reports whether a monitoring-table read succeeded; failures are
 // logged and leave the dependent fields null/empty (graceful degradation).
-func readOK(op string, err error) bool {
+func readOK(ctx context.Context, op string, err error) bool {
 	if err == nil {
 		return true
 	}
 	if repo.IsMonitoringTableMissing(err) {
-		log.Printf("genome: %s: monitoring table not present in the tenant schema: %v", op, err)
+		logging.FromContext(ctx).Warn("genome: monitoring table not present in the tenant schema", "op", op, "err", err)
 	} else {
-		log.Printf("genome: %s failed: %v", op, err)
+		logging.FromContext(ctx).Warn("genome read failed, field left empty", "op", op, "err", err, "degraded", true)
 	}
 	return false
 }

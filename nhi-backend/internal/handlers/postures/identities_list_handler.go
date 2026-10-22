@@ -34,7 +34,7 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.List(r.Context(), c, filter)
 	if err != nil {
-		fail(w, "list identities", err)
+		fail(w, r, "list identities", err)
 		return
 	}
 	respond(w, env, true)

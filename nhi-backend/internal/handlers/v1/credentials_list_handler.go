@@ -143,7 +143,7 @@ func (h *CredentialsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.credentialsService.GetCredentials(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		sendServerError(w, err, "Failed to retrieve credentials", "CREDENTIALS_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve credentials", "CREDENTIALS_LOAD_FAILED")
 		return
 	}
 

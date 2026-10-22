@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"nhi-backend-api/internal/logging"
 	"regexp"
 	"sort"
 	"strings"
@@ -33,6 +34,11 @@ var summaryRequestIDRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 // summaryRequestID echoes a well-formed client X-Request-ID or mints one.
 func summaryRequestID(r *http.Request) string {
+	// The id the request logger and the X-Request-ID response header carry, so a
+	// support ticket quoting the body's request_id finds the log lines.
+	if ri := logging.RequestFrom(r.Context()); ri != nil && ri.ID != "" {
+		return ri.ID
+	}
 	if id := strings.TrimSpace(r.Header.Get("X-Request-ID")); summaryRequestIDRE.MatchString(id) {
 		return id
 	}

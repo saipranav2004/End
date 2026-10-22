@@ -2,8 +2,8 @@ package v1
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
+	"nhi-backend-api/internal/logging"
 
 	"nhi-backend-api/internal/database"
 	"nhi-backend-api/internal/middleware"
@@ -36,7 +36,7 @@ func (h *FilterHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 
 	filters, err := h.filterService.GetFilters(r.Context(), claims.UserID, claims.TenantID, claims.DBName)
 	if err != nil {
-		sendServerError(w, err, "Failed to retrieve filter options", "FILTERS_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve filter options", "FILTERS_LOAD_FAILED")
 		return
 	}
 
@@ -49,8 +49,8 @@ func (h *FilterHandler) GetFilters(w http.ResponseWriter, r *http.Request) {
 
 // sendServerError logs err and answers 500, or 503 TENANT_NOT_PROVISIONED
 // when the tenant schema lacks a table this endpoint reads.
-func sendServerError(w http.ResponseWriter, err error, message, code string) {
-	log.Printf("%s: %v", code, err)
+func sendServerError(w http.ResponseWriter, r *http.Request, err error, message, code string) {
+	logging.FromContext(r.Context()).Error(message, "code", code, "err", err)
 	if database.IsMissingTable(err) {
 		sendJSONResponse(w, http.StatusServiceUnavailable, models.APIResponse{Success: false, Message: database.NotProvisionedMessage, Error: database.NotProvisionedCode})
 		return

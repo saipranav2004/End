@@ -146,7 +146,7 @@ func (h *IdentitiesListHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GetIdentities(r.Context(), claims.UserID, claims.TenantID, claims.DBName, filter)
 	if err != nil {
-		sendServerError(w, err, "Failed to retrieve identities", "IDENTITIES_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve identities", "IDENTITIES_LOAD_FAILED")
 		return
 	}
 

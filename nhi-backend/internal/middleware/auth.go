@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"nhi-backend-api/internal/config"
+	"nhi-backend-api/internal/logging"
 	"nhi-backend-api/internal/models"
 	"nhi-backend-api/pkg/jwt"
 )
@@ -60,11 +61,13 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		if m.validator == nil {
+			logging.FromContext(r.Context()).Error("auth state validator is not configured")
 			respondError(w, r, http.StatusServiceUnavailable, "Authentication state validation is unavailable", "AUTH_STATE_UNAVAILABLE")
 			return
 		}
 		valid, role, err := m.validator.ValidateAuthContext(r.Context(), claims.UserID, claims.TenantID, claims.DBName, claims.ID)
 		if err != nil {
+			logging.FromContext(r.Context()).Error("auth state check failed", "err", err, "tenant_id", claims.TenantID)
 			respondError(w, r, http.StatusServiceUnavailable, "Unable to verify account and tenant status", "AUTH_STATE_CHECK_FAILED")
 			return
 		}
@@ -73,12 +76,14 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 		claims.Role = role // the database's current role, not the token's
+		logging.RequestFrom(r.Context()).SetActor(claims.TenantID, claims.UserID)
 		ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func respondUnauthorized(w http.ResponseWriter, r *http.Request, message string) {
+	logging.FromContext(r.Context()).Warn("authentication rejected", "reason", message)
 	respondError(w, r, http.StatusUnauthorized, message, "UNAUTHORIZED")
 }
 
@@ -112,6 +117,9 @@ var requestIDRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 // requestID echoes a well-formed client X-Request-ID or mints one (the
 // genome handlers do the same).
 func requestID(r *http.Request) string {
+	if ri := logging.RequestFrom(r.Context()); ri != nil && ri.ID != "" {
+		return ri.ID // the id the request logger and the response header already carry
+	}
 	if id := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestIDRE.MatchString(id) {
 		return id
 	}

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/netip"
+	"nhi-backend-api/internal/logging"
 	"strconv"
 	"strings"
 	"time"
@@ -126,6 +126,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.Login(r.Context(), req)
 	if errors.Is(err, services.ErrAccountDisabled) {
+		logging.Audit(r.Context(), "login", req.Login(), "", "", "account_disabled")
 		// Only reachable with the right password, so saying so leaks nothing.
 		sendJSON(w, http.StatusForbidden, models.APIResponse{
 			Success: false,
@@ -135,7 +136,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("login failed: %v", err)
+		logging.FromContext(r.Context()).Warn("login failed", "err", err)
+		logging.Audit(r.Context(), "login", req.Login(), "", "", "failure")
 		sendJSON(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
 			Message: "Invalid email/username or password",
@@ -144,6 +146,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logging.Audit(r.Context(), "login", req.Login(), "", "", "success")
 	sendJSON(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Message: "Login successful",
@@ -184,7 +187,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.authService.Refresh(r.Context(), token)
 	if err != nil {
-		log.Printf("refresh failed: %v", err)
+		logging.FromContext(r.Context()).Warn("refresh failed", "err", err)
+		logging.Audit(r.Context(), "refresh", "", "", "", "failure")
 		sendJSON(w, http.StatusUnauthorized, models.APIResponse{
 			Success: false,
 			Message: "Invalid or expired refresh token",
@@ -206,7 +210,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.authService.Logout(r.Context(), token); err != nil {
-		log.Printf("logout failed: %v", err)
+		logging.FromContext(r.Context()).Error("logout failed", "err", err)
 		sendJSON(w, http.StatusInternalServerError, models.APIResponse{
 			Success: false,
 			Message: "Logout failed",
@@ -214,6 +218,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	logging.Audit(r.Context(), "logout", "", "", "", "success")
 	sendJSON(w, http.StatusOK, models.APIResponse{Success: true, Message: "Logged out"})
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"nhi-backend-api/internal/logging"
 	"strings"
 
 	"github.com/lib/pq"
@@ -54,7 +55,7 @@ func (r *PermissionSourceRepository) Find(ctx context.Context, resolved *scope.D
 
 	var entries []map[string]interface{}
 	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &entries)
+		logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(raw, &entries))
 	}
 	return grantResponse(bestGrant(entries, service, eventName)), nil
 }

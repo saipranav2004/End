@@ -44,6 +44,7 @@ type HandlerContainer struct {
 
 func SetupRoutes(h HandlerContainer) *mux.Router {
 	r := mux.NewRouter()
+	r.Use(middleware.RequestID)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.Recoverer)
 

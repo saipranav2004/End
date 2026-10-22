@@ -158,7 +158,7 @@ func (h *CredentialDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 				Error:   "CREDENTIAL_NOT_FOUND",
 			})
 		default:
-			sendServerError(w, err, "Failed to retrieve credential detail", "CREDENTIAL_DETAIL_FAILED")
+			sendServerError(w, r, err, "Failed to retrieve credential detail", "CREDENTIAL_DETAIL_FAILED")
 		}
 		return
 	}

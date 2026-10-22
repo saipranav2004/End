@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
+	"nhi-backend-api/internal/logging"
 	"sort"
 	"strings"
 	"sync"
@@ -73,6 +73,7 @@ func (s *IdentityEventsService) Get(ctx context.Context, userID, tenantID, dbNam
 	}
 
 	env := &eventsEnv{
+		ctx:   ctx,
 		ident: ident,
 		q:     q,
 		tr:    tr,
@@ -80,7 +81,7 @@ func (s *IdentityEventsService) Get(ctx context.Context, userID, tenantID, dbNam
 			return s.repo.GrantFor(ctx, resolved, credentialID, service, eventName)
 		},
 	}
-	if req := s.activity.ForRequest(resolved); req.Available() {
+	if req := s.activity.ForRequest(ctx, resolved); req.Available() {
 		env.store = s.activity.ch
 		env.accounts = req.tenantAccounts(ctx)
 	}
@@ -90,8 +91,9 @@ func (s *IdentityEventsService) Get(ctx context.Context, userID, tenantID, dbNam
 // eventsEnv holds everything one request needs, so the section logic can be
 // tested without a database.
 type eventsEnv struct {
-	store    eventStore // nil when ClickHouse is unavailable
-	accounts []string   // the tenant's accounts: the isolation boundary
+	ctx      context.Context // the request, so log lines carry its id
+	store    eventStore      // nil when ClickHouse is unavailable
+	accounts []string        // the tenant's accounts: the isolation boundary
 	ident    *repov1.EventsContext
 	q        models.IdentityEventsQuery
 	tr       *ResolvedTimeRange
@@ -197,12 +199,19 @@ func (e *eventsEnv) filter() chrepo.EventFilter {
 }
 
 // fail records a ClickHouse failure; the section is then served empty.
+func (e *eventsEnv) reqCtx() context.Context {
+	if e.ctx == nil {
+		return context.Background()
+	}
+	return e.ctx
+}
+
 func (e *eventsEnv) fail(what string, err error) {
 	msg := err.Error()
 	if len(msg) > 300 { // ClickHouse errors echo the whole query
 		msg = msg[:300] + "..."
 	}
-	log.Printf("identity events %s: %s", what, msg)
+	logging.FromContext(e.reqCtx()).Warn("identity events section failed, serving it empty", "what", what, "err", msg, "degraded", true)
 	e.mu.Lock()
 	e.failed = true
 	e.mu.Unlock()
@@ -341,7 +350,7 @@ func (e *eventsEnv) detail(ctx context.Context) (*models.IdentityEventsDetailRes
 		}
 		g, err := e.grant(ctx, cred.ID, chrepo.ServiceName(ev.EventSource), ev.EventName)
 		if err != nil {
-			log.Printf("identity events permission source: %v", err)
+			logging.FromContext(ctx).Warn("identity events permission source failed", "err", err)
 			return
 		}
 		grant = g

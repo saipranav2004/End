@@ -2,7 +2,7 @@ package v1
 
 import (
 	"context"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,8 +91,8 @@ func NewActivityService(ch *chrepo.Repository, lookup *repov1.IdentityLookupRepo
 }
 
 // ForRequest returns the ActivitySource for one request. It is never nil.
-func (a *ActivityService) ForRequest(resolved *scope.DataScope) *RequestActivity {
-	r := &RequestActivity{svc: a, resolved: resolved}
+func (a *ActivityService) ForRequest(ctx context.Context, resolved *scope.DataScope) *RequestActivity {
+	r := &RequestActivity{svc: a, resolved: resolved, ctx: ctx}
 	if resolved != nil {
 		r.tenantID = resolved.TenantID
 	}
@@ -105,6 +105,7 @@ type RequestActivity struct {
 	resolved *scope.DataScope
 	tenantID string
 	degraded atomic.Bool
+	ctx      context.Context // the request, so log lines carry its id
 }
 
 var _ repov1.ActivitySource = (*RequestActivity)(nil)
@@ -115,12 +116,19 @@ func (r *RequestActivity) Available() bool {
 
 func (r *RequestActivity) Degraded() bool { return r != nil && r.degraded.Load() }
 
+func (r *RequestActivity) reqCtx() context.Context {
+	if r.ctx == nil {
+		return context.Background()
+	}
+	return r.ctx
+}
+
 func (r *RequestActivity) fail(what string, err error) {
 	msg := err.Error()
 	if len(msg) > 300 { // ClickHouse errors echo the whole query
 		msg = msg[:300] + "..."
 	}
-	log.Printf("clickhouse %s: %s (serving Postgres data only)", what, msg)
+	logging.FromContext(r.reqCtx()).Warn("clickhouse query failed, serving Postgres data only", "what", what, "err", msg, "degraded", true)
 	r.degraded.Store(true)
 }
 

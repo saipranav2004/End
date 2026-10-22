@@ -51,7 +51,7 @@ func (s *CredentialDetailService) GetDetail(ctx context.Context, userID, tenantI
 	}
 	f.TimeRange = tr.Label
 
-	src := s.activity.ForRequest(resolved)
+	src := s.activity.ForRequest(ctx, resolved)
 	switch f.Tab {
 	case "overview":
 		return s.repo.GetOverview(ctx, resolved, f.CredentialID, src)

@@ -56,7 +56,7 @@ func (h *PermissionSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "credential not found", Error: "CREDENTIAL_NOT_FOUND"})
 			return
 		}
-		sendServerError(w, err, "Failed to look up the permission source", "PERMISSION_SOURCE_FAILED")
+		sendServerError(w, r, err, "Failed to look up the permission source", "PERMISSION_SOURCE_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Permission source retrieved successfully", Data: result})

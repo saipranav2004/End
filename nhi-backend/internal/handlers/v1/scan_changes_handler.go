@@ -59,7 +59,7 @@ func (h *ScanChangesHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.ListScans(r.Context(), claims.UserID, claims.TenantID, claims.DBName, limit)
 	if err != nil {
-		sendServerError(w, err, "Failed to list scans", "SCANS_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to list scans", "SCANS_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scans retrieved successfully", Data: result})
@@ -128,7 +128,7 @@ func (h *ScanChangesHandler) Changes(w http.ResponseWriter, r *http.Request) {
 		sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "Scan not found", Error: "SCAN_NOT_FOUND"})
 		return
 	case err != nil:
-		sendServerError(w, err, "Failed to retrieve scan changes", "SCAN_CHANGES_LOAD_FAILED")
+		sendServerError(w, r, err, "Failed to retrieve scan changes", "SCAN_CHANGES_LOAD_FAILED")
 		return
 	}
 	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scan changes retrieved successfully", Data: result})

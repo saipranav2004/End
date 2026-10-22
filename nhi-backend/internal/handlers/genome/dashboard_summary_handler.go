@@ -3,9 +3,9 @@ package genome
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
+	"nhi-backend-api/internal/logging"
 	"strings"
 	"time"
 
@@ -74,11 +74,11 @@ func (h *DashboardSummaryHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var unavailable *svc.StoreUnavailableError
 		if errors.As(err, &unavailable) {
-			log.Printf("dashboard summary rid=%s: %v", rid, err)
+			logging.FromContext(r.Context()).Warn("genome store unavailable", "endpoint", "dashboard summary", "err", err)
 			writeUnavailable(w, unavailable, rid)
 			return
 		}
-		log.Printf("dashboard summary rid=%s: unexpected error: %v", rid, err)
+		logging.FromContext(r.Context()).Error("genome request failed", "endpoint", "dashboard summary", "err", err)
 		writeSummaryError(w, http.StatusInternalServerError, models.MonitoringCodeInternal, "unexpected error", rid)
 		return
 	}

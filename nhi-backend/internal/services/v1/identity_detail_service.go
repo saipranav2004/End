@@ -52,7 +52,7 @@ func (s *IdentityDetailService) GetDetail(ctx context.Context, userID, tenantID,
 	}
 	f.TimeRange = tr.Label
 
-	src := s.activity.ForRequest(resolved)
+	src := s.activity.ForRequest(ctx, resolved)
 	switch f.Tab {
 	case "overview":
 		return s.repo.GetOverview(ctx, resolved, f.IdentityID, src)

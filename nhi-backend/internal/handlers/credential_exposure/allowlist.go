@@ -32,7 +32,7 @@ func (h *AllowlistHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := h.service.List(r.Context(), claims.UserID, claims.TenantID, claims.DBName, id)
 	if err != nil {
-		writeServerError(w, err, "Unable to load allowlist")
+		writeServerError(w, r, err, "Unable to load allowlist")
 		return
 	}
 	writeJSON(w, http.StatusOK, models.AllowlistListResponse{Entries: entries})
@@ -53,7 +53,7 @@ func (h *AllowlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.DismissedBy = claims.UserID // the signed-in user, never the client's claim
 	entry, err := h.service.Upsert(r.Context(), claims.UserID, claims.TenantID, claims.DBName, req)
 	if err != nil {
-		writeAllowlistError(w, "upsert", err)
+		writeAllowlistError(w, r, "upsert", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "entry": entry})
@@ -73,7 +73,7 @@ func (h *AllowlistHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	ok, err := h.service.Delete(r.Context(), claims.UserID, claims.TenantID, claims.DBName, req)
 	if err != nil {
-		writeAllowlistError(w, "delete", err)
+		writeAllowlistError(w, r, "delete", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, models.OKResponse{OK: ok})
@@ -81,6 +81,6 @@ func (h *AllowlistHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // writeAllowlistError returns validation errors (safe messages) as 400 and
 // hides everything else (database/resolver detail) behind a generic 500.
-func writeAllowlistError(w http.ResponseWriter, op string, err error) {
-	writeInvalidOr(w, err, "INVALID_ALLOWLIST_ENTRY", "Unable to update the allowlist")
+func writeAllowlistError(w http.ResponseWriter, r *http.Request, op string, err error) {
+	writeInvalidOr(w, r, err, "INVALID_ALLOWLIST_ENTRY", "Unable to update the allowlist")
 }

@@ -86,7 +86,7 @@ func (h *IdentityActivityHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeIdentityServiceError(w, "identity activity", rid, err)
+		writeIdentityServiceError(r.Context(), w, "identity activity", rid, err)
 		return
 	}
 	writeSummaryJSON(w, http.StatusOK, models.MonitoringEnvelope{

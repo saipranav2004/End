@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -192,7 +193,7 @@ func TestTTLCacheExpiresAndResets(t *testing.T) {
 
 func TestRequestActivityWithoutClickHouseIsInert(t *testing.T) {
 	a := NewActivityService(nil, repov1.NewIdentityLookupRepository())
-	r := a.ForRequest(nil)
+	r := a.ForRequest(context.Background(), nil)
 	if r.Available() || r.Degraded() {
 		t.Fatal("no ClickHouse: unavailable but not degraded")
 	}

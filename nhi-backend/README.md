@@ -467,6 +467,17 @@ databases are joined **by ARN only** (never by UUID):
   `effect`, `resource_arn`, `matched_action`; wildcards such as `ec2:Describe*`
   match, an exact Allow beats a wildcard or a Deny). Nothing matched gives
   `matched: false` and "Policy may have changed since this event".
+- **Logging:** structured logs on stdout (`internal/logging`, Go `log/slog`).
+  `NHI_LOG_LEVEL` (debug|info|warn|error, default info), `NHI_LOG_FORMAT`
+  (json default, or text for local reading), `NHI_SLOW_QUERY_MS` (default 1000;
+  slower ClickHouse queries log a `slow clickhouse query` warning). Every
+  request gets an id (the caller's well-formed `X-Request-ID` or a new one),
+  returned in the `X-Request-ID` header, in the genome `request_id` and on every
+  log line of that request together with `tenant_id` and `user_id` once
+  authenticated. One `http request` line per request (route template, status,
+  duration; never the query string or headers), level by status (5xx error, 4xx
+  warn). Sign-in, refresh and sign-out write `audit` lines; handler failures,
+  degraded ClickHouse reads and panics (with stack) are logged with the request id.
 - **Wrong table:** `NHI_CLICKHOUSE_TABLE` must be the CloudTrail events table
   (`cloudtrail_events`, with `caller_arn`, `session_issuer_arn`, `access_key_id`,
   `resource_arn`...), not the genome `log_events` table (that one is

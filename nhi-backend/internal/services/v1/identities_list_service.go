@@ -3,7 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 
 	models "nhi-backend-api/internal/models/v1"
 	repov1 "nhi-backend-api/internal/repository/v1"
@@ -26,7 +26,7 @@ func (s *IdentitiesListService) GetIdentities(ctx context.Context, userID, tenan
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.repo.GetIdentitiesList(ctx, resolved, f, s.activity.ForRequest(resolved))
+	result, err := s.repo.GetIdentitiesList(ctx, resolved, f, s.activity.ForRequest(ctx, resolved))
 	if err != nil {
 		return nil, fmt.Errorf("get scoped identities: %w", err)
 	}
@@ -48,7 +48,7 @@ func (s *IdentitiesListService) flagRecentChanges(ctx context.Context, resolved 
 	}
 	flags, err := s.changes.RecentChangeFlags(ctx, resolved, models.EntityIdentity, ids, arns)
 	if err != nil {
-		log.Printf("list recent change flags: %v", err)
+		logging.FromContext(ctx).Warn("list recent change flags failed, continuing without them", "err", err)
 		return
 	}
 	for i := range result.Data {

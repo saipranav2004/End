@@ -21,6 +21,12 @@ jwt:
   refresh_ttl_hours: 168   # refresh token: 7 days
   session_max_hours: 720   # sign in again after 30 days, however often refreshed
 
+# Structured logging to stdout (env: NHI_LOG_LEVEL, NHI_LOG_FORMAT, NHI_SLOW_QUERY_MS).
+logging:
+  level: info          # debug | info | warn | error
+  format: json         # json | text (text is easier to read locally)
+  slow_query_ms: 1000  # ClickHouse queries slower than this are logged as warnings
+
 cors:
   allowed_origins:
     - http://localhost:3000

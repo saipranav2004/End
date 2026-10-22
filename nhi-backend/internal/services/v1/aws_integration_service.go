@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"strings"
 	"sync"
 	"time"
@@ -151,12 +151,12 @@ func (s *AWSIntegrationService) platform(ctx context.Context, tenantID string) (
 		return awsconnect.Platform{}, nil, err
 	}
 	if settings == nil || settings.AWSAccountID == "" || settings.EventBusARN == "" || settings.ExternalID == "" {
-		log.Printf("aws integration: tenant %s has no collector_aws_account_id / collector_event_bridge_arn / collector_external_id in nhi_global.tenants", tenantID)
+		logging.FromContext(ctx).Warn("aws integration: tenant has no collector_aws_account_id / collector_event_bridge_arn / collector_external_id in nhi_global.tenants", "tenant_id", tenantID)
 		return awsconnect.Platform{}, settings, ErrAWSTenantNotConfigured
 	}
 	p, err := awsconnect.PlatformForTenant(settings.AWSAccountID, settings.EventBusARN, s.opts.AssumerRoleName)
 	if err != nil {
-		log.Printf("aws integration: tenant %s: %v", tenantID, err)
+		logging.FromContext(ctx).Warn("aws integration: platform lookup failed", "tenant_id", tenantID, "err", err)
 		return awsconnect.Platform{}, settings, ErrAWSTenantNotConfigured
 	}
 	return p, settings, nil
@@ -336,7 +336,7 @@ func (s *AWSIntegrationService) Verify(ctx context.Context, caller AWSCaller, ra
 		if errors.Is(err, awsconnect.ErrAccessDenied) {
 			fail(&checks[0], "AWS would not let us use this role.", "Check the External ID matches")
 		} else {
-			logCheckError(caller.TenantID, role.AccountID, checks[0].Key, err)
+			logCheckError(ctx, caller.TenantID, role.AccountID, checks[0].Key, err)
 			unavailable(&checks[0])
 		}
 		skip(&checks[1])
@@ -364,7 +364,7 @@ func (s *AWSIntegrationService) Verify(ctx context.Context, caller AWSCaller, ra
 	case errors.Is(err, awsconnect.ErrAccessDenied), errors.Is(err, awsconnect.ErrNothingRead):
 		fail(&checks[1], "The role cannot read your account.", "Attach SecurityAudit + ViewOnlyAccess")
 	default:
-		logCheckError(caller.TenantID, role.AccountID, checks[1].Key, err)
+		logCheckError(ctx, caller.TenantID, role.AccountID, checks[1].Key, err)
 		unavailable(&checks[1])
 	}
 
@@ -375,16 +375,16 @@ func (s *AWSIntegrationService) Verify(ctx context.Context, caller AWSCaller, ra
 	stepCancel()
 	switch {
 	case err != nil:
-		logCheckError(caller.TenantID, role.AccountID, "bus_permission", err)
+		logCheckError(ctx, caller.TenantID, role.AccountID, "bus_permission", err)
 		unavailable(&checks[2])
 	case s.events == nil:
-		logCheckError(caller.TenantID, role.AccountID, checks[2].Key, errors.New("no event source: configure ClickHouse or aws_integration.event_log_group"))
+		logCheckError(ctx, caller.TenantID, role.AccountID, checks[2].Key, errors.New("no event source: configure ClickHouse or aws_integration.event_log_group"))
 		unavailable(&checks[2])
 	default:
 		found, err := s.events.HasEventsFrom(ctx, p, role.AccountID, s.now().Add(-s.opts.EventLookback))
 		switch {
 		case err != nil:
-			logCheckError(caller.TenantID, role.AccountID, checks[2].Key, err)
+			logCheckError(ctx, caller.TenantID, role.AccountID, checks[2].Key, err)
 			unavailable(&checks[2])
 		case found:
 			pass(&checks[2], "Events from your account are arriving.")
@@ -527,11 +527,11 @@ func (s *AWSIntegrationService) SetExposure(ctx context.Context, caller AWSCalle
 
 // roleUnusable fills checks when the account's role could not be assumed:
 // the connection itself is broken, so nothing else can be tried.
-func roleUnusable(checks []models.AWSCheck, caller AWSCaller, accountID string, err error) {
+func roleUnusable(ctx context.Context, checks []models.AWSCheck, caller AWSCaller, accountID string, err error) {
 	if errors.Is(err, awsconnect.ErrAccessDenied) {
 		fail(&checks[0], "AWS would not let us use this account's role any more.", "Re-check the account connection")
 	} else {
-		logCheckError(caller.TenantID, accountID, checks[0].Key, err)
+		logCheckError(ctx, caller.TenantID, accountID, checks[0].Key, err)
 		unavailable(&checks[0])
 	}
 	for i := 1; i < len(checks); i++ {
@@ -546,7 +546,7 @@ func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSC
 		{Key: models.ExposureCheckCodeCommitRead, Label: "Read repository contents"},
 	}
 	if assumeErr != nil {
-		roleUnusable(checks, caller, rec.AccountID, assumeErr)
+		roleUnusable(ctx, checks, caller, rec.AccountID, assumeErr)
 		return checks
 	}
 	stepCtx, cancel := context.WithTimeout(ctx, exposureStepTimeout)
@@ -556,7 +556,7 @@ func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSC
 		if errors.Is(err, awsconnect.ErrAccessDenied) {
 			fail(&checks[0], "The role cannot list CodeCommit repositories.", "Attach "+codeCommitManagedPolicy+" to the role")
 		} else {
-			logCheckError(caller.TenantID, rec.AccountID, checks[0].Key, err)
+			logCheckError(ctx, caller.TenantID, rec.AccountID, checks[0].Key, err)
 			unavailable(&checks[0])
 		}
 		skip(&checks[1])
@@ -584,7 +584,7 @@ func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSC
 	case errors.Is(err, awsconnect.ErrAccessDenied):
 		fail(&checks[1], "The role can list repositories but not read their files.", "Attach "+codeCommitManagedPolicy+" to the role")
 	default:
-		logCheckError(caller.TenantID, rec.AccountID, checks[1].Key, err)
+		logCheckError(ctx, caller.TenantID, rec.AccountID, checks[1].Key, err)
 		unavailable(&checks[1])
 	}
 	return checks
@@ -598,7 +598,7 @@ func (s *AWSIntegrationService) checkGitHub(ctx context.Context, caller AWSCalle
 		{Key: models.ExposureCheckGitHubToken, Label: "GitHub accepts the token"},
 	}
 	if assumeErr != nil {
-		roleUnusable(checks, caller, rec.AccountID, assumeErr)
+		roleUnusable(ctx, checks, caller, rec.AccountID, assumeErr)
 		return checks
 	}
 	stepCtx, cancel := context.WithTimeout(ctx, exposureStepTimeout)
@@ -616,7 +616,7 @@ func (s *AWSIntegrationService) checkGitHub(ctx context.Context, caller AWSCalle
 	case errors.Is(err, awsconnect.ErrAccessDenied):
 		fail(&checks[0], "The role may not read this secret.", "Add the secret read policy to the role")
 	default:
-		logCheckError(caller.TenantID, rec.AccountID, checks[0].Key, err)
+		logCheckError(ctx, caller.TenantID, rec.AccountID, checks[0].Key, err)
 		unavailable(&checks[0])
 	}
 	if checks[0].State != models.AWSCheckPass {
@@ -649,7 +649,7 @@ func (s *AWSIntegrationService) checkGitHub(ctx context.Context, caller AWSCalle
 	case errors.Is(err, githubcheck.ErrNoContents):
 		fail(&checks[1], "The token can see repositories but not read their files.", "Give the token Contents: Read-only")
 	default:
-		logCheckError(caller.TenantID, rec.AccountID, checks[1].Key, err)
+		logCheckError(ctx, caller.TenantID, rec.AccountID, checks[1].Key, err)
 		unavailable(&checks[1])
 	}
 	return checks
@@ -698,8 +698,8 @@ func (s *AWSIntegrationService) RemoveAccount(ctx context.Context, caller AWSCal
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), awsCleanupTimeout)
 			defer cancel()
 			if err := s.verifier.RevokeAccountOnBus(cleanupCtx, p, accountID); err != nil {
-				log.Printf("aws integration: tenant=%s account=%s revoke bus permission (remove the statement %s by hand): %v",
-					caller.TenantID, accountID, awsconnect.BusStatementID(accountID), err)
+				logging.FromContext(ctx).Warn("aws integration: revoke bus permission failed, remove the statement by hand",
+					"tenant_id", caller.TenantID, "account_id", accountID, "statement", awsconnect.BusStatementID(accountID), "err", err)
 			}
 		}
 	}
@@ -731,8 +731,8 @@ func unavailable(c *models.AWSCheck) {
 }
 
 // logCheckError keeps AWS's own error text in the server log only.
-func logCheckError(tenantID, accountID, check string, err error) {
-	log.Printf("aws integration: tenant=%s account=%s check=%s: %v", tenantID, accountID, check, err)
+func logCheckError(ctx context.Context, tenantID, accountID, check string, err error) {
+	logging.FromContext(ctx).Warn("aws integration check failed", "tenant_id", tenantID, "account_id", accountID, "check", check, "err", err)
 }
 
 func humanHours(d time.Duration) string {

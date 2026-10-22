@@ -12,13 +12,13 @@ import (
 
 func TestWriteAllowlistError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeAllowlistError(rec, "upsert", &svc.InvalidInputError{Msg: "reason exceeds 1000 characters"})
+	writeAllowlistError(rec, httptest.NewRequest("POST", "/", nil), "upsert", &svc.InvalidInputError{Msg: "reason exceeds 1000 characters"})
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "reason exceeds 1000 characters") {
 		t.Fatalf("validation: %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	writeAllowlistError(rec, "upsert", errors.New(`open tenant database "secretdb": pq: boom`))
+	writeAllowlistError(rec, httptest.NewRequest("POST", "/", nil), "upsert", errors.New(`open tenant database "secretdb": pq: boom`))
 	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "secretdb") {
 		t.Fatalf("internal error leaked or wrong status: %d %s", rec.Code, rec.Body.String())
 	}

@@ -57,7 +57,7 @@ func (h *IdentitySummaryHandler) Get(w http.ResponseWriter, r *http.Request) {
 	data, err := h.service.GetIdentity(r.Context(), claims.UserID, claims.TenantID, claims.DBName, sourceType, identityName,
 		svc.IdentitySummaryParams{Window: window})
 	if err != nil {
-		writeIdentityServiceError(w, "identity summary", rid, err)
+		writeIdentityServiceError(r.Context(), w, "identity summary", rid, err)
 		return
 	}
 	writeSummaryJSON(w, http.StatusOK, models.MonitoringEnvelope{

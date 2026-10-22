@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +23,7 @@ import (
 	handlergenome "nhi-backend-api/internal/handlers/genome"
 	posturehandlers "nhi-backend-api/internal/handlers/postures"
 	handlerv1 "nhi-backend-api/internal/handlers/v1"
+	"nhi-backend-api/internal/logging"
 	"nhi-backend-api/internal/middleware"
 	"nhi-backend-api/internal/repository"
 	chrepo "nhi-backend-api/internal/repository/clickhouse"
@@ -42,23 +43,24 @@ import (
 func main() {
 	// Optional .env for local runs; variables already in the environment win.
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		log.Fatalf("load .env: %v", err)
+		fatal("load .env", err)
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load configuration: %v", err)
+		fatal("load configuration", err)
 	}
+	logging.Setup(cfg.Logging.Level, cfg.Logging.Format)
 
 	// DB is the global authentication/tenant registry pool. Tenant pools are
 	// opened only through the registry-validated db_name in a signed token.
 	db, err := repository.NewPostgresDB(cfg)
 	if err != nil {
-		log.Fatalf("connect to global database: %v", err)
+		fatal("connect to global database", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("close database pools: %v", err)
+			slog.Warn("close database pools", "err", err)
 		}
 	}()
 
@@ -70,23 +72,27 @@ func main() {
 	chCancel()
 	switch {
 	case err != nil:
-		log.Printf("WARNING: clickhouse unavailable, activity data disabled until it answers: %v", err)
+		slog.Warn("clickhouse unavailable, activity data disabled until it answers", "err", err)
 	case chClient == nil:
-		log.Printf("clickhouse not configured; activity data disabled")
+		slog.Info("clickhouse not configured, activity data disabled")
 	default:
-		log.Printf("clickhouse connected (%s:%d/%s.%s)", cfg.ClickHouse.Host, cfg.ClickHouse.Port, cfg.ClickHouse.Database, cfg.ClickHouse.Table)
+		slog.Info("clickhouse connected", "host", cfg.ClickHouse.Host, "port", cfg.ClickHouse.Port, "database", cfg.ClickHouse.Database, "table", cfg.ClickHouse.Table)
 		colCtx, colCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := chClient.RequireColumns(colCtx, "event_time", "event_name", "event_source", "caller_arn", "session_issuer_arn", "access_key_id", "account_id", "resource_arn", "source_ip", "error_code"); err != nil {
-			log.Printf("ERROR: clickhouse CloudTrail table unusable, activity data disabled: %v", err)
+			slog.Error("clickhouse CloudTrail table unusable, activity data disabled", "err", err)
 		}
 		colCancel()
 	}
 	defer func() {
 		if err := chClient.Close(); err != nil {
-			log.Printf("close clickhouse: %v", err)
+			slog.Warn("close clickhouse", "err", err)
 		}
 	}()
-	chRepo := chrepo.New(chClient)
+	slowQuery := time.Second
+	if cfg.Logging.SlowQueryMS > 0 {
+		slowQuery = time.Duration(cfg.Logging.SlowQueryMS) * time.Millisecond
+	}
+	chRepo := chrepo.New(chClient, chrepo.WithSlowQueryThreshold(slowQuery))
 	activityService := svcv1.NewActivityService(chRepo, repov1.NewIdentityLookupRepository())
 
 	// Monitoring ClickHouse (NHI Genome log_events, NHI_MONITORING_CLICKHOUSE_*) is
@@ -94,22 +100,22 @@ func main() {
 	// still serve Postgres data; the event-backed fields are then null.
 	monitoringCfg, err := config.MonitoringClickHouse()
 	if err != nil {
-		log.Fatalf("load monitoring clickhouse configuration: %v", err)
+		fatal("load monitoring clickhouse configuration", err)
 	}
 	monCtx, monCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	monitoringClient, err := clickhouse.New(monCtx, monitoringCfg)
 	monCancel()
 	switch {
 	case err != nil:
-		log.Printf("WARNING: monitoring clickhouse unavailable, event-backed fields disabled until it answers: %v", err)
+		slog.Warn("monitoring clickhouse unavailable, event-backed fields disabled until it answers", "err", err)
 	case monitoringClient == nil:
-		log.Printf("monitoring clickhouse not configured (NHI_MONITORING_CLICKHOUSE_HOST empty); event-backed fields disabled")
+		slog.Info("monitoring clickhouse not configured (NHI_MONITORING_CLICKHOUSE_HOST empty), event-backed fields disabled")
 	default:
-		log.Printf("monitoring clickhouse connected (%s:%d/%s.%s)", monitoringCfg.Host, monitoringCfg.Port, monitoringCfg.Database, monitoringCfg.Table)
+		slog.Info("monitoring clickhouse connected", "host", monitoringCfg.Host, "port", monitoringCfg.Port, "database", monitoringCfg.Database, "table", monitoringCfg.Table)
 	}
 	defer func() {
 		if err := monitoringClient.Close(); err != nil {
-			log.Printf("close monitoring clickhouse: %v", err)
+			slog.Warn("close monitoring clickhouse", "err", err)
 		}
 	}()
 	monitoringEvents := repogenome.NewMonitoringEvents(monitoringClient, monitoringCfg.Database)
@@ -176,7 +182,7 @@ func main() {
 	awsBase, err := awsconfig.LoadDefaultConfig(awsCtx)
 	awsCancel()
 	if err != nil {
-		log.Printf("aws integration: AWS configuration unavailable, connection checks disabled: %v", err)
+		slog.Warn("aws integration: AWS configuration unavailable, connection checks disabled", "err", err)
 	} else {
 		awsClient = awsconnect.NewClient(awsBase, cfg.AWSIntegration.AssumeAssumerRole, cfg.AWSIntegration.EventLogGroup)
 		awsVerifier = awsClient
@@ -190,7 +196,7 @@ func main() {
 	case awsClient != nil && cfg.AWSIntegration.EventLogGroup != "":
 		awsEvents = awsClient
 	default:
-		log.Printf("aws integration: no event store (ClickHouse or aws_integration.event_log_group); the events check cannot run")
+		slog.Warn("aws integration: no event store (ClickHouse or aws_integration.event_log_group); the events check cannot run")
 	}
 	awsIntegrationHandler := handlerv1.NewAWSIntegrationHandler(svcv1.NewAWSIntegrationService(
 		repository.NewAWSIntegrationRepository(db),
@@ -262,7 +268,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
 		if err := db.DB.PingContext(ctx); err != nil {
-			log.Printf("readiness: postgres: %v", err)
+			slog.Warn("readiness: postgres down", "err", err)
 			body["postgres"], status = "down", http.StatusServiceUnavailable
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -285,21 +291,27 @@ func main() {
 	defer stop()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
-	log.Printf("NHI API server listening on %s", server.Addr)
+	slog.Info("API server listening", "addr", server.Addr, "log_level", cfg.Logging.Level, "log_format", cfg.Logging.Format)
 
 	select {
 	case err := <-serveErr:
 		if err != nil && err != http.ErrServerClosed {
-			// Keep the original non-zero exit; close pools first since Fatalf skips defers.
+			// Keep the original non-zero exit; close pools first since fatal skips defers.
 			_ = db.Close()
-			log.Fatalf("API server: %v", err)
+			fatal("API server", err)
 		}
 	case <-sigCtx.Done():
-		log.Printf("shutdown signal received, draining requests")
+		slog.Info("shutdown signal received, draining requests")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("graceful shutdown: %v", err)
+			slog.Error("graceful shutdown failed", "err", err)
 		}
 	}
+}
+
+// fatal logs a startup failure as an ERROR record and exits.
+func fatal(msg string, err error) {
+	slog.Error(msg, "err", err)
+	os.Exit(1)
 }

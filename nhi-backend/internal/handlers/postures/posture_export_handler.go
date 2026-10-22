@@ -2,8 +2,8 @@ package postures
 
 import (
 	"encoding/csv"
-	"log"
 	"net/http"
+	"nhi-backend-api/internal/logging"
 	"strconv"
 	"strings"
 	"time"
@@ -77,10 +77,10 @@ func (h *PostureExportHandler) Get(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if !started {
-			fail(w, "export posture", err)
+			fail(w, r, "export posture", err)
 			return
 		}
-		log.Printf("posture export interrupted: %v", err)
+		logging.FromContext(r.Context()).Warn("posture export interrupted", "err", err)
 		return
 	}
 	if !started { // no identity matched: header line only

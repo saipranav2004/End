@@ -3,7 +3,7 @@ package postures
 import (
 	"context"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 	"strings"
 	"time"
 
@@ -80,7 +80,7 @@ func (r *IdentityActivityRepository) Get(ctx context.Context, s *scope.DataScope
 		if len(msg) > 300 { // ClickHouse errors echo the whole query
 			msg = msg[:300] + "..."
 		}
-		log.Printf("clickhouse identity activity: %s (activity data unavailable)", msg)
+		logging.FromContext(ctx).Warn("clickhouse identity activity failed, activity data unavailable", "err", msg, "degraded", true)
 		return empty, nil, false, nil
 	}
 

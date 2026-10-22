@@ -64,7 +64,7 @@ func (h *IdentityGenomeHandler) Get(w http.ResponseWriter, r *http.Request) {
 	data, err := h.service.GetGenome(r.Context(), claims.UserID, claims.TenantID, claims.DBName, sourceType, identityName,
 		svc.IdentityGenomeParams{Window: window, Limit: limit})
 	if err != nil {
-		writeIdentityServiceError(w, "identity genome", rid, err)
+		writeIdentityServiceError(r.Context(), w, "identity genome", rid, err)
 		return
 	}
 	writeSummaryJSON(w, http.StatusOK, models.MonitoringEnvelope{

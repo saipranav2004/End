@@ -33,7 +33,7 @@ func (h *PostureOverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, win)
 	if err != nil {
-		fail(w, "load posture overview", err)
+		fail(w, r, "load posture overview", err)
 		return
 	}
 	respond(w, env, true)

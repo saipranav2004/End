@@ -37,7 +37,7 @@ func (h *DecisionHandler) Save(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, repo.ErrDecisionFindingAmbiguous):
 			writeError(w, http.StatusConflict, "AMBIGUOUS_FINDING", "Finding ID matched more than one platform table")
 		default:
-			writeInvalidOr(w, err, "INVALID_DECISION", "Unable to save analyst decision")
+			writeInvalidOr(w, r, err, "INVALID_DECISION", "Unable to save analyst decision")
 		}
 		return
 	}

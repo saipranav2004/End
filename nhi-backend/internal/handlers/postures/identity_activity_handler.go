@@ -64,7 +64,7 @@ func (h *IdentityActivityHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id, f)
 	if err != nil {
-		fail(w, "load identity activity", err)
+		fail(w, r, "load identity activity", err)
 		return
 	}
 	respond(w, env, true)

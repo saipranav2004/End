@@ -34,7 +34,7 @@ func (h *CheckDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, ruleID)
 	if err != nil {
-		fail(w, "load check", err)
+		fail(w, r, "load check", err)
 		return
 	}
 	respond(w, env, true)

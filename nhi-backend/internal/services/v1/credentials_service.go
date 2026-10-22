@@ -3,7 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"log"
+	"nhi-backend-api/internal/logging"
 
 	models "nhi-backend-api/internal/models/v1"
 	repov1 "nhi-backend-api/internal/repository/v1"
@@ -26,7 +26,7 @@ func (s *CredentialsService) GetCredentials(ctx context.Context, userID, tenantI
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.repo.GetCredentialsList(ctx, resolved, f, s.activity.ForRequest(resolved))
+	result, err := s.repo.GetCredentialsList(ctx, resolved, f, s.activity.ForRequest(ctx, resolved))
 	if err != nil {
 		return nil, fmt.Errorf("get scoped credentials: %w", err)
 	}
@@ -48,7 +48,7 @@ func (s *CredentialsService) flagRecentChanges(ctx context.Context, resolved *sc
 	}
 	flags, err := s.changes.RecentChangeFlags(ctx, resolved, models.EntityCredential, ids, arns)
 	if err != nil {
-		log.Printf("list recent change flags: %v", err)
+		logging.FromContext(ctx).Warn("list recent change flags failed, continuing without them", "err", err)
 		return
 	}
 	for i := range result.Data {

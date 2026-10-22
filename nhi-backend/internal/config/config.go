@@ -30,6 +30,7 @@ type Config struct {
 	Database   DatabaseConfig   `yaml:"database"`
 	JWT        JWTConfig        `yaml:"jwt"`
 	CORS       CORSConfig       `yaml:"cors"`
+	Logging    LoggingConfig    `yaml:"logging"`
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	// AWSIntegration: "Connect AWS Account" (see aws_integration.go).
 	AWSIntegration AWSIntegrationConfig `yaml:"aws_integration"`
@@ -105,6 +106,16 @@ type JWTConfig struct {
 	SessionMaxHours int `yaml:"session_max_hours"`
 }
 
+// LoggingConfig controls the structured logger (env: NHI_LOG_LEVEL,
+// NHI_LOG_FORMAT, NHI_SLOW_QUERY_MS).
+type LoggingConfig struct {
+	Level  string `yaml:"level"`  // debug | info | warn | error
+	Format string `yaml:"format"` // json | text
+	// SlowQueryMS is the duration above which a ClickHouse query is logged as
+	// a warning. 0 means the default (1000).
+	SlowQueryMS int `yaml:"slow_query_ms"`
+}
+
 type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins"`
 }
@@ -171,6 +182,11 @@ func (c *Config) applyEnvironment() error {
 		return err
 	}
 	if err := setInt(&c.JWT.SessionMaxHours, "NHI_JWT_SESSION_MAX_HOURS"); err != nil {
+		return err
+	}
+	setString(&c.Logging.Level, "NHI_LOG_LEVEL")
+	setString(&c.Logging.Format, "NHI_LOG_FORMAT")
+	if err := setInt(&c.Logging.SlowQueryMS, "NHI_SLOW_QUERY_MS"); err != nil {
 		return err
 	}
 	setString(&c.ClickHouse.Host, "NHI_CLICKHOUSE_HOST")

@@ -34,7 +34,7 @@ func (h *IdentitiesFacetsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, filter)
 	if err != nil {
-		fail(w, "load identity facets", err)
+		fail(w, r, "load identity facets", err)
 		return
 	}
 	respond(w, env, true)

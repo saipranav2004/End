@@ -34,7 +34,7 @@ func (h *IdentityHeaderHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.service.Get(r.Context(), c, id)
 	if err != nil {
-		fail(w, "load identity", err)
+		fail(w, r, "load identity", err)
 		return
 	}
 	respond(w, env, true)

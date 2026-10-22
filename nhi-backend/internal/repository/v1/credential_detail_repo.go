@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"nhi-backend-api/internal/logging"
 	"regexp"
 	"sort"
 	"strings"
@@ -263,7 +264,7 @@ func (r *CredentialDetailRepository) GetOverview(ctx context.Context, resolved *
 
 	var rawTrust map[string]interface{}
 	if len(c.TrustPolicy) > 0 {
-		_ = json.Unmarshal(c.TrustPolicy, &rawTrust)
+		logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(c.TrustPolicy, &rawTrust))
 	}
 	statements := parseTrustStatements(rawTrust)
 	risk := computeTrustRisk(statements, c.AccountID)
@@ -410,7 +411,7 @@ func (r *CredentialDetailRepository) GetTrust(ctx context.Context, resolved *sco
 
 	var rawTrust map[string]interface{}
 	if len(c.TrustPolicy) > 0 {
-		_ = json.Unmarshal(c.TrustPolicy, &rawTrust)
+		logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(c.TrustPolicy, &rawTrust))
 	}
 	statements := parseTrustStatements(rawTrust)
 
@@ -644,7 +645,7 @@ func (r *CredentialDetailRepository) loadAssumableRoles(ctx context.Context, ten
 	src = orNoActivity(src)
 	var arns []string
 	if len(c.AssumableRoleARNs) > 0 {
-		_ = json.Unmarshal(c.AssumableRoleARNs, &arns)
+		logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(c.AssumableRoleARNs, &arns))
 	}
 	var assumeUsage []chrepo.UsedPermission
 	if len(arns) > 0 && src.Available() {

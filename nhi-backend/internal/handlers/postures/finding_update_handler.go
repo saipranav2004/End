@@ -37,7 +37,7 @@ func (h *FindingUpdateHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !c.CanWrite() { // checked before reading anything else
-		fail(w, "update finding", svc.ErrForbidden)
+		fail(w, r, "update finding", svc.ErrForbidden)
 		return
 	}
 	id := strings.TrimSpace(mux.Vars(r)["id"])
@@ -68,7 +68,7 @@ func (h *FindingUpdateHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		FindingID: strings.ToLower(id), IfMatch: ifMatch, Request: req,
 	})
 	if err != nil {
-		fail(w, "update finding", err)
+		fail(w, r, "update finding", err)
 		return
 	}
 	if st, ok := env.Data.(*models.FindingState); ok {

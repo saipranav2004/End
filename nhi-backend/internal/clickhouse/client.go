@@ -9,7 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -133,9 +133,9 @@ func (c *Client) watch(host string) {
 		cancel()
 		if was := c.up.Swap(err == nil); was != (err == nil) {
 			if err == nil {
-				log.Printf("clickhouse %s is reachable again", host)
+				slog.Info("clickhouse is reachable again", "host", host)
 			} else {
-				log.Printf("WARNING: clickhouse %s stopped answering: %v", host, err)
+				slog.Warn("clickhouse stopped answering", "host", host, "err", err)
 			}
 		}
 	}

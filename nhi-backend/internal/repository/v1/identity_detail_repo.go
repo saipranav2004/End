@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"nhi-backend-api/internal/logging"
 	"sort"
 	"strings"
 	"time"
@@ -845,7 +846,7 @@ func (r *IdentityDetailRepository) GetCredentialsTab(ctx context.Context, resolv
 
 		var rawTrust map[string]interface{}
 		if len(c.TrustPolicy) > 0 {
-			_ = json.Unmarshal(c.TrustPolicy, &rawTrust)
+			logging.WarnIf(ctx, "decode stored JSON column", json.Unmarshal(c.TrustPolicy, &rawTrust))
 		}
 		statements := parseTrustStatements(rawTrust)
 		principals := make([]models.TrustPrincipal, 0, len(statements))
