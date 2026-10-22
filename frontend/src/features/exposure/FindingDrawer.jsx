@@ -31,7 +31,7 @@ import { Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { CopyableValue } from '../../ui/Copyable';
 import { cn } from '../../ui/cn';
-import { findingKey, modelVerdict, verdictMeta } from './scannerState';
+import { findingKey, modelVerdict, noiseLabels, verdictMeta } from './scannerState';
 
 /**
  * Finding detail plus its two writes: the analyst's verdict (real secret or
@@ -153,6 +153,27 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
               it from the code. Deleting the commit alone is not enough: copies of the repository keep it.
             </p>
           </div>
+
+          {noiseLabels(finding.noise_flags).length > 0 && (
+            <div className="rounded-[var(--radius-control)] border border-line p-3.5">
+              <SectionLabel>Why it may be harmless</SectionLabel>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {noiseLabels(finding.noise_flags).map((label) => (
+                  <li key={label}>
+                    <Tag tone="info" size="sm">{label}</Tag>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[12px] leading-relaxed text-ink-2">
+                The scanner recognised this value as something that is not a live secret. Check it, and record your answer below if it is wrong.
+              </p>
+            </div>
+          )}
+          {finding.ml_model_version === 'rule:private-key-with-body' && (
+            <p className="rounded-[var(--radius-control)] border border-high/30 bg-high-soft px-3.5 py-2.5 text-[12.5px] text-ink">
+              A complete private key was found. The detection models were deliberately not asked, so this is always shown as an exposed secret.
+            </p>
+          )}
 
           <VerdictSection finding={finding} onDecide={onDecide} deciding={deciding} />
 
@@ -395,6 +416,23 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                   {finding.ml_decision ? `${finding.ml_decision} · ` : ''}
                   {Number.isFinite(finding.ml_score) ? `score ${finding.ml_score.toFixed(3)}` : ''}
                   {finding.ml_model_version ? ` · version ${finding.ml_model_version}` : ''}
+                </DetailRow>
+              )}
+              {(finding.ml_veto_model_version || Number.isFinite(finding.ml_veto_score)) && (
+                <DetailRow label="Second check (generic secrets)">
+                  {Number.isFinite(finding.ml_veto_score) ? `score ${finding.ml_veto_score.toFixed(3)} (higher means more likely real)` : ''}
+                  {finding.ml_veto_model_version ? ` · version ${finding.ml_veto_model_version}` : ''}
+                </DetailRow>
+              )}
+              {finding.noise_flags && (
+                <DetailRow label="Harmless tags" mono>
+                  {finding.noise_flags}
+                </DetailRow>
+              )}
+              {finding.value_fingerprint && (
+                <DetailRow label="Value fingerprint" mono>
+                  <CopyableValue value={finding.value_fingerprint} className="break-all" />
+                  <span className="mt-0.5 block font-sans text-[11.5px] text-ink-3">Same fingerprint means the same value. The value itself cannot be recovered from it.</span>
                 </DetailRow>
               )}
             </DetailList>

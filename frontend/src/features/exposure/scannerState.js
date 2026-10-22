@@ -113,7 +113,7 @@ export function summariseFindings(findings = []) {
 export function groupByPush(findings = []) {
   const groups = new Map();
   for (const finding of findings) {
-    const key = `${finding.repository || '?'}@${finding.commit_id || '?'}`;
+    const key = `${finding.platform || ''}|${finding.repository || '?'}@${finding.commit_id || '?'}`;
     if (!groups.has(key)) {
       groups.set(key, {
         key,
@@ -275,4 +275,143 @@ export function modelVerdict(finding) {
     score,
     version: finding?.ml_model_version || null,
   };
+}
+
+/* ── The five lists ───────────────────────────────────────────────────────── */
+
+/**
+ * Every finding that is not marked safe sits in exactly one list. `live` is
+ * the one to act on; the others are what the scanner set aside, and each says
+ * why so nobody has to guess.
+ */
+export const LISTS = {
+  live: {
+    key: 'live',
+    label: 'Exposed secrets',
+    title: 'Exposed secrets',
+    unit: 'exposed secrets',
+    countKey: 'main',
+    lede: 'Passwords, keys and tokens found in the code of your connected repositories. Values are masked. To fix one, replace (rotate) the secret where it was issued, then remove it from the code.',
+    caption: 'Not counting secrets marked safe or set aside in the other lists',
+    emptyTitle: 'No secrets exposed in code',
+    emptyText: 'The scanner found nothing open in your connected repositories. Secrets someone marked as safe are listed under Marked safe.',
+  },
+  review: {
+    key: 'review',
+    label: 'Needs review',
+    title: 'Needs review',
+    unit: 'to review',
+    countKey: 'review',
+    lede: 'Our detection models are not sure about these. Open each one and say whether it is a real secret: your answer also teaches the models.',
+    caption: 'The models are unsure, so a person should decide',
+    emptyTitle: 'Nothing needs review',
+    emptyText: 'The detection models are confident about everything they scored.',
+  },
+  repeated: {
+    key: 'repeated',
+    label: 'Same value repeated',
+    title: 'Same value repeated',
+    unit: 'repeated copies',
+    countKey: 'repeated',
+    lede: 'The same value appears in three or more places in one commit, which usually means a test or sample value was copied around. They are grouped by how many times the value repeats; check one and you have checked them all.',
+    caption: 'Copies of one value in the same commit',
+    emptyTitle: 'No repeated values',
+    emptyText: 'No value was found in three or more places within the same commit.',
+  },
+  noise: {
+    key: 'noise',
+    label: 'Known harmless',
+    title: 'Known harmless values',
+    unit: 'harmless values',
+    countKey: 'noise',
+    lede: 'Values that look like secrets but match something harmless: keys published in AWS documentation, checksums, password hashes, resource names or plain links. Each row says what it was recognised as.',
+    caption: 'Recognised as harmless by the scanner',
+    emptyTitle: 'No known harmless values',
+    emptyText: 'The scanner did not set aside anything as a recognised harmless value.',
+  },
+  flagged: {
+    key: 'flagged',
+    label: 'Likely false alarms',
+    title: 'Likely false alarms',
+    unit: 'likely false alarms',
+    countKey: 'ml_flagged',
+    lede: 'Matches our detection models think are not real secrets (false positives). They are kept off the main list. Open one to agree, or record it as a real secret.',
+    caption: 'Our detection models think these are not real secrets',
+    emptyTitle: 'No likely false alarms',
+    emptyText: 'Our detection models have not marked anything as a false alarm, so everything the scanner found is on the main list.',
+  },
+};
+
+export const LIST_ORDER = ['live', 'review', 'repeated', 'noise', 'flagged'];
+
+export function listFromParam(value) {
+  return Object.hasOwn(LISTS, value) && value !== 'live' ? value : 'live';
+}
+
+const NOISE_LABELS = {
+  known_example_value: 'Published example key',
+  integrity_hash: 'Integrity checksum',
+  arn_identifier: 'AWS resource name (ARN)',
+  password_hash: 'Password hash, not the password',
+  plain_url: 'Plain web link',
+  expired_signed_url: 'Expired signed link',
+  vector_image_file: 'Vector image file',
+};
+
+/** "known_example_value,plain_url" -> readable labels. Unknown tags stay readable. */
+export function noiseLabels(flags) {
+  return String(flags || '')
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .map((tag) => NOISE_LABELS[tag] ?? tag.replaceAll('_', ' '));
+}
+
+/** The repeat-count ranges the Repeated list is grouped by. */
+export const REPEAT_BUCKETS = [
+  { key: '3', label: '3 times', test: (n) => n === 3 },
+  { key: '4-5', label: '4 to 5 times', test: (n) => n >= 4 && n <= 5 },
+  { key: '6-10', label: '6 to 10 times', test: (n) => n >= 6 && n <= 10 },
+  { key: '11+', label: 'More than 10 times', test: (n) => n > 10 },
+];
+
+export function repeatBucket(count) {
+  return REPEAT_BUCKETS.find((bucket) => bucket.test(count))?.key ?? '3';
+}
+
+/**
+ * One group per (platform, repository, commit, value): the same secret value
+ * copied into several places. The fingerprint is a one-way hash, so equal
+ * fingerprints mean equal values without revealing them. A finding without one
+ * (older rows) stays a group of its own.
+ */
+export function groupRepeated(findings = []) {
+  const groups = new Map();
+  for (const finding of findings) {
+    const key = finding.value_fingerprint
+      ? `${finding.platform || ''}|${finding.client_id || ''}|${finding.repository || ''}|${finding.commit_id || ''}|${finding.value_fingerprint}`
+      : findingKey(finding);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        repository: finding.repository,
+        platform: finding.platform,
+        commitId: finding.commit_id,
+        commitMessage: finding.commit_message,
+        branch: finding.branch,
+        author: finding.author,
+        detector: finding.detector,
+        redacted: finding.redacted,
+        createdAt: finding.created_at,
+        findings: [],
+      });
+    }
+    groups.get(key).findings.push(finding);
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    count: group.findings.length,
+    files: new Set(group.findings.map((finding) => finding.file_path)).size,
+    bucket: repeatBucket(group.findings.length),
+  }));
 }

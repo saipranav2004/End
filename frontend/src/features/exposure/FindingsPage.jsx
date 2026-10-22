@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../app/AuthContext';
-import { decideFinding, dismissFinding, fetchFindings } from '../../lib/api/exposure';
+import { decideFinding, dismissFinding, fetchFindings, fetchFindingsSummary } from '../../lib/api/exposure';
 import { useMutation, useQuery } from '../../lib/hooks';
 import {
   confidenceMeta,
@@ -54,7 +54,8 @@ import { cn, TONE_FG } from '../../ui/cn';
 import { GridSkeleton, StatStripSkeleton } from '../../ui/Skeleton';
 import { DeepScanDrawer } from './DeepScanDrawer';
 import { FindingDrawer } from './FindingDrawer';
-import { describeExposureError, findingKey, groupByPush, summariseFindings, VERDICTS, verdictMeta } from './scannerState';
+import { RepeatedView } from './RepeatedView';
+import { describeExposureError, findingKey, groupByPush, groupRepeated, LIST_ORDER, LISTS, listFromParam, summariseFindings, VERDICTS, verdictMeta } from './scannerState';
 
 /**
  * Rows per page.
@@ -86,13 +87,16 @@ export default function FindingsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  /* `?set=flagged` shows the model-flagged set; it is a different record set,
-     not a filter, so it lives in the URL and survives a reload. */
-  const source = searchParams.get('set') === 'flagged' ? 'flagged' : 'live';
-  const flaggedView = source === 'flagged';
-  const query = useQuery((signal) => fetchFindings(signal, { flagged: flaggedView }), [flaggedView]);
-  /* The count for the switch. Only the number is used. */
-  const flaggedCount = useQuery((signal) => fetchFindings(signal, { flagged: true }), [], { enabled: !flaggedView });
+  /* `?set=` picks one of the five lists (review, repeated, noise, flagged;
+     none is the main list). A list is a different record set, not a filter, so
+     it lives in the URL and survives a reload. */
+  const listKey = listFromParam(searchParams.get('set'));
+  const listMeta = LISTS[listKey];
+  const query = useQuery((signal) => fetchFindings(signal, { list: listKey }), [listKey]);
+  /* How many findings each list holds, for the switch. */
+  const counts = useQuery((signal) => fetchFindingsSummary(signal), []);
+  const listCounts = counts.data?.lists;
+  const [repeatBucket, setRepeatBucket] = useState('');
   const dismissal = useMutation((input) => dismissFinding(input));
   const decision = useMutation((input) => decideFinding(input));
   /* Verdicts recorded in this session, applied over the loaded rows so the
@@ -156,8 +160,9 @@ export default function FindingsPage() {
 
   const switchSource = (next) => {
     const params = new URLSearchParams(searchParams);
-    if (next === 'flagged') params.set('set', 'flagged');
-    else params.delete('set');
+    if (next === 'live') params.delete('set');
+    else params.set('set', next);
+    setRepeatBucket('');
     setSearchParams(params, { replace: true });
     setSelected(null);
     setPage(1);
@@ -225,9 +230,15 @@ export default function FindingsPage() {
     return groups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [sorted]);
 
-  /* The two views page independently, because a page of 25 pushes is not a
+  /* The Repeated list is always grouped by value; its groups can be narrowed
+     to how many times the value repeats. */
+  const repeatView = listKey === 'repeated';
+  const allRepeatGroups = useMemo(() => (repeatView ? groupRepeated(sorted).sort((a, b) => b.count - a.count || new Date(b.createdAt) - new Date(a.createdAt)) : []), [repeatView, sorted]);
+  const repeatGroups = useMemo(() => (repeatBucket ? allRepeatGroups.filter((group) => group.bucket === repeatBucket) : allRepeatGroups), [allRepeatGroups, repeatBucket]);
+
+  /* The views page independently, because a page of 25 pushes is not a
      page of 25 findings. Whichever is on screen supplies the total. */
-  const pagedTotal = view === 'pushes' ? pushes.length : sorted.length;
+  const pagedTotal = repeatView ? repeatGroups.length : view === 'pushes' ? pushes.length : sorted.length;
   /* Clamped rather than trusted. A dismiss on the last page, or a filter that
      shrinks the set, can leave `page` past the end - and a page past the end
      renders a blank grid that looks like a bug rather than an empty page. */
@@ -240,6 +251,10 @@ export default function FindingsPage() {
   const pagePushes = useMemo(
     () => pushes.slice(pageStart, pageStart + pageSize),
     [pushes, pageStart, pageSize],
+  );
+  const pageRepeats = useMemo(
+    () => repeatGroups.slice(pageStart, pageStart + pageSize),
+    [repeatGroups, pageStart, pageSize],
   );
 
   /* Every facet count is computed from the live set the service returned, so
@@ -422,7 +437,7 @@ export default function FindingsPage() {
 
   const onExport = () => {
     exportRowsToCsv({
-      filename: timestampedName(flaggedView ? 'code-exposure-model-flagged' : 'code-exposure-findings'),
+      filename: timestampedName(listKey === 'live' ? 'code-exposure-findings' : `code-exposure-${listKey}`),
       columns: [
         { header: 'Detector', value: (row) => row.detector },
         { header: 'Risk tier', value: (row) => row.risk_tier },
@@ -526,10 +541,10 @@ export default function FindingsPage() {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
-          title={flaggedView ? 'Likely false alarms' : 'Exposed secrets'}
+          title={listMeta.title}
           lede="Passwords, keys and tokens found in the code of your connected repositories."
           actions={
-            flaggedView ? (
+            listKey !== 'live' ? (
               <Button variant="secondary" onClick={() => switchSource('live')}>
                 Back to exposed secrets
               </Button>
@@ -633,12 +648,8 @@ export default function FindingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={flaggedView ? 'Likely false alarms' : 'Exposed secrets'}
-        lede={
-          flaggedView
-            ? 'Matches our detection model thinks are not real secrets (false positives). They are kept off the main list. Open one to agree, or record it as a real secret.'
-            : 'Passwords, keys and tokens found in the code of your connected repositories. Values are masked. To fix one, replace (rotate) the secret where it was issued, then remove it from the code.'
-        }
+        title={listMeta.title}
+        lede={listMeta.lede}
         tabs={
           <Tabs
             size="sm"
@@ -656,25 +667,9 @@ export default function FindingsPage() {
             {/* A deep scan is something you do to a repository already on this
                 screen, so it opens here rather than living in the navigation
                 as a peer of the findings it produces. */}
-            {flaggedView ? (
-              <Button variant="secondary" onClick={() => switchSource('live')}>
-                Back to exposed secrets
-              </Button>
-            ) : (
-              <>
-                <Button variant="secondary" icon={Radar} onClick={() => setDeepScanOpen(true)}>
-                  Scan full history
-                </Button>
-                <Button variant="ghost" icon={Sparkles} onClick={() => switchSource('flagged')}>
-                  Likely false alarms
-                  {Number.isFinite(flaggedCount.data?.count) && (
-                    <span data-numeric="" className="ml-1 rounded-full bg-surface-3 px-1.5 text-[11px] font-semibold text-ink-2">
-                      {formatNumber(flaggedCount.data.count)}
-                    </span>
-                  )}
-                </Button>
-              </>
-            )}
+            <Button variant="secondary" icon={Radar} onClick={() => setDeepScanOpen(true)}>
+              Scan full history
+            </Button>
             <Button as={Link} to="/exposure/dismissed" variant="ghost" icon={ShieldOff}>
               Marked safe
             </Button>
@@ -682,20 +677,45 @@ export default function FindingsPage() {
         }
       />
 
+      {/* The five lists. Every finding that is not marked safe is in exactly
+          one, so the counts add up; the one to act on comes first. */}
+      <nav aria-label="Finding lists" className="flex flex-wrap items-center gap-2">
+        {LIST_ORDER.map((key) => {
+          const entry = LISTS[key];
+          const active = key === listKey;
+          const count = listCounts?.[entry.countKey];
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-current={active ? 'page' : undefined}
+              onClick={() => switchSource(key)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-colors',
+                active ? 'border-brand bg-info-soft font-semibold text-brand' : 'border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink',
+              )}
+            >
+              {entry.label}
+              {Number.isFinite(count) && (
+                <span data-numeric="" className="rounded-full bg-surface-3 px-1.5 text-[11px] font-semibold text-ink-2">
+                  {formatNumber(count)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
       {loading ? (
         <StatStripSkeleton count={4} />
       ) : (
         <div className="grid gap-3 @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
           <MetricTile
-            label={flaggedView ? 'Likely false alarms' : 'Open exposed secrets'}
+            label={listKey === 'live' ? 'Open exposed secrets' : listMeta.title}
             value={summary.total}
-            icon={flaggedView ? Sparkles : FileWarning}
-            tone={flaggedView ? 'info' : summary.total > 0 ? 'high' : 'low'}
-            caption={
-              flaggedView
-                ? 'Our detection model thinks these are not real secrets'
-                : 'Not counting secrets marked safe or likely false alarms'
-            }
+            icon={listKey === 'live' ? FileWarning : Sparkles}
+            tone={listKey !== 'live' ? 'info' : summary.total > 0 ? 'high' : 'low'}
+            caption={listMeta.caption}
           />
           <MetricTile
             label="High or critical risk"
@@ -703,7 +723,7 @@ export default function FindingsPage() {
             tone={highish > 0 ? 'critical' : 'low'}
             caption={`The rest: ${formatNumber(summary.byTier.MEDIUM || 0)} medium, ${formatNumber(summary.byTier.LOW || 0)} low`}
             meter={percentValue(highish, summary.total)}
-            meterLabel={flaggedView ? 'Share of likely false alarms' : 'Share of open exposed secrets'}
+            meterLabel={`Share of ${listMeta.unit} that is high or critical`}
           />
           <MetricTile
             label="Repositories affected"
@@ -742,7 +762,7 @@ export default function FindingsPage() {
             <TableToolbar>
               {/* View mode stays in the open: it changes which records are
                   listed, which is not a display preference. */}
-              <SegmentedControl label="View mode" options={VIEWS} value={view} onChange={withReset(setView)} />
+              {!repeatView && <SegmentedControl label="View mode" options={VIEWS} value={view} onChange={withReset(setView)} />}
               {!railOpen && (
                 <ShowFiltersButton onClick={toggleRail} appliedCount={chips.length} />
               )}
@@ -772,8 +792,8 @@ export default function FindingsPage() {
           />
           <ResultCount
             shown={formatNumber(pagedTotal)}
-            total={formatNumber(view === 'pushes' ? groupByPush(allFindings).length : summary.total)}
-            unit={view === 'pushes' ? 'commits' : flaggedView ? 'likely false alarms' : 'exposed secrets'}
+            total={formatNumber(repeatView ? groupRepeated(allFindings).length : view === 'pushes' ? groupByPush(allFindings).length : summary.total)}
+            unit={repeatView ? (pagedTotal === 1 ? 'repeated value' : 'repeated values') : view === 'pushes' ? 'commits' : listMeta.unit}
             filtered={chips.length > 0 || platform !== 'all'}
             loading={loading}
           />
@@ -783,6 +803,8 @@ export default function FindingsPage() {
 
         {loading ? (
           <GridSkeleton columns={5} rows={10} />
+        ) : repeatView ? (
+          <RepeatedView groups={pageRepeats} allGroups={allRepeatGroups} bucket={repeatBucket} onBucket={withReset(setRepeatBucket)} onSelect={setSelected} />
         ) : view === 'findings' ? (
           <DataGrid
             caption="Exposed secrets"
@@ -835,11 +857,11 @@ export default function FindingsPage() {
                     </Button>
                   }
                 />
-              ) : flaggedView ? (
+              ) : listKey !== 'live' ? (
                 <EmptyState
                   icon={Sparkles}
-                  title="No likely false alarms"
-                  description="Our detection model has not marked anything as a false alarm, so everything the scanner found is on the main list."
+                  title={listMeta.emptyTitle}
+                  description={listMeta.emptyText}
                   action={
                     <Button variant="secondary" size="sm" onClick={() => switchSource('live')}>
                       Back to exposed secrets
@@ -870,7 +892,7 @@ export default function FindingsPage() {
             page={safePage}
             pageSize={pageSize}
             total={pagedTotal}
-            unit={view === 'pushes' ? 'commits' : 'exposed secrets'}
+            unit={repeatView ? 'repeated values' : view === 'pushes' ? 'commits' : 'exposed secrets'}
             onPageChange={setPage}
             onPageSizeChange={(next) => {
               setPage(1);

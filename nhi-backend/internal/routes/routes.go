@@ -144,6 +144,10 @@ func registerProtected(router *mux.Router, h HandlerContainer, versioned bool) {
 	if h.CredentialExposureFindingsHandler != nil {
 		router.HandleFunc("/credential-exposure/findings", h.CredentialExposureFindingsHandler.List).Methods(http.MethodGet)
 		router.HandleFunc("/credential-exposure/findings/flagged", h.CredentialExposureFindingsHandler.ListFlagged).Methods(http.MethodGet)
+		router.HandleFunc("/credential-exposure/findings/ml-flagged", h.CredentialExposureFindingsHandler.ListFlagged).Methods(http.MethodGet)
+		router.HandleFunc("/credential-exposure/findings/review", h.CredentialExposureFindingsHandler.ListReview).Methods(http.MethodGet)
+		router.HandleFunc("/credential-exposure/findings/repeated", h.CredentialExposureFindingsHandler.ListRepeated).Methods(http.MethodGet)
+		router.HandleFunc("/credential-exposure/findings/noise", h.CredentialExposureFindingsHandler.ListNoise).Methods(http.MethodGet)
 		router.HandleFunc("/credential-exposure/findings/summary", h.CredentialExposureFindingsHandler.Summary).Methods(http.MethodGet)
 	}
 	if h.CredentialExposureAllowlistHandler != nil {

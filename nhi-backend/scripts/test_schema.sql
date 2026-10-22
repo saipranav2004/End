@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS :"schema".secscan_findings_codecommit (
   files_changed int, additions int, deletions int, repo_visibility text,
   repo_stars int, repo_forks int, repo_pushed_at text, ml_score double precision,
   ml_decision text, ml_model_version text, analyst_decision text,
-  analyst_decided_at text, analyst_decided_by text);
+  analyst_decided_at text, analyst_decided_by text,
+  ml_veto_score double precision, ml_veto_model_version text,
+  value_fingerprint text, noise_flags text);
 
 CREATE TABLE IF NOT EXISTS :"schema".secscan_findings_github (
   finding_id text PRIMARY KEY, client_id text, repository text, branch text,
@@ -94,7 +96,9 @@ CREATE TABLE IF NOT EXISTS :"schema".secscan_findings_github (
   files_changed int, additions int, deletions int, repo_visibility text,
   repo_stars int, repo_forks int, repo_pushed_at text, ml_score double precision,
   ml_decision text, ml_model_version text, analyst_decision text,
-  analyst_decided_at text, analyst_decided_by text);
+  analyst_decided_at text, analyst_decided_by text,
+  ml_veto_score double precision, ml_veto_model_version text,
+  value_fingerprint text, noise_flags text);
 
 CREATE TABLE IF NOT EXISTS :"schema".secscan_allowlist_dashboard (
   client_id text, file_path text, detector text, redacted text,

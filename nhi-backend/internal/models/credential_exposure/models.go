@@ -39,6 +39,10 @@ type Finding struct {
 	AnalystDecision    *string  `json:"analyst_decision"`
 	AnalystDecidedAt   *string  `json:"analyst_decided_at"`
 	AnalystDecidedBy   *string  `json:"analyst_decided_by"`
+	MLVetoScore        *float64 `json:"ml_veto_score"`
+	MLVetoModelVersion *string  `json:"ml_veto_model_version"`
+	ValueFingerprint   *string  `json:"value_fingerprint"`
+	NoiseFlags         *string  `json:"noise_flags"`
 }
 
 type FindingsResponse struct {
@@ -48,12 +52,31 @@ type FindingsResponse struct {
 	Offset   int       `json:"offset,omitempty"`
 }
 
+// Finding lists. Every finding that is not allowlisted is in exactly one.
+const (
+	ListMain     = "main"
+	ListReview   = "review"
+	ListRepeated = "repeated"
+	ListNoise    = "noise"
+	ListFlagged  = "ml_flagged"
+)
+
 type FindingsFilter struct {
-	ClientID  string
-	Platform  string
-	MLFlagged bool
-	Limit     int
-	Offset    int
+	ClientID string
+	Platform string
+	List     string // one of the List* constants; empty means the main list
+	Limit    int
+	Offset   int
+}
+
+// ListCounts is how many findings sit in each list; the five add up to every
+// finding that is not allowlisted.
+type ListCounts struct {
+	Main     int `json:"main"`
+	Review   int `json:"review"`
+	Repeated int `json:"repeated"`
+	Noise    int `json:"noise"`
+	Flagged  int `json:"ml_flagged"`
 }
 
 type FindingsSummary struct {
@@ -62,12 +85,15 @@ type FindingsSummary struct {
 	MediumCount          int `json:"medium_count"`
 	LowCount             int `json:"low_count"`
 	AffectedRepositories int `json:"affected_repositories"`
+	// Lists counts every list for the same client/platform filter, whichever
+	// list the other figures describe.
+	Lists ListCounts `json:"lists"`
 }
 
 type FindingsSummaryFilter struct {
-	ClientID  string
-	Platform  string
-	MLFlagged bool
+	ClientID string
+	Platform string
+	List     string
 }
 
 type AllowlistEntry struct {

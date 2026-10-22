@@ -31,8 +31,37 @@ func NewFindingsHandler(service *svc.FindingsService) *FindingsHandler {
 	return &FindingsHandler{service: service}
 }
 
-func (h *FindingsHandler) List(w http.ResponseWriter, r *http.Request)        { h.list(w, r, false) }
-func (h *FindingsHandler) ListFlagged(w http.ResponseWriter, r *http.Request) { h.list(w, r, true) }
+// The five lists: every finding that is not allowlisted is in exactly one.
+func (h *FindingsHandler) List(w http.ResponseWriter, r *http.Request) { h.list(w, r, models.ListMain) }
+func (h *FindingsHandler) ListReview(w http.ResponseWriter, r *http.Request) {
+	h.list(w, r, models.ListReview)
+}
+func (h *FindingsHandler) ListRepeated(w http.ResponseWriter, r *http.Request) {
+	h.list(w, r, models.ListRepeated)
+}
+func (h *FindingsHandler) ListNoise(w http.ResponseWriter, r *http.Request) {
+	h.list(w, r, models.ListNoise)
+}
+func (h *FindingsHandler) ListFlagged(w http.ResponseWriter, r *http.Request) {
+	h.list(w, r, models.ListFlagged)
+}
+
+// listFromFlag keeps the older ml_flagged=true|false switch working: true
+// reads the ML-flagged list, false the main one.
+func listFromFlag(w http.ResponseWriter, raw string) (string, bool) {
+	if raw == "" {
+		return "", true
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "ml_flagged must be true or false", "INVALID_QUERY")
+		return "", false
+	}
+	if value {
+		return models.ListFlagged, true
+	}
+	return models.ListMain, true
+}
 
 func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	if !requireScannerAdmin(w, r) {
@@ -47,14 +76,11 @@ func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		ClientID: strings.TrimSpace(q.Get("client_id")),
 		Platform: strings.TrimSpace(q.Get("platform")),
 	}
-	if raw := q.Get("ml_flagged"); raw != "" {
-		value, err := strconv.ParseBool(raw)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "ml_flagged must be true or false", "INVALID_QUERY")
-			return
-		}
-		filter.MLFlagged = value
+	list, ok := listFromFlag(w, q.Get("ml_flagged"))
+	if !ok {
+		return
 	}
+	filter.List = list
 	if filter.Platform != "" {
 		if _, ok := validPlatforms[strings.ToLower(filter.Platform)]; !ok {
 			writeAPIError(w, http.StatusBadRequest, "Invalid platform: "+filter.Platform+". Allowed: codecommit, github", "INVALID_PLATFORM")
@@ -73,7 +99,7 @@ func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, forceFlagged bool) {
+func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, list string) {
 	if !requireScannerAdmin(w, r) {
 		return
 	}
@@ -104,10 +130,10 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, forceFlag
 		return
 	}
 	filter := models.FindingsFilter{
-		ClientID:  strings.TrimSpace(q.Get("client_id")),
-		Platform:  strings.TrimSpace(q.Get("platform")),
-		Limit:     200,
-		MLFlagged: forceFlagged,
+		ClientID: strings.TrimSpace(q.Get("client_id")),
+		Platform: strings.TrimSpace(q.Get("platform")),
+		Limit:    200,
+		List:     list,
 	}
 	if len(filter.ClientID) > 200 {
 		writeAPIError(w, http.StatusBadRequest, "client_id exceeds 200 characters", "INVALID_QUERY")
@@ -119,13 +145,15 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, forceFlag
 			return
 		}
 	}
-	if raw := q.Get("ml_flagged"); raw != "" && !forceFlagged {
-		v, err := strconv.ParseBool(raw)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "ml_flagged must be true or false", "INVALID_QUERY")
+	// ml_flagged only switches the main list; the other routes already name theirs.
+	if list == models.ListMain {
+		flagged, ok := listFromFlag(w, q.Get("ml_flagged"))
+		if !ok {
 			return
 		}
-		filter.MLFlagged = v
+		if flagged != "" {
+			filter.List = flagged
+		}
 	}
 	if raw := q.Get("limit"); raw != "" {
 		v, err := strconv.Atoi(raw)

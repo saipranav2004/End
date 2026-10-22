@@ -22,7 +22,9 @@ import { ChartSkeleton, ListSkeleton } from '../../ui/Skeleton';
 import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { SegmentedControl, Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
+import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { TrendChart } from '../../charts/TrendChart';
+import { TooltipCard } from '../../charts/ChartTooltip';
 import { ApiShareList, formatShare, ScheduleGrid } from './visuals';
 import {
   anomalyStatusMeta,
@@ -444,7 +446,10 @@ function GenomeTab({ sourceType, identityName, window, summary, timeline }) {
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <NormalBehaviour dimensions={dimensions} schedule={activitySchedule} span={span} />
-        <BaselineProvenance summary={summary} timeline={timeline} span={span} />
+        <div className="flex min-w-0 flex-col gap-4">
+          <BehaviourRadar dimensions={dimensions} span={span} />
+          <BaselineProvenance summary={summary} timeline={timeline} span={span} />
+        </div>
       </div>
 
       <div className="grid gap-4 @min-[52rem]:grid-cols-2">
@@ -545,6 +550,56 @@ function consistency(values) {
   if (reported.length === 1 && top >= 99.5) return { label: 'Always', tone: 'low' };
   if (top >= 80) return { label: 'Mostly', tone: 'info' };
   return { label: `${formatNumber(reported.length)} values`, tone: 'neutral' };
+}
+
+/**
+ * One spoke per measured trait; the further out, the more often the identity
+ * does the same thing. A small, even shape means a predictable workload, a dent
+ * is a trait that varies.
+ */
+function BehaviourRadar({ dimensions, span }) {
+  const order = PROFILE_GROUPS.flatMap((group) => group.dims);
+  const axes = dimensions
+    .filter((entry) => !SHOWN_ELSEWHERE.has(entry.dimension) && !entry.values.every((value) => unreported(value.value)))
+    .map((entry) => {
+      const top = entry.values.find((value) => !unreported(value.value));
+      return { key: entry.dimension, trait: dimensionLabel(entry.dimension), score: Math.min(100, Math.round(Number(top?.share_percent) || 0)), value: dimensionValueLabel(entry.dimension, top?.value) };
+    })
+    .sort((a, b) => (order.indexOf(a.key) + 1 || 99) - (order.indexOf(b.key) + 1 || 99))
+    .slice(0, 8);
+  if (axes.length < 3) return null;
+  const steadiest = axes.reduce((best, axis) => (axis.score > best.score ? axis : best));
+  const loosest = axes.reduce((worst, axis) => (axis.score < worst.score ? axis : worst));
+
+  return (
+    <Panel prominence="quiet" className="animate-rise">
+      <PanelHeader
+        prominence="quiet"
+        title="How predictable it is"
+        subtitle={`Each spoke is one trait over the last ${span}. The further out, the more often it does the same thing.`}
+      />
+      <div className="mt-2 h-60" role="img" aria-label={`Radar of how consistent ${axes.length} traits are`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={axes} outerRadius="58%" margin={{ top: 8, right: 36, bottom: 8, left: 36 }}>
+            <PolarGrid stroke="var(--t-line)" />
+            <PolarAngleAxis dataKey="trait" tick={{ fill: 'var(--t-ink-2)', fontSize: 11 }} />
+            <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+            <Tooltip
+              cursor={false}
+              content={({ active, payload }) => {
+                const axis = active && payload?.[0]?.payload;
+                return axis ? <TooltipCard title={axis.trait} subtitle={`Usually: ${axis.value}`} rows={[{ label: 'Same value', value: `${axis.score}% of the time` }]} /> : null;
+              }}
+            />
+            <Radar dataKey="score" stroke="var(--t-brand)" strokeWidth={2} fill="var(--t-brand)" fillOpacity={0.22} dot={{ r: 3, fill: 'var(--t-brand)', fillOpacity: 1 }} isAnimationActive />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-[12px] text-ink-3">
+        Steadiest: <span className="text-ink-2">{steadiest.trait}</span> ({steadiest.score}%). Most varied: <span className="text-ink-2">{loosest.trait}</span> ({loosest.score}%).
+      </p>
+    </Panel>
+  );
 }
 
 /** "Fri" or "Mon–Fri", and "05:00–13:59 UTC", from the schedule cells. */

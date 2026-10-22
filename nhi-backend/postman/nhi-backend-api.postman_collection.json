@@ -2414,7 +2414,7 @@
                 }
               ]
             },
-            "description": "Admin role required. Newest first; the 37 scanner fields per finding; timestamps always carry an offset."
+            "description": "Admin role required. The main list (what needs action), newest first; 41 scanner fields per finding (incl. ml_veto_score, ml_veto_model_version, value_fingerprint, noise_flags); timestamps always carry an offset. Every finding that is not marked safe is in exactly one of: main, /review, /repeated, /noise, /flagged."
           }
         },
         {
@@ -2495,7 +2495,166 @@
                 }
               ]
             },
-            "description": "Same as list with ml_flagged forced true."
+            "description": "Likely false alarms (alias: /findings/ml-flagged). Same as list with ml_flagged forced true."
+          }
+        },
+        {
+          "name": "Findings - needs review",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings",
+                "review"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored: this route names its list)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "1-500, default 200",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ">= 0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Needs review: the models are unsure either way, so a person should decide (rescued FALSE_POSITIVE with ml_score >= 0.25, or weak REAL_SECRET). Same 41 fields."
+          }
+        },
+        {
+          "name": "Findings - same value repeated",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings/repeated",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings",
+                "repeated"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored: this route names its list)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "1-500, default 200",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ">= 0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The same value_fingerprint at 3+ different places in one commit (private-key detectors exempt). Group client-side by (platform, client_id, repository, commit_id, value_fingerprint) and by repeat count."
+          }
+        },
+        {
+          "name": "Findings - known harmless",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/credential-exposure/findings/noise",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "credential-exposure",
+                "findings",
+                "noise"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "<=200 chars",
+                  "disabled": true
+                },
+                {
+                  "key": "platform",
+                  "value": "github",
+                  "description": "codecommit | github",
+                  "disabled": true
+                },
+                {
+                  "key": "ml_flagged",
+                  "value": "true",
+                  "description": "bool (ignored: this route names its list)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "1-500, default 200",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ">= 0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Values tagged in noise_flags: known_example_value, expired_signed_url, vector_image_file, integrity_hash, arn_identifier, password_hash, plain_url."
           }
         },
         {
@@ -2536,7 +2695,7 @@
                 }
               ]
             },
-            "description": ""
+            "description": "Counts for one list (main unless ml_flagged=true): total_findings, high/medium/low, affected_repositories, plus lists {main, review, repeated, noise, ml_flagged} for every list (they add up to all findings not marked safe)."
           }
         },
         {

@@ -7,6 +7,9 @@ import { ApiError, expectField } from './http';
  * request is written to the tenant's deep-scan table for the scanner worker.
  *
  *   GET    /api/v1/credential-exposure/findings            ?limit (<=500) &offset | ?finding_id
+ *   GET    /api/v1/credential-exposure/findings/review     the models are unsure: a person decides
+ *   GET    /api/v1/credential-exposure/findings/repeated   one value copied to 3+ places in a commit
+ *   GET    /api/v1/credential-exposure/findings/noise      recognised harmless values
  *   GET    /api/v1/credential-exposure/findings/flagged    findings the model marked false positive
  *   GET    /api/v1/credential-exposure/findings/summary
  *   POST   /api/v1/credential-exposure/decisions           { finding_id, decision }
@@ -20,14 +23,23 @@ const CE = '/api/v1/credential-exposure';
 const PAGE = 500;
 const MAX_FINDINGS = 20000;
 
+/* Every finding that is not marked safe is in exactly one of five lists. */
+const LIST_PATHS = {
+  live: `${CE}/findings`,
+  review: `${CE}/findings/review`,
+  repeated: `${CE}/findings/repeated`,
+  noise: `${CE}/findings/noise`,
+  flagged: `${CE}/findings/flagged`,
+};
+
 /**
- * Every finding. The API pages at most 500 at a time and reports the full
- * `count`, so every page is read: the screens filter, count and group the
- * whole set, and a partial set would undercount. `flagged` returns the ones
- * the model marked as false positives.
+ * Every finding in one list (`live` is the main list). The API pages at most
+ * 500 at a time and reports the full `count`, so every page is read: the
+ * screens filter, count and group the whole set, and a partial set would
+ * undercount.
  */
-export async function fetchFindings(signal, { flagged = false } = {}) {
-  const path = flagged ? `${CE}/findings/flagged` : `${CE}/findings`;
+export async function fetchFindings(signal, { list = 'live' } = {}) {
+  const path = LIST_PATHS[list] ?? LIST_PATHS.live;
   const findings = [];
   let count = 0;
   for (let offset = 0; offset < MAX_FINDINGS; offset += PAGE) {
@@ -42,7 +54,7 @@ export async function fetchFindings(signal, { flagged = false } = {}) {
   return { findings, count };
 }
 
-/** { total_findings, high_count, medium_count, low_count, affected_repositories } */
+/** { total_findings, high_count, medium_count, low_count, affected_repositories, lists: { main, review, repeated, noise, ml_flagged } } */
 export async function fetchFindingsSummary(signal) {
   return expectField(await client.get(`${CE}/findings/summary`, { signal }), 'total_findings');
 }

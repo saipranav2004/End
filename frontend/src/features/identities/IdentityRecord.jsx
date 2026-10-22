@@ -30,6 +30,7 @@ import {
   shareText,
 } from './meta';
 import { SignalBreakdown } from './status';
+import { AccountHealth, HowItWasFound, ROOT_SAFETY_KEYS, hasAccountSummary } from './DiscoveryVisuals';
 
 export const RECORD_TABS = [
   { value: 'overview', label: 'Overview', icon: Info },
@@ -159,17 +160,17 @@ function OverviewPanel({ identityId, query, active, compact }) {
               {identity.created_by ? `Created by ${identity.created_by.split('/').pop()}` : 'No creator recorded in the AWS activity log'}
             </span>
           </Fact>
-          <Fact label={primary ? `Runs as (${credentialTypeMeta(primary.credential_type).label})` : 'Runs as'} wide>
+          <Fact label="Attached credential" wide>
             {primary ? (
               <>
                 <span className="font-mono text-[12.5px]">{primary.name}</span>
                 <span className="block text-[11.5px] text-ink-3">
-                  {bindingLabel(primary.binding_type)}
+                  {credentialTypeMeta(primary.credential_type).label} · {bindingLabel(primary.binding_type)}
                   {primary.trust_principal ? ` · may be used by ${primary.trust_principal}` : ''}
                 </span>
               </>
             ) : (
-              'No credential linked'
+              <span className="text-ink-3">No credential attached</span>
             )}
           </Fact>
           <Fact label="What it can do">
@@ -345,14 +346,14 @@ function OverviewPanel({ identityId, query, active, compact }) {
         </div>
       </div>
 
-      <Disclosure label="Technical details" hint="How it was found, AWS attributes and IDs">
+      <HowItWasFound identity={identity} discovery={discovery} compact={compact} />
+      {hasAccountSummary(data.type_attributes) && <AccountHealth attributes={data.type_attributes} />}
+
+      <Disclosure label="Technical details" hint="Exact dates, ARN, inventory id and AWS attributes">
         <div className={cn('grid gap-6', !compact && 'xl:grid-cols-2')}>
           <div>
-            <SectionLabel>How it was found</SectionLabel>
+            <SectionLabel>Exact dates and IDs</SectionLabel>
             <DetailList className="mt-1">
-              <DetailRow label="Found by">{discovery.discovery_source ? titleCaseEnum(discovery.discovery_source) : 'Not recorded'}</DetailRow>
-              <DetailRow label="Credential matched by">{discovery.credential_resolution || 'Not recorded'}</DetailRow>
-              <DetailRow label="Data sources">{discovery.data_sources || 'Not recorded'}</DetailRow>
               <DetailRow label="Created in AWS">
                 {identity.created_at_aws ? formatDateTime(identity.created_at_aws) : 'Not recorded'}
                 {Number.isFinite(identity.age_days) && <span className="ml-1.5 text-ink-3">({formatNumber(identity.age_days)} days ago)</span>}
@@ -370,7 +371,7 @@ function OverviewPanel({ identityId, query, active, compact }) {
 
           <div>
             <SectionLabel>{identityTypeLabel(identity.identity_type)} attributes from AWS</SectionLabel>
-            <AttributeList attributes={data.type_attributes} />
+            <AttributeList attributes={data.type_attributes} hide={hasAccountSummary(data.type_attributes) ? ROOT_SAFETY_KEYS : []} />
           </div>
         </div>
       </Disclosure>
@@ -1131,17 +1132,34 @@ export function TagList({ tags, empty = 'No tags on this resource.' }) {
 }
 
 /** Type-specific attributes as label/value rows; shared with the credential drawer. */
-export function AttributeList({ attributes }) {
-  const entries = attributes && typeof attributes === 'object' ? Object.entries(attributes) : [];
-  if (entries.length === 0) return <p className="mt-2 text-[12.5px] text-ink-3">No type-specific attributes recorded.</p>;
+export function AttributeList({ attributes, hide = [] }) {
+  const all = attributes && typeof attributes === 'object' ? Object.entries(attributes) : [];
+  const entries = all.filter(([key]) => !hide.includes(key) && key !== 'field_status');
+  const status = attributes?.field_status && typeof attributes.field_status === 'object' ? Object.entries(attributes.field_status) : [];
+  // Fields that do not apply to this kind of identity read as one line, not ten rows.
+  const notApplicable = status.filter(([, value]) => value === 'not_applicable').map(([key]) => titleCaseEnum(key));
+  const otherStatus = status.filter(([, value]) => value !== 'not_applicable');
+  if (entries.length === 0 && status.length === 0) return <p className="mt-2 text-[12.5px] text-ink-3">No type-specific attributes recorded.</p>;
   return (
-    <DetailList className="mt-1">
-      {entries.map(([key, value]) => (
-        <DetailRow key={key} label={titleCaseEnum(key)} mono>
-          <AttributeValue value={value} />
-        </DetailRow>
-      ))}
-    </DetailList>
+    <>
+      <DetailList className="mt-1">
+        {entries.map(([key, value]) => (
+          <DetailRow key={key} label={titleCaseEnum(key)} mono>
+            <AttributeValue value={value} />
+          </DetailRow>
+        ))}
+        {otherStatus.length > 0 && (
+          <DetailRow label="Field status" mono>
+            <AttributeValue value={Object.fromEntries(otherStatus)} />
+          </DetailRow>
+        )}
+      </DetailList>
+      {notApplicable.length > 0 && (
+        <p className="mt-3 text-[12px] text-ink-3">
+          Does not apply to this kind of identity: <span className="text-ink-2">{notApplicable.join(', ')}</span>
+        </p>
+      )}
+    </>
   );
 }
 

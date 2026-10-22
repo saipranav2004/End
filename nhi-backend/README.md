@@ -190,9 +190,12 @@ Reads for every signed-in user; changes for admins.
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/credential-exposure/findings` | Secrets the scanner found in GitHub / CodeCommit, live (not marked safe, not model-flagged), newest first. Same 37 fields as the scanner's own API; timestamps always carry an offset (rows stored without one are UTC). |
-| GET | `/credential-exposure/findings/flagged` | Findings the detection model scored as false positives. |
-| GET | `/credential-exposure/findings/summary` | Counts by risk and repositories affected. |
+| GET | `/credential-exposure/findings` | The **main list**: secrets the scanner found in GitHub / CodeCommit that need action (not marked safe, not set aside by the rules in "Finding lists"), newest first. Same 41 fields as the scanner's own API (the 37 earlier ones plus `ml_veto_score`, `ml_veto_model_version`, `value_fingerprint`, `noise_flags`); timestamps always carry an offset (rows stored without one are UTC). `?ml_flagged=true` reads the ML-flagged list instead. |
+| GET | `/credential-exposure/findings/review` | **Needs review**: the models are unsure either way, so a person should decide. |
+| GET | `/credential-exposure/findings/repeated` | **Same value repeated**: one value (`value_fingerprint`) at 3+ different places in one commit. The console groups it by repeat count. |
+| GET | `/credential-exposure/findings/noise` | **Known harmless**: values tagged in `noise_flags` (published example keys, hashes, ARNs, plain URLs...). |
+| GET | `/credential-exposure/findings/flagged` (alias `/ml-flagged`) | **Likely false alarms**: the models think they are not real secrets. |
+| GET | `/credential-exposure/findings/summary` | Counts by risk and repositories affected for one list (main unless `?ml_flagged=true`), plus `lists: {main, review, repeated, noise, ml_flagged}` - the five counts add up to every finding that is not marked safe. |
 | GET | `/credential-exposure/allowlist` | Findings marked safe (the Accepted list). |
 | POST | `/credential-exposure/allowlist` | Marks a finding as safe, with a reason. |
 | DELETE | `/credential-exposure/allowlist` | Restores a finding to the live list. |
@@ -553,6 +556,37 @@ Secret scanner contract: scan CodeCommit where `codecommit_enabled`, and the
 GitHub token at `github_secret_arn` where `github_enabled`, by assuming
 `client_role_arn` with `external_id`.
 
+#### Finding lists (read-time rules)
+
+Nothing is deleted or stored per list: the API sorts every finding that is not
+in `secscan_allowlist_dashboard` into exactly one list when it reads
+`secscan_findings_codecommit` + `secscan_findings_github`, checking in this
+order (the scanner's own rules, DATABASE_HANDOVER section 8b):
+
+1. **Repeated** - the same `value_fingerprint` at 3 or more different
+   `(file_path, line_number)` places in one `(platform, client_id, repository,
+   commit_id)`. Detectors containing `private_key` are exempt.
+2. **Known harmless** - `noise_flags` holds any of `known_example_value`,
+   `expired_signed_url`, `vector_image_file`, `integrity_hash`,
+   `arn_identifier`, `password_hash`, `plain_url`.
+3. **Needs review** - `ml_decision = FALSE_POSITIVE` with `ml_score >= 0.25`, or
+   `ml_decision = REAL_SECRET` with `ml_score < 0.40` (or, for a generic
+   detector, `ml_veto_score < 0.50`).
+4. **Likely false alarms** - `ml_decision = FALSE_POSITIVE`; or a generic
+   detector with `ml_veto_score < 0.13305`; or a `*_broad` detector unless
+   `ml_score >= 0.95` and `ml_veto_score >= 0.30`.
+5. **Main list** - everything else, and always any row whose
+   `ml_model_version` is `rule:private-key-with-body`.
+
+A NULL score or tag means "not scored", never zero, so an old row is never
+hidden by a rule that did not exist when it was written. Generic detectors are
+`generic_*`, `high_entropy_string*`, `jwt*`, `basic_auth_header*`,
+`bearer_token*`, `authorization_header*`, `url_embedded*`, `curl_*`,
+`docker_login*`, `webhook_url_generic*`, `azure_sas_token*` and
+`*_connection_string` (not `azure_storage_*`). The private-key exemption from
+the repeated rule is matched on the detector name (`private_key`); confirm it
+against your scanner's detector names. `ml_features` is never returned.
+
 #### Deep-scan contract (scanner worker)
 
 The API never calls the scanner. `POST /credential-exposure/deep-scan` upserts
@@ -560,7 +594,7 @@ The API never calls the scanner. `POST /credential-exposure/deep-scan` upserts
 `requested_at` in the scanner's `YYYY-MM-DDTHH:MM:SS+00:00` form) and clears
 the previous run's `completed_at`, `commits_scanned`, `findings`, `failed_at`
 and `error`; a row that is still waiting (no `completed_at`, no `failed_at`) is
-left as it is and reported `already_running`. The platform is the request's,
+left as it is and reported `already_running` (the scanner's own API restarts a running scan on re-POST; here a running one is left alone so an in-flight walk is not reset - a completed or failed one restarts, same as the guide). The platform is the request's,
 else the one the client has ledger rows or findings on, else `github` for an
 `owner/repo` name and `codecommit` otherwise. The worker claims waiting rows
 and writes `completed_at` + `commits_scanned` + `findings`, or `failed_at` +
