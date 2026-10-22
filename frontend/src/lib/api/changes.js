@@ -1,5 +1,6 @@
 import client from './client';
 import { params, unwrapMain } from './http';
+import { identityRoute } from '../identityLinks';
 
 /*
  * Scan change tracking - what each discovery scan found had changed since the
@@ -123,6 +124,23 @@ export async function fetchEntityChanges(kind, id, signal) {
     truncated: Boolean(data?.truncated),
     available: data?.change_tracking_available !== false,
   };
+}
+
+/**
+ * Where a change's entity opens: the identity page, or the credential in the
+ * register's drawer (`/credentials?search=&credential=`, the console-wide
+ * deep link). Null for an identity or credential the scan deleted - it is no
+ * longer in the inventory to open.
+ */
+export function changeEntityRoute(change) {
+  const gone = change.changeType === 'DELETED' && (change.entityType === 'identity' || change.entityType === 'credential');
+  if (gone) return null;
+  const credential = change.credentialId
+    ? `/credentials?search=${encodeURIComponent(change.name || change.arn)}&credential=${encodeURIComponent(change.credentialId)}`
+    : null;
+  if (change.entityType === 'credential' && credential) return credential;
+  if (change.identityId) return identityRoute(change.identityId);
+  return credential;
 }
 
 export const scanChangesRoute = (scanId, query = {}) => {

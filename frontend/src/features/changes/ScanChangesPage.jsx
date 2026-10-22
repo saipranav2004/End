@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, GitCompareArrows, History, SearchX } from 'lucide-react';
 import { fetchScanChanges, fetchScans, scanChangesRoute } from '../../lib/api/changes';
-import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
+import { formatDateTime, formatDuration, formatNumber, formatRelative, parseDate } from '../../lib/format';
 import { NEUTRAL_SERIES, SERIES_TOKENS } from '../../lib/domain';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { TooltipCard } from '../../charts/ChartTooltip';
@@ -15,10 +15,19 @@ import { Panel } from '../../ui/Panel';
 import { ListSkeleton, Skeleton } from '../../ui/Skeleton';
 import { EmptyState, ErrorState } from '../../ui/States';
 import { SegmentedControl } from '../../ui/Tabs';
+import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 import { CHANGE_GRID, CHANGE_META, CHANGE_TYPES, ChangeRow, ENTITY_META, ENTITY_TYPES } from './parts';
 
 const PAGE_SIZE = 25;
+
+/* How long the scan ran; null unless both ends are recorded and differ (the
+   scanner stamps both with one time when it does not track the start). */
+function scanDuration(scan) {
+  const start = parseDate(scan?.startedAt);
+  const end = parseDate(scan?.completedAt);
+  return start && end && end > start ? formatDuration(start, end) : null;
+}
 
 /* The chart palette: entity types are categories, so they must not borrow
    the green / red / amber that mean created / deleted / modified here. */
@@ -84,10 +93,10 @@ export default function ScanChangesPage() {
     const scans = scansQuery.data ?? [];
     const options = scans.map((item, index) => ({
       value: item.id,
-      label: `${formatDateTime(item.completedAt)} · ${formatNumber(item.totalChanges)} ${item.totalChanges === 1 ? 'change' : 'changes'}${index === 0 ? ' (latest)' : ''}`,
+      label: `${formatDateTime(item.completedAt)}${item.accountId ? ` · ${item.accountId}` : ''} · ${formatNumber(item.totalChanges)} ${item.totalChanges === 1 ? 'change' : 'changes'}${index === 0 ? ' (latest)' : ''}${item.status === 'partial' ? ' · partial scan' : ''}`,
     }));
     if (scan && !options.some((option) => option.value === scan.id)) {
-      options.unshift({ value: scan.id, label: formatDateTime(scan.completedAt) });
+      options.unshift({ value: scan.id, label: `${formatDateTime(scan.completedAt)}${scan.accountId ? ` · ${scan.accountId}` : ''}` });
     }
     return options;
   }, [scansQuery.data, scan]);
@@ -132,7 +141,7 @@ export default function ScanChangesPage() {
                   onChange={(event) => navigate(scanChangesRoute(event.target.value))}
                   options={scanOptions}
                   aria-label="Choose a scan"
-                  className="max-w-[18rem]"
+                  className="max-w-full sm:max-w-[27rem]"
                 />
               </label>
             )}
@@ -247,6 +256,7 @@ export default function ScanChangesPage() {
 
 function SummaryPanel({ scan, summary, changeType, entityType, onChangeType, onEntityType }) {
   const first = !scan?.previousScanId;
+  const duration = scanDuration(scan);
   const entityTotal = ENTITY_TYPES.reduce((sum, type) => sum + (summary.byEntityType[type] ?? 0), 0);
 
   return (
@@ -256,8 +266,22 @@ function SummaryPanel({ scan, summary, changeType, entityType, onChangeType, onE
           <div>
             <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Scan completed</p>
             <p className="mt-1 text-[14px] font-semibold text-ink">{formatDateTime(scan.completedAt)}</p>
-            <p className="text-[12px] text-ink-3">{formatRelative(scan.completedAt)}</p>
+            {scan.status === 'partial' && (
+              <Tag tone="medium" size="sm" dot className="mt-1.5">
+                Partial scan
+              </Tag>
+            )}
+            <p className="text-[12px] text-ink-3">
+              {formatRelative(scan.completedAt)}
+              {duration ? ` · ran ${duration}` : ''}
+            </p>
           </div>
+          {scan.accountId && (
+            <div>
+              <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Account</p>
+              <p className="mt-1 font-mono text-[13px] text-ink">{scan.accountId}</p>
+            </div>
+          )}
           <div>
             <p className="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">
               <GitCompareArrows aria-hidden="true" className="size-3.5" />

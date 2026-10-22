@@ -12,6 +12,7 @@ import { CopyableValue } from '../../ui/Copyable';
 import { DataGrid } from '../../ui/DataGrid';
 import { Meter } from '../../ui/Meter';
 import { DetailSkeleton, Skeleton } from '../../ui/Skeleton';
+import { JsonBlock, RawJson } from '../../ui/RawJson';
 import { cn } from '../../ui/cn';
 import { ClearState, EmptyState, InlineError } from '../../ui/States';
 import { EventTimeline } from '../activity/EventTimeline';
@@ -102,6 +103,9 @@ export function IdentityRecordPanels({ identityId, tab, active = true, overviewQ
       <TabPanel tabValue="activity" value={tab}>
         {tab === 'activity' && active && <CompactActivity identityId={identityId} />}
       </TabPanel>
+      <TabPanel tabValue="raw" value={tab}>
+        {tab === 'raw' && active && <RawPanel identityId={identityId} name={overviewQuery.data?.identity?.name} />}
+      </TabPanel>
     </>
   );
 }
@@ -124,8 +128,6 @@ function OverviewPanel({ identityId, query, active, compact }) {
   const used = credentials.reduce((sum, entry) => sum + (Number(entry.used_actions_count) || 0), 0);
   const kinds = [...new Set(credentials.map((entry) => credentialTypeMeta(entry.credential_type).label))];
   const takers = whoCanTakeItOn(relationshipsQuery.data, identity.arn);
-  const tags = data.tags && typeof data.tags === 'object' ? Object.entries(data.tags) : [];
-  const attributes = data.type_attributes && typeof data.type_attributes === 'object' ? Object.entries(data.type_attributes) : [];
   const raised = (data.risk_signals ?? []).filter((signal) => signal.status).length;
 
   return (
@@ -213,6 +215,11 @@ function OverviewPanel({ identityId, query, active, compact }) {
             <span className="block text-[12px] text-ink-3">
               {identity.last_activity_at ? formatDateTime(identity.last_activity_at) : 'Not seen in CloudTrail'}
             </span>
+            {Number.isFinite(identity.idle_days) && (
+              <span className={cn('block text-[12px]', identity.idle_days >= 90 ? 'font-medium text-high' : 'text-ink-3')}>
+                Idle {formatNumber(identity.idle_days)} {identity.idle_days === 1 ? 'day' : 'days'}
+              </span>
+            )}
           </Fact>
         </dl>
       </section>
@@ -332,19 +339,7 @@ function OverviewPanel({ identityId, query, active, compact }) {
       <div className={cn('grid gap-6', !compact && 'xl:grid-cols-2')}>
         <div>
           <SectionLabel>Tags</SectionLabel>
-          {tags.length === 0 ? (
-            <p className="mt-2 text-[12.5px] text-ink-3">No tags on this resource.</p>
-          ) : (
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {tags.map(([key, value]) => (
-                <li key={key}>
-                  <Code title={`${key}=${value}`}>
-                    {key}={String(value)}
-                  </Code>
-                </li>
-              ))}
-            </ul>
-          )}
+          <TagList tags={data.tags} />
           {(data.missing_tags ?? []).length > 0 && (
             <p className="mt-2 text-[12px] text-ink-3">
               Missing recommended tags: <span className="text-ink-2">{data.missing_tags.join(', ')}</span>
@@ -354,17 +349,7 @@ function OverviewPanel({ identityId, query, active, compact }) {
 
         <div>
           <SectionLabel>{identityTypeLabel(identity.identity_type)} attributes</SectionLabel>
-          {attributes.length === 0 ? (
-            <p className="mt-2 text-[12.5px] text-ink-3">No type-specific attributes recorded.</p>
-          ) : (
-            <DetailList className="mt-1">
-              {attributes.map(([key, value]) => (
-                <DetailRow key={key} label={titleCaseEnum(key)} mono>
-                  <AttributeValue value={value} />
-                </DetailRow>
-              ))}
-            </DetailList>
-          )}
+          <AttributeList attributes={data.type_attributes} />
         </div>
       </div>
 
@@ -593,6 +578,11 @@ function CredentialsPanel({ identityId }) {
                       {bindingLabel(credential.binding_type)}
                       {credential.is_primary ? ' · primary' : ''}
                     </span>
+                    {credential.binding_source && (
+                      <span className="mt-0.5 block font-mono text-[11px] font-normal break-all text-ink-3" title="Where discovery found the binding">
+                        via {credential.binding_source}
+                      </span>
+                    )}
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {life.rotation_overdue && (
@@ -626,16 +616,28 @@ function CredentialsPanel({ identityId }) {
 
                 <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
                   <MiniFact label="Created">{formatDateTime(life.created_at_aws)}</MiniFact>
+                  {Number.isFinite(life.age_days) && <MiniFact label="Age">{formatNumber(life.age_days)} days</MiniFact>}
                   <MiniFact label="Last used">{life.last_used_at ? formatRelative(life.last_used_at) : 'No use recorded'}</MiniFact>
                   <MiniFact label="Rotation">
                     {life.rotation_enabled
-                      ? `Every ${formatNumber(life.rotation_interval_days)} days`
-                      : life.last_rotated_at
-                        ? `Last ${formatRelative(life.last_rotated_at)}`
-                        : meta.longLived
-                          ? 'Never rotated'
-                          : 'Not applicable'}
+                      ? life.rotation_interval_days
+                        ? `Every ${formatNumber(life.rotation_interval_days)} days`
+                        : 'Automatic'
+                      : meta.longLived
+                        ? life.last_rotated_at
+                          ? 'Not scheduled'
+                          : 'Never rotated'
+                        : 'Not applicable'}
                   </MiniFact>
+                  {life.last_rotated_at && (
+                    <MiniFact label="Last rotated">
+                      <span title={formatDateTime(life.last_rotated_at)}>{formatRelative(life.last_rotated_at)}</span>
+                    </MiniFact>
+                  )}
+                  {/* A role's credentials are issued per session: its "days since rotation" is only its age. */}
+                  {meta.longLived && Number.isFinite(life.days_since_rotation) && (
+                    <MiniFact label="Since rotation">{formatNumber(life.days_since_rotation)} days</MiniFact>
+                  )}
                   <MiniFact label={life.expires_at ? 'Expires' : life.max_session_duration ? 'Session limit' : 'Expires'}>
                     {life.expires_at
                       ? formatDateTime(life.expires_at)
@@ -667,14 +669,15 @@ function CredentialsPanel({ identityId }) {
                   <div className="mt-3">
                     <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Policies</p>
                     <ul className="mt-1 flex flex-wrap gap-1.5">
+                      {/* The API names these {name, arn}; older payloads used policy_name / policy_arn. */}
                       {policies.map((policy, index) => (
-                        <li key={policy.policy_arn || policy.policy_name || index}>
-                          <Code title={policy.policy_arn}>{policy.policy_name || policy.policy_arn || 'Policy'}</Code>
+                        <li key={policy.arn || policy.policy_arn || policy.name || index}>
+                          <Code title={policy.arn || policy.policy_arn}>{policy.name || policy.policy_name || policy.arn || policy.policy_arn || 'Policy'}</Code>
                         </li>
                       ))}
                       {inline.map((policy, index) => (
-                        <li key={`inline-${policy.policy_name || index}`}>
-                          <Code>{policy.policy_name || 'Inline policy'} (inline)</Code>
+                        <li key={`inline-${policy.name || policy.policy_name || index}`}>
+                          <Code>{policy.name || policy.policy_name || 'Inline policy'} (inline)</Code>
                         </li>
                       ))}
                     </ul>
@@ -688,12 +691,24 @@ function CredentialsPanel({ identityId }) {
                 )}
 
                 {(credential.assumable_roles ?? []).length > 0 && (
-                  <p className="mt-2 text-[12px] text-ink-3">
-                    Can assume{' '}
-                    <span className="font-mono text-ink-2">
-                      {credential.assumable_roles.map((role) => role.target_role_arn.split('/').pop()).join(', ')}
-                    </span>
-                  </p>
+                  <div className="mt-3">
+                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Can assume</p>
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {credential.assumable_roles.map((role) => (
+                        <li key={role.target_role_arn} className="min-w-0 text-[12px] text-ink-3">
+                          <span className="font-mono text-ink-2" title={role.target_role_arn}>
+                            {role.target_role_arn.split('/').pop()}
+                          </span>
+                          {role.target_account && <span className="font-mono"> · {role.target_account}</span>}
+                          {role.last_assumed ? ` · last assumed ${formatRelative(role.last_assumed)}` : ' · not seen assumed'}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {credential.trust_policy && (
+                  <JsonBlock label="View trust policy JSON" value={credential.trust_policy} className="mt-3 bg-surface" />
                 )}
               </li>
             );
@@ -895,8 +910,17 @@ function RoleUsePanel({ identityId, overview }) {
 
       <section>
         <SectionLabel>What it reached (CloudTrail)</SectionLabel>
+        {query.data?.activity_data_available === false && (
+          <p className="mt-2 flex items-start gap-1.5 text-[12.5px] text-medium">
+            <ShieldAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            CloudTrail could not be read just now, so what it reached is unknown, not none.
+            {model.reaches.length > 0 ? ' The rows below may be incomplete.' : ''}
+          </p>
+        )}
         {model.reaches.length === 0 ? (
-          <p className="mt-2 text-[12.5px] text-ink-3">No resource access was recorded for it in the activity window.</p>
+          query.data?.activity_data_available === false ? null : (
+            <p className="mt-2 text-[12.5px] text-ink-3">No resource access was recorded for it in the activity window.</p>
+          )
         ) : (
           <DataGrid className="mt-2" caption="Resources this identity reached" rows={model.reaches} rowKey={(row) => row.key} columns={relColumns('Resource', { showCalls: true })} emptyState={null} density="compact" />
         )}
@@ -904,6 +928,30 @@ function RoleUsePanel({ identityId, overview }) {
 
       {credentialsQuery.isError && <InlineError error={credentialsQuery.error} onRetry={credentialsQuery.refetch} label="Trust policy unavailable" />}
     </div>
+  );
+}
+
+/* ── Raw ─────────────────────────────────────────────────────────────────── */
+
+function RawPanel({ identityId, name }) {
+  const query = useIdentityTab(identityId, 'raw');
+  const data = query.data;
+
+  if (query.isError && !data) return <TabError query={query} label="Raw record unavailable" />;
+  if (!data) return <DetailSkeleton rows={6} />;
+
+  return (
+    <RawJson
+      intro="The inventory record exactly as discovery stored it, the cloud API's response when it was kept, and the credential the identity resolved to. For audits and support tickets."
+      filename={`identity-${name || identityId}.json`}
+      payload={data}
+      blocks={[
+        { key: 'identity_record', label: 'Identity record', value: data.identity_record },
+        { key: 'resolved_credential', label: 'Resolved credential', value: data.resolved_credential },
+        { key: 'type_attributes', label: 'Type attributes', value: data.type_attributes },
+        { key: 'raw_api_response', label: 'Raw API response', value: data.raw_api_response },
+      ]}
+    />
   );
 }
 
@@ -924,6 +972,38 @@ function CompactActivity({ identityId }) {
         .
       </p>
     </div>
+  );
+}
+
+/** Resource tags as key=value chips; shared with the credential drawer. */
+export function TagList({ tags, empty = 'No tags on this resource.' }) {
+  const entries = tags && typeof tags === 'object' ? Object.entries(tags) : [];
+  if (entries.length === 0) return <p className="mt-2 text-[12.5px] text-ink-3">{empty}</p>;
+  return (
+    <ul className="mt-2 flex flex-wrap gap-1.5">
+      {entries.map(([key, value]) => (
+        <li key={key} className="max-w-full">
+          <Code title={`${key}=${value}`}>
+            {key}={String(value)}
+          </Code>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Type-specific attributes as label/value rows; shared with the credential drawer. */
+export function AttributeList({ attributes }) {
+  const entries = attributes && typeof attributes === 'object' ? Object.entries(attributes) : [];
+  if (entries.length === 0) return <p className="mt-2 text-[12.5px] text-ink-3">No type-specific attributes recorded.</p>;
+  return (
+    <DetailList className="mt-1">
+      {entries.map(([key, value]) => (
+        <DetailRow key={key} label={titleCaseEnum(key)} mono>
+          <AttributeValue value={value} />
+        </DetailRow>
+      ))}
+    </DetailList>
   );
 }
 

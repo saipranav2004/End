@@ -1,6 +1,6 @@
 import { Component, useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Dna, Fingerprint, GitCompareArrows, ShieldCheck, Waypoints } from 'lucide-react';
+import { ArrowLeft, Braces, Dna, Fingerprint, GitCompareArrows, ShieldCheck, Waypoints } from 'lucide-react';
 import { accessGraphRoute, genomeRouteFor } from '../../lib/identityLinks';
 import { BehaviourBaseline } from './BehaviourBaseline';
 import { EntityChangesTab } from '../changes/EntityChangesTab';
@@ -19,7 +19,7 @@ import { IdentityTags } from './IdentityDrawer';
 import { IdentityRecordPanels, recordTabs, useIdentityTab } from './IdentityRecord';
 import { functionalClassMeta, identityTypeLabel } from './meta';
 
-const RECORD_KEYS = new Set(['overview', 'permissions', 'credentials', 'roles']);
+const RECORD_KEYS = new Set(['overview', 'permissions', 'credentials', 'roles', 'raw']);
 /* Event-view keys the Activity tab keeps in the URL; dropped when leaving it. */
 const ACTIVITY_KEYS = ['range', 'service', 'action', 'result', 'rw', 'resource', 'ip', 'cred', 'page', 'size', 'view', 'section', 'event'];
 
@@ -50,7 +50,7 @@ export default function IdentityPage() {
 
   const tabs = useMemo(() => {
     const base = recordTabs(overview);
-    return [base[0], { value: 'posture', label: 'Posture', icon: ShieldCheck }, ...base.slice(1), { value: 'changes', label: 'Changes', icon: GitCompareArrows }];
+    return [base[0], { value: 'posture', label: 'Posture', icon: ShieldCheck }, ...base.slice(1), { value: 'changes', label: 'Changes', icon: GitCompareArrows }, { value: 'raw', label: 'Raw', icon: Braces }];
   }, [overview]);
   const requested = searchParams.get('tab') || 'overview';
   const tab = tabs.some((entry) => entry.value === requested) ? requested : 'overview';

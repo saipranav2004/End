@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Eye, Fingerprint, GitCompareArrows, History, KeyRound, Link2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Braces, Eye, Fingerprint, GitCompareArrows, History, KeyRound, Link2, ShieldCheck } from 'lucide-react';
 import { fetchCredential } from '../../lib/api/inventory';
 import { EntityChangesTab } from '../changes/EntityChangesTab';
 import { useQuery } from '../../lib/hooks';
@@ -15,7 +15,9 @@ import { DataGrid } from '../../ui/DataGrid';
 import { Pagination } from '../../ui/Pagination';
 import { DetailSkeleton } from '../../ui/Skeleton';
 import { ClearState, EmptyState, InlineError } from '../../ui/States';
+import { JsonBlock, RawJson } from '../../ui/RawJson';
 import { cn } from '../../ui/cn';
+import { AttributeList, TagList } from '../identities/IdentityRecord';
 import { SignalBreakdown } from '../identities/status';
 import {
   EDGE_LABELS,
@@ -30,10 +32,11 @@ import {
 const TABS = [
   { value: 'overview', label: 'Overview', icon: KeyRound },
   { value: 'trust', label: 'Trust & permissions', icon: ShieldCheck },
-  { value: 'rotation', label: 'Rotation', icon: History },
   { value: 'activity', label: 'Activity', icon: Eye },
+  { value: 'rotation', label: 'Rotation', icon: History },
   { value: 'relationships', label: 'Relationships', icon: Link2 },
   { value: 'changes', label: 'Changes', icon: GitCompareArrows },
+  { value: 'raw', label: 'Raw', icon: Braces },
 ];
 
 /**
@@ -48,6 +51,8 @@ export function CredentialDrawer({ credentialId, row, onClose, initialTab }) {
   const credential = overviewQuery.data?.credential ?? row;
   const status = lifecycleMeta(credential?.status);
   const meta = credentialTypeMeta(credential?.credential_type);
+  /* The overview's flags when it has them, else the register row's. */
+  const flag = (key) => overviewQuery.data?.credential?.[key] ?? row?.[key];
 
   return (
     <Drawer
@@ -64,17 +69,17 @@ export function CredentialDrawer({ credentialId, row, onClose, initialTab }) {
               <Tag tone={status.tone} size="sm" dot>
                 {status.label}
               </Tag>
-              {credential.rotation_overdue && (
+              {flag('rotation_overdue') && (
                 <Tag tone="high" size="sm">
                   Rotation overdue
                 </Tag>
               )}
-              {row?.is_orphaned && (
+              {flag('is_orphaned') && (
                 <Tag tone="high" size="sm">
                   Orphaned
                 </Tag>
               )}
-              {row?.has_external_trust && (
+              {flag('has_external_trust') && (
                 <Tag tone="medium" size="sm">
                   External trust
                 </Tag>
@@ -94,6 +99,7 @@ export function CredentialDrawer({ credentialId, row, onClose, initialTab }) {
         {tab === 'activity' && <ActivityTab credentialId={credentialId} />}
         {tab === 'relationships' && <RelationshipsTab credentialId={credentialId} />}
         {tab === 'changes' && <EntityChangesTab kind="credential" id={credentialId} />}
+        {tab === 'raw' && <RawTab credentialId={credentialId} name={credential?.name} />}
       </div>
     </Drawer>
   );
@@ -126,13 +132,13 @@ function OverviewTab({ credentialId, query }) {
   return (
     <TabState query={query} label="Credential unavailable">
       {query.data && (
-        <OverviewBody data={query.data} privilege={privilege} privilegeLoading={rawQuery.isLoading && !rawQuery.data} />
+        <OverviewBody data={query.data} privilege={privilege} record={rawQuery.data?.credential_record} recordLoading={rawQuery.isLoading && !rawQuery.data} />
       )}
     </TabState>
   );
 }
 
-function OverviewBody({ data, privilege, privilegeLoading }) {
+function OverviewBody({ data, privilege, record, recordLoading }) {
   const credential = data.credential ?? {};
   const meta = credentialTypeMeta(credential.credential_type);
   const bound = data.bound_identities ?? [];
@@ -153,7 +159,7 @@ function OverviewBody({ data, privilege, privilegeLoading }) {
             <span className="font-mono text-[12.5px]">{credential.account_id}</span>
             <span className="ml-1.5 text-ink-3">{credential.region}</span>
           </DetailRow>
-          <DetailRow label="Privilege level">{privilegeLoading ? '…' : privilege || 'Not recorded'}</DetailRow>
+          <DetailRow label="Privilege level">{recordLoading ? '…' : privilege || 'Not recorded'}</DetailRow>
           <DetailRow label="Created">
             {formatDateTime(credential.created_at_aws)}
             {Number.isFinite(credential.age_days) && <span className="ml-1.5 text-ink-3">({formatNumber(credential.age_days)} days old)</span>}
@@ -219,7 +225,12 @@ function OverviewBody({ data, privilege, privilegeLoading }) {
                     {identityTypeLabel(identity.identity_type)} · {bindingLabel(identity.binding_type)} · {identity.account_id}
                   </span>
                 </span>
-                <span className="shrink-0 text-right text-[11.5px] text-ink-3">
+                <span className="flex shrink-0 flex-col items-end gap-1 text-right text-[11.5px] text-ink-3">
+                  {identity.status && (
+                    <Tag tone={lifecycleMeta(identity.status).tone} size="sm" dot>
+                      {lifecycleMeta(identity.status).label}
+                    </Tag>
+                  )}
                   {identity.last_activity_at ? `Active ${formatRelative(identity.last_activity_at)}` : 'No activity recorded'}
                 </span>
               </li>
@@ -233,6 +244,16 @@ function OverviewBody({ data, privilege, privilegeLoading }) {
         <div className="mt-1">
           <SignalBreakdown signals={data.risk_signals} />
         </div>
+      </div>
+
+      <div>
+        <SectionLabel>{meta.label} attributes</SectionLabel>
+        <AttributeList attributes={data.type_attributes} />
+      </div>
+
+      <div>
+        <SectionLabel>Tags</SectionLabel>
+        {recordLoading ? <p className="mt-2 text-[12.5px] text-ink-3">…</p> : <TagList tags={record?.tags} empty="No tags on this credential." />}
       </div>
 
       <div>
@@ -271,7 +292,7 @@ function TrustTab({ credentialId }) {
               ))}
             </ul>
           )}
-          {principals.length === 0 ? (
+          {principals.length === 0 && !data?.trust_policy?.raw ? (
             <p className="mt-2 text-[12.5px] text-ink-3">No trust policy - this kind of credential is used by whoever holds it.</p>
           ) : (
             <ul className="mt-2 divide-y divide-line">
@@ -295,6 +316,7 @@ function TrustTab({ credentialId }) {
               ))}
             </ul>
           )}
+          {data?.trust_policy?.raw && <JsonBlock label="View JSON" value={data.trust_policy.raw} className="mt-2" />}
         </div>
 
         <div>
@@ -303,14 +325,15 @@ function TrustTab({ credentialId }) {
             <p className="mt-2 text-[12.5px] text-ink-3">No policy is attached.</p>
           ) : (
             <ul className="mt-2 flex flex-wrap gap-1.5">
+              {/* The API names these {name, arn}; older payloads used policy_name / policy_arn. */}
               {attached.map((policy, index) => (
-                <li key={policy.policy_arn || index}>
-                  <Code title={policy.policy_arn}>{policy.policy_name || policy.policy_arn}</Code>
+                <li key={policy.arn || policy.policy_arn || index}>
+                  <Code title={policy.arn || policy.policy_arn}>{policy.name || policy.policy_name || policy.arn || policy.policy_arn}</Code>
                 </li>
               ))}
               {inline.map((policy, index) => (
                 <li key={`inline-${index}`}>
-                  <Code>{policy.policy_name || 'Inline policy'} (inline)</Code>
+                  <Code>{policy.name || policy.policy_name || 'Inline policy'} (inline)</Code>
                 </li>
               ))}
             </ul>
@@ -473,6 +496,13 @@ function ActivityTab({ credentialId }) {
   const peak = volume.reduce((max, point) => Math.max(max, Number(point.count) || 0), 0);
   const analytics = data?.analytics ?? {};
   const users = callersOf(data?.identities_using_this_credential ?? [], data?.recent_events ?? []);
+  const failures = data?.error_events ?? [];
+  const rate = (value, label) => (value === null || value === undefined ? null : `${value}% ${label}`);
+  const usage = [
+    analytics.usage_pattern && `${analytics.usage_pattern} use`,
+    rate(analytics.error_rate_pct, 'errors'),
+    rate(analytics.access_denied_rate_pct, 'access denied'),
+  ].filter(Boolean);
 
   return (
     <div className="flex flex-col gap-5">
@@ -508,25 +538,14 @@ function ActivityTab({ credentialId }) {
                     ))}
                   </div>
                 )}
-                <p className="mt-1 text-[11.5px] text-ink-3">
-                  {analytics.usage_pattern ? `${analytics.usage_pattern} use` : ''}
-                  {analytics.error_rate_pct !== null && analytics.error_rate_pct !== undefined ? ` · ${analytics.error_rate_pct}% errors` : ''}
-                </p>
+                {usage.length > 0 && <p className="mt-1 text-[11.5px] text-ink-3">{usage.join(' · ')}</p>}
               </div>
-              <div>
-                <SectionLabel>Top services</SectionLabel>
-                <ul className="mt-2 flex flex-col gap-1">
-                  {(analytics.top_services ?? []).slice(0, 5).map((entry) => (
-                    <li key={entry.service} className="flex items-center justify-between gap-2 text-[12px]">
-                      <span className="truncate font-mono text-ink-2">{entry.service}</span>
-                      <span data-numeric="" className="font-semibold text-ink">
-                        {formatNumber(entry.count)}
-                      </span>
-                    </li>
-                  ))}
-                  {(analytics.top_services ?? []).length === 0 && <li className="text-[12px] text-ink-3">None</li>}
-                </ul>
-              </div>
+              <CountList title="Top services" rows={analytics.top_services} name={(entry) => entry.service} />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <CountList title="Top actions" rows={analytics.top_actions} name={(entry) => entry.action} />
+              <CountList title="Active regions" rows={analytics.active_regions} name={(entry) => entry.region} />
             </div>
 
             <div>
@@ -551,11 +570,41 @@ function ActivityTab({ credentialId }) {
                           {user.source_ip ? ` · ${user.source_ip}` : ''}
                         </span>
                       </span>
-                      <span className="shrink-0 text-right text-[11.5px] text-ink-3">
+                      <span className="max-w-[45%] shrink-0 text-right text-[11.5px] text-ink-3">
                         <span data-numeric="" className="block font-semibold text-ink-2">
                           {formatNumber(user.calls)} {user.calls === 1 ? 'call' : 'calls'}
                         </span>
-                        {user.last_action_time ? `last ${formatRelative(user.last_action_time)}` : ''}
+                        <span className="block truncate" title={user.last_action || undefined}>
+                          {user.last_action ? <span className="font-mono">{user.last_action}</span> : null}
+                          {user.last_action && user.last_action_time ? ' · ' : ''}
+                          {user.last_action_time ? formatRelative(user.last_action_time) : ''}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <SectionLabel>Failed calls{failures.length > 0 ? ` · ${formatNumber(failures.length)}` : ''}</SectionLabel>
+              {failures.length === 0 ? (
+                <p className="mt-2 text-[12.5px] text-ink-3">No call failed in this window.</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-line">
+                  {failures.map((event, index) => (
+                    <li key={`${event.event_time}-${event.event_name}-${index}`} className="flex items-start gap-3 py-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-medium text-critical" title={event.error_message || undefined}>
+                          {event.event_name}
+                          {event.error_code && <span className="ml-1.5 font-mono text-[11.5px] font-normal">{event.error_code}</span>}
+                        </span>
+                        <span className="block truncate text-[11px] text-ink-3">
+                          {[event.service, event.source_ip, event.identity_name].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[12px] whitespace-nowrap text-ink-2" title={formatDateTime(event.event_time)}>
+                        {formatRelative(event.event_time)}
                       </span>
                     </li>
                   ))}
@@ -576,7 +625,7 @@ function ActivityTab({ credentialId }) {
                     key: 'event',
                     header: 'Call',
                     primary: true,
-                    width: '34%',
+                    width: '28%',
                     cell: (row) => (
                       <span className="block min-w-0">
                         <span className={cn('block truncate text-[12.5px] font-medium', row.error_code ? 'text-critical' : 'text-ink')}>{row.event_name}</span>
@@ -590,18 +639,39 @@ function ActivityTab({ credentialId }) {
                   {
                     key: 'who',
                     header: 'By',
-                    width: '28%',
+                    width: '22%',
+                    cell: (row) => {
+                      const label = row.identity_name || row.caller_arn?.split('/').pop() || '-';
+                      return (
+                        <span className="block min-w-0 text-[12px]" title={row.caller_arn}>
+                          {row.identity_id ? (
+                            <Link to={identityRoute(row.identity_id)} className="block truncate font-medium text-ink-2 hover:text-brand hover:underline">
+                              {label}
+                            </Link>
+                          ) : (
+                            <span className="block truncate text-ink-2">{label}</span>
+                          )}
+                          {row.terminated && <span className="block text-[11px] text-ink-3">deleted</span>}
+                        </span>
+                      );
+                    },
+                  },
+                  {
+                    key: 'resource',
+                    header: 'Resource',
+                    width: '22%',
+                    priority: 'wide',
                     cell: (row) => (
-                      <span className="block truncate text-[12px] text-ink-2" title={row.caller_arn}>
-                        {row.identity_name || row.caller_arn?.split('/').pop() || '-'}
+                      <span className="block truncate font-mono text-[12px] text-ink-2" title={row.resource_arn || undefined}>
+                        {row.resource_arn ? row.resource_arn.split(/[:/]/).pop() || row.resource_arn : '-'}
                       </span>
                     ),
                   },
-                  { key: 'ip', header: 'Source', width: '18%', priority: 'wide', cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || '-'}</span> },
+                  { key: 'ip', header: 'Source', width: '14%', priority: 'wide', cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || '-'}</span> },
                   {
                     key: 'when',
                     header: 'When',
-                    width: '20%',
+                    width: '14%',
                     cell: (row) => (
                       <span className="text-[12px] whitespace-nowrap text-ink-2" title={formatDateTime(row.event_time)}>
                         {formatRelative(row.event_time)}
@@ -639,11 +709,23 @@ function RelationshipsTab({ credentialId }) {
   const data = query.data;
   const nodes = new Map((data?.graph?.nodes ?? []).map((node) => [node.arn, node]));
   const rows = data?.relationship_table ?? [];
+  const blind = data?.activity_data_available === false;
 
   return (
     <TabState query={query} label="Relationships unavailable">
+      {blind && (
+        <p className="mb-3 flex items-start gap-1.5 text-[12.5px] text-medium">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          CloudTrail could not be read just now, so what this credential reached and who created it are unknown, not none.
+          Only links from the inventory are shown.
+        </p>
+      )}
       {rows.length === 0 ? (
-        <ClearState compact title="No relationships recorded" description="Nothing in the inventory is linked to this credential." />
+        blind ? (
+          <EmptyState compact title="No inventory links recorded" description="Calls made with this credential could not be checked." />
+        ) : (
+          <ClearState compact title="No relationships recorded" description="Nothing in the inventory is linked to this credential." />
+        )
       ) : (
         <DataGrid
           caption="Relationships"
@@ -698,6 +780,55 @@ function RelationshipsTab({ credentialId }) {
   );
 }
 
+/* ── Raw ─────────────────────────────────────────────────────────────────── */
+
+function RawTab({ credentialId, name }) {
+  const query = useCredentialTab(credentialId, 'raw');
+  const data = query.data;
+  return (
+    <TabState query={query} label="Raw record unavailable">
+      {data && (
+        <RawJson
+          intro="The inventory record exactly as discovery stored it, with its policies and the cloud API's response when it was kept. For audits and support tickets."
+          filename={`credential-${name || credentialId}.json`}
+          payload={data}
+          blocks={[
+            { key: 'credential_record', label: 'Credential record', value: data.credential_record },
+            { key: 'trust_policy', label: 'Trust policy', value: data.trust_policy },
+            { key: 'attached_policies', label: 'Attached policies', value: data.attached_policies },
+            { key: 'inline_policies', label: 'Inline policies', value: data.inline_policies },
+            { key: 'effective_permissions', label: 'Effective permissions', value: data.effective_permissions },
+            { key: 'type_attributes', label: 'Type attributes', value: data.type_attributes },
+            { key: 'raw_api_response', label: 'Raw API response', value: data.raw_api_response },
+          ]}
+        />
+      )}
+    </TabState>
+  );
+}
+
+/** Name / count rows for an analytics breakdown, top five. */
+function CountList({ title, rows, name }) {
+  const list = Array.isArray(rows) ? rows.slice(0, 5) : [];
+  return (
+    <div className="min-w-0">
+      <SectionLabel>{title}</SectionLabel>
+      <ul className="mt-2 flex flex-col gap-1">
+        {list.map((entry) => (
+          <li key={name(entry)} className="flex items-center justify-between gap-2 text-[12px]">
+            <span className="truncate font-mono text-ink-2" title={name(entry)}>
+              {name(entry)}
+            </span>
+            <span data-numeric="" className="font-semibold text-ink">
+              {formatNumber(entry.count)}
+            </span>
+          </li>
+        ))}
+        {list.length === 0 && <li className="text-[12px] text-ink-3">None</li>}
+      </ul>
+    </div>
+  );
+}
 
 /**
  * One row per caller, however many calls it made: the API lists a caller per
@@ -714,14 +845,29 @@ function callersOf(listed, events) {
     }
     current.calls += 1;
     const time = at ?? base.last_action_time;
-    if (time && (!current.last_action_time || String(time) > String(current.last_action_time))) current.last_action_time = time;
+    if (time && (!current.last_action_time || String(time) > String(current.last_action_time))) {
+      current.last_action_time = time;
+      if (base.last_action) current.last_action = base.last_action;
+    }
   };
   for (const user of listed) add(user.identity_id || user.caller_arn || user.name, user, user.last_action_time);
   if (byKey.size === 0) {
     for (const event of events) {
       const key = event.identity_id || event.caller_arn || event.identity_name;
       if (!key) continue;
-      add(key, { identity_id: event.identity_id, name: event.identity_name, caller_arn: event.caller_arn, identity_type: event.identity_type, source_ip: event.source_ip }, event.event_time);
+      add(
+        key,
+        {
+          identity_id: event.identity_id,
+          name: event.identity_name,
+          caller_arn: event.caller_arn,
+          identity_type: event.identity_type,
+          source_ip: event.source_ip,
+          last_action: event.event_name,
+          terminated: event.terminated,
+        },
+        event.event_time,
+      );
     }
   }
   return [...byKey.values()].sort((a, b) => b.calls - a.calls);

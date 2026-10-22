@@ -14,7 +14,7 @@ import {
   PencilLine,
   ScrollText,
 } from 'lucide-react';
-import { fetchScanChanges, scanChangesRoute } from '../../lib/api/changes';
+import { changeEntityRoute, fetchScanChanges, scanChangesRoute } from '../../lib/api/changes';
 import { useQuery } from '../../lib/hooks';
 import { formatDateTime, formatNumber, formatRelative, humanizeToken } from '../../lib/format';
 import { CopyableValue } from '../../ui/Copyable';
@@ -471,15 +471,16 @@ export function ChangeRow({ change, layout = 'table' }) {
     );
   }
 
+  const entityTo = changeEntityRoute(change);
+  const place = [change.accountId, change.region].filter(Boolean).join(' · ');
+
+  /* The whole row toggles the details (the summary button's ::after covers
+     it), while the entity name above that layer is its own link. */
   return (
     <li className="border-b border-line last:border-b-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
+      <div
         className={cn(
-          'grid w-full items-center gap-x-4 gap-y-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/70 sm:px-5',
+          'relative grid w-full items-center gap-x-4 gap-y-2 px-4 py-3 text-left transition-colors hover:bg-surface-2/70 sm:px-5',
           CHANGE_GRID,
           open && 'bg-surface-2/70',
         )}
@@ -489,9 +490,25 @@ export function ChangeRow({ change, layout = 'table' }) {
         </span>
         <EntityLabel type={change.entityType} />
         <span className="min-w-0">
-          <span className="block text-[13px] font-medium text-ink">{change.summary}</span>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => setOpen((value) => !value)}
+            className="block text-left text-[13px] font-medium text-ink after:absolute after:inset-0 after:content-['']"
+          >
+            {change.summary}
+          </button>
           <span className="mt-0.5 block truncate text-[11.5px] text-ink-3">
-            {[change.name, change.accountId, change.region].filter(Boolean).join(' · ')}
+            {entityTo && change.name ? (
+              <Link to={entityTo} className="relative z-[1] font-medium text-ink-2 hover:text-brand hover:underline">
+                {change.name}
+              </Link>
+            ) : (
+              change.name
+            )}
+            {change.name && place ? ' · ' : ''}
+            {place}
           </span>
         </span>
         <span className="hidden min-w-0 truncate font-mono text-[11.5px] text-ink-3 @min-[56rem]:block" title={change.arn}>
@@ -501,7 +518,7 @@ export function ChangeRow({ change, layout = 'table' }) {
           {formatRelative(change.detectedAt)}
         </span>
         <ChevronDown aria-hidden="true" className={cn('hidden size-4 justify-self-end text-ink-3 transition-transform @min-[56rem]:block', open && 'rotate-180')} />
-      </button>
+      </div>
       {open && (
         <div id={panelId} className="@container border-t border-line bg-surface-2/40 px-4 py-4 sm:px-5">
           <div className="grid gap-5 @min-[60rem]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
