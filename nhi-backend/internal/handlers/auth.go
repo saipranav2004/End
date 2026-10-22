@@ -20,9 +20,12 @@ import (
 
 // Sign-in guessing limits: per client address and per account.
 var (
-	loginByIP    = ratelimit.New(10.0/60, 10) // 10 a minute per address
-	loginByEmail = ratelimit.New(5.0/300, 5)  // 5, then 1 every minute per account
-	refreshByIP  = ratelimit.New(1, 60)       // tabs refresh about hourly
+	// Per address it only stops a single source spraying many accounts: an
+	// office behind one NAT signs in from one address, so it is generous; the
+	// per-account limit is what stops guessing one password.
+	loginByIP    = ratelimit.New(1, 60)      // 60 a minute per address
+	loginByEmail = ratelimit.New(5.0/300, 5) // 5, then 1 every minute per account
+	refreshByIP  = ratelimit.New(1, 60)      // tabs refresh about hourly
 )
 
 // clientIP is the caller's address. Forwarding headers are trusted only when

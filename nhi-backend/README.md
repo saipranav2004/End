@@ -105,7 +105,7 @@ is not fully set up), every API answers **503 `TENANT_NOT_PROVISIONED`**.
 
 | Method | Path | What it does |
 |---|---|---|
-| POST | `/login` | Email + password → access token (1 h) and refresh token (7 d); starts a session. 429 `RATE_LIMITED` after 10 tries a minute per address or 5 per account; 403 `ACCOUNT_DISABLED` for a disabled account with the right password. |
+| POST | `/login` | Email + password → access token (1 h) and refresh token (7 d); starts a session. 429 `RATE_LIMITED` after 60 tries a minute per address or 5 per account; 403 `ACCOUNT_DISABLED` for a disabled account with the right password. |
 | POST | `/refresh` | Swaps a refresh token for a new pair (single use; reusing an old one ends every session of the user). Refused once the session is 30 days old. |
 | POST | `/logout` | Ends the session; its access token stops working everywhere at once. |
 | GET | `/me` | The signed-in user: email, role, tenant. |
