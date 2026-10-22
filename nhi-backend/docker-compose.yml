@@ -1,0 +1,67 @@
+# NHI backend. Databases are external: set NHI_DB_* / NHI_CLICKHOUSE_* /
+# NHI_MONITORING_CLICKHOUSE_* in .env (copy .env.example).
+#
+#   docker compose up -d --build                      # API on http://localhost:8080
+#   docker compose --profile tools run --rm migrate   # apply migrations (idempotent)
+#
+# The console (../frontend, nginx on :3000) can run beside it:
+#   docker compose --profile web up -d --build
+# TLS terminates in front of this stack (load balancer / CloudFront).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  api:
+    build: .
+    image: nhi-backend-api:${NHI_IMAGE_TAG:-dev}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NHI_CONFIG_FILE: /app/configs/config.yaml
+      # The console's origin(s); the browser calls the API through nginx, so
+      # this is only needed when calling the API directly.
+      NHI_CORS_ALLOWED_ORIGINS: ${NHI_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    ports:
+      - "${NHI_API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 25s   # longer than the 20 s graceful drain
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  web:
+    profiles: ["web"]
+    build: ../frontend
+    image: nhi-console:${NHI_IMAGE_TAG:-dev}
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8080
+    ports:
+      - "${NHI_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *default-logging
+
+  # One-shot: global migrations, then every tenant schema (scripts/migrate.sh).
+  migrate:
+    profiles: ["tools"]
+    image: postgres:16-alpine
+    env_file: .env
+    environment:
+      DSN: postgres://${NHI_DB_USER}:${NHI_DB_PASSWORD}@${NHI_DB_HOST}:5432/${NHI_DB_NAME:-nhi_db}?sslmode=require
+    volumes:
+      - ./migrations:/app/migrations:ro
+      - ./scripts/migrate.sh:/app/scripts/migrate.sh:ro
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash >/dev/null && bash /app/scripts/migrate.sh"]

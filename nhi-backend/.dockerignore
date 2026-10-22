@@ -1,0 +1,28 @@
+# VCS / IDE
+.git
+.gitignore
+.idea/
+.vscode/
+.impeccable/
+
+# Secrets and local env never enter the build context
+.env
+.env.*
+!.env.example
+
+# Build output and test artefacts
+api-server
+bin/
+coverage.out
+*.test
+*.prof
+*.zip
+
+# Not needed to build or run the image
+README.md
+postman/
+scripts/
+Dockerfile
+docker-compose*.yml
+**/*_test.go
+**/testdata/

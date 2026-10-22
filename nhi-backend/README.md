@@ -467,6 +467,10 @@ databases are joined **by ARN only** (never by UUID):
   `effect`, `resource_arn`, `matched_action`; wildcards such as `ec2:Describe*`
   match, an exact Allow beats a wildcard or a Deny). Nothing matched gives
   `matched: false` and "Policy may have changed since this event".
+- **Docker:** `docker compose up -d --build` builds the image (multi-stage, non-root,
+  read-only, `/health` check) and serves the API on `:8080`; databases are external
+  (`.env`). `docker compose --profile tools run --rm migrate` applies the migrations;
+  `--profile web` also builds and runs the console from `../frontend` on `:3000`.
 - **Logging:** structured logs on stdout (`internal/logging`, Go `log/slog`).
   `NHI_LOG_LEVEL` (debug|info|warn|error, default info), `NHI_LOG_FORMAT`
   (json default, or text for local reading), `NHI_SLOW_QUERY_MS` (default 1000;
