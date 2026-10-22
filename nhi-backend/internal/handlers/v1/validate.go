@@ -68,7 +68,7 @@ var (
 		"assume_role": {}, "bound_to": {}, "accesses": {}, "trusts": {},
 		"contains": {}, "manages": {}, "attached_to": {}, "uses": {},
 		// Stored in trust_edges today, and the CloudTrail-derived created_by.
-		"service_trust": {}, "cross_account": {}, "federated_oidc": {}, "federated_saml": {},
+		"service_trust": {}, "cross_account": {}, "federated_oidc": {}, "federated_saml": {}, "pass_role": {},
 		"created_by": {},
 	}
 

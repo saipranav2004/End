@@ -150,7 +150,7 @@ The identity and credential lists also mark each row with `recent_change`
 | GET | `/identities/{id}?tab=overview` | The identity record: type, owner, network exposure, risk signals, bound credentials. |
 | GET | `/identities/{id}?tab=permissions` | What its credentials' policies grant and which actions CloudTrail saw it use (90 days). |
 | GET | `/identities/{id}?tab=activity` | Its CloudTrail events and activity analytics for a `time_range`. |
-| GET | `/identities/{id}?tab=relationships` | Its graph: trust, bindings, roles it can assume, resources it called (`depth`, `edge_type`). |
+| GET | `/identities/{id}?tab=relationships` | Its graph: the credentials it runs as (bindings), roles it can assume, who trusts it, resources it called (`depth` 1-3, `edge_type`), plus a plain-language relationship table. |
 | GET | `/identities/{id}?tab=credentials` | Credentials bound to it, with usage. |
 | GET | `/identities/{id}?tab=raw` | The stored discovery record. |
 | GET | `/identities/{id}?tab=changes` | See change tracking. |
@@ -443,9 +443,17 @@ databases are joined **by ARN only** (never by UUID):
   exceptions: an ACCESSES edge to an account-less ARN (an S3 bucket or object)
   is kept, since it is the identity's own recorded call, and a service principal
   (`lambda.amazonaws.com`) trusted by an in-scope role is drawn as a `service`
-  node but never walked through. Configured edges (trust, bound-to) carry no
-  `last_observed_at`; only CloudTrail edges do. `edge_type` takes a
-  comma-separated, case-insensitive list. `activity_data_available: false`
+  node but never walked through. Edges come from `trust_edges` (assume_role,
+  service_trust, cross_account, federated_saml / federated_oidc, pass_role)
+  and from `identity_credentials`, whose rows are `bound_to` edges (identity ->
+  the credential it runs as, live rows only): that is how depth 2 reaches what
+  an instance's or function's own role trusts. Configured edges carry no
+  `last_observed_at`; only CloudTrail edges do. `relationship_table[].relationship`
+  is a plain label ("Uses", "Used by", "Can assume", "Trusted service", "Trusts
+  another account", "Can hand a role to a service", "Signed in through SAML
+  (company single sign-on)", ...). `edge_type` takes a comma-separated,
+  case-insensitive list of the edge types above plus accesses, created_by,
+  trusts, contains, manages, attached_to, uses. `activity_data_available: false`
   means CloudTrail could not be read, so ACCESSES / CREATED_BY edges may be
   missing.
 - **Permission utilisation** is the same figure everywhere (list, permissions

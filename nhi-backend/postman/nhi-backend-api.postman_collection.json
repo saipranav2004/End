@@ -150,7 +150,7 @@
                 "login"
               ]
             },
-            "description": "Body: email*, password*. 401 AUTHENTICATION_FAILED on bad credentials. Stores tokens in collection variables.",
+            "description": "Body: email* (or username), password*. 401 AUTHENTICATION_FAILED on bad credentials, 403 ACCOUNT_DISABLED for a disabled account with the right password, 429 RATE_LIMITED (Retry-After) after 60 tries a minute per address or 5 per account. Stores tokens in collection variables.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
@@ -201,7 +201,7 @@
                 "login"
               ]
             },
-            "description": "Alias of /api/v1/login.",
+            "description": "Same as Login (v1).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
@@ -537,7 +537,7 @@
                 "overview"
               ]
             },
-            "description": "No query params."
+            "description": "No query params. kpis: total_identities, total_credentials, active_credentials, orphaned_credentials, stale_identities, stale_credentials, publicly_accessible, shadow_identities, accounts_scanned, permission_utilization_pct, trust_edges, cross_account_trust_edges. charts: identities_by_type/_functional_class/_account/_region/_environment/_status, identity_growth, credential_growth, stale_vs_active, credential_types, top_owners, credentials_expiring_soon[{credential_id, credential_name, expires_at, days_remaining}], trust_edges_by_type[{edge_type,count}], event_volume[{date,count}] (30 days, CloudTrail, zero-filled; empty when CloudTrail cannot be read), credential_utilization[{bucket,count}] (used_7d, used_30d, used_90d, idle_90d, never_used). Plus activity_data_available and recent_changes."
           }
         }
       ]
@@ -563,7 +563,7 @@
               ],
               "query": []
             },
-            "description": "recent_changes: the latest scan's totals and highlights; null before the first scan."
+            "description": "recent_changes: last_scan_id, last_scan_at (also last_scan_time), previous_scan_id, previous_scan_at, total_changes, by_change_type, highlights[{change_type, entity_type, count, label}]; null before the first scan."
           },
           "event": [
             {
@@ -603,7 +603,7 @@
                 }
               ]
             },
-            "description": "Newest completed scans with change counts."
+            "description": "Newest finished scans (COMPLETED and PARTIAL; status says which) with change counts."
           }
         },
         {
@@ -650,7 +650,7 @@
                 }
               ]
             },
-            "description": "One scan's summary and a page of its changes. scan_id may be 'latest'. 404 SCAN_NOT_FOUND."
+            "description": "One scan's summary and a page of its changes. scan_id may be 'latest'. Response: scan{scan_id, status, account_id, started_at, completed_at, previous_scan_id, previous_scan_at}, summary{total, by_change_type, by_entity_type}, changes[{change_id, scan_id, scan_at, change_type, entity_type, entity_arn, entity_name, identity_id, credential_id, account_id, region, summary, details, detected_at}], pagination{page, limit, total, total_pages}. Also the reference names: top-level scan_id, status, scan_time, previous_scan_id; summary.created/deleted/modified/by_entity; changes[].id, entity_id, scan_time. 404 SCAN_NOT_FOUND."
           }
         },
         {
@@ -673,12 +673,12 @@
                 {
                   "key": "tab",
                   "value": "changes",
-                  "description": "",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 }
               ]
             },
-            "description": "Every change of one identity (max 50) with CloudTrail evidence on creations and deletions."
+            "description": "Every change of one identity (max 50, truncated flag) with CloudTrail evidence {caller_arn, event_name, source_ip, event_time; also created_by, created_at} on creations and deletions. Also identity_arn and change_tracking_available."
           }
         },
         {
@@ -701,12 +701,12 @@
                 {
                   "key": "tab",
                   "value": "changes",
-                  "description": "",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 }
               ]
             },
-            "description": "Every change of one credential (max 50)."
+            "description": "Every change of one credential (max 50). Also credential_arn and change_tracking_available."
           }
         }
       ]
@@ -834,7 +834,7 @@
                 {
                   "key": "tab",
                   "value": "overview",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 }
               ]
@@ -862,7 +862,7 @@
                 {
                   "key": "tab",
                   "value": "permissions",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 },
                 {
@@ -902,7 +902,7 @@
                 {
                   "key": "tab",
                   "value": "activity",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 },
                 {
@@ -966,7 +966,7 @@
                 {
                   "key": "tab",
                   "value": "relationships",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 },
                 {
@@ -978,7 +978,7 @@
                 {
                   "key": "edge_type",
                   "value": "assume_role",
-                  "description": "One of: assume_role, bound_to, accesses, trusts, contains, manages, attached_to, uses, service_trust, cross_account, federated_oidc, federated_saml, created_by",
+                  "description": "CSV of: bound_to (the credential an identity runs as), assume_role, service_trust, cross_account, federated_saml, federated_oidc, pass_role, accesses (CloudTrail), created_by (CloudTrail), trusts, contains, manages, attached_to, uses",
                   "disabled": true
                 },
                 {
@@ -1001,7 +1001,7 @@
                 }
               ]
             },
-            "description": "{id} must be a UUID. time_range/dates are validated on every tab but only affect activity and relationships."
+            "description": "{id} must be a UUID. graph{nodes[{arn,name,type,subtype,is_current}], edges[{source,target,edge_type,last_observed_at,call_count}]}, relationship_table[{relationship (plain label: Uses, Used by, Can assume, Trusted service, Trusts another account, ...), direction, target_arn, target_name, target_type, last_active, call_count}], activity_data_available. Binding edges (bound_to) come from identity_credentials, so depth 2 reaches what the identity's own role trusts."
           }
         },
         {
@@ -1024,7 +1024,7 @@
                 {
                   "key": "tab",
                   "value": "credentials",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 }
               ]
@@ -1052,7 +1052,7 @@
                 {
                   "key": "tab",
                   "value": "raw",
-                  "description": "overview (default), permissions, activity, relationships, credentials, raw",
+                  "description": "overview (default), permissions, activity, relationships, credentials, raw, changes",
                   "disabled": false
                 }
               ]
@@ -2106,7 +2106,7 @@
                 {
                   "key": "tab",
                   "value": "overview",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 }
               ]
@@ -2134,7 +2134,7 @@
                 {
                   "key": "tab",
                   "value": "trust",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 }
               ]
@@ -2162,7 +2162,7 @@
                 {
                   "key": "tab",
                   "value": "activity",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 },
                 {
@@ -2220,7 +2220,7 @@
                 {
                   "key": "tab",
                   "value": "rotation",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 }
               ]
@@ -2248,7 +2248,7 @@
                 {
                   "key": "tab",
                   "value": "relationships",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 },
                 {
@@ -2260,7 +2260,7 @@
                 {
                   "key": "edge_type",
                   "value": "assume_role",
-                  "description": "One of: assume_role, bound_to, accesses, trusts, contains, manages, attached_to, uses, service_trust, cross_account, federated_oidc, federated_saml, created_by",
+                  "description": "CSV of: bound_to (the credential an identity runs as), assume_role, service_trust, cross_account, federated_saml, federated_oidc, pass_role, accesses (CloudTrail), created_by (CloudTrail), trusts, contains, manages, attached_to, uses",
                   "disabled": true
                 },
                 {
@@ -2306,7 +2306,7 @@
                 {
                   "key": "tab",
                   "value": "raw",
-                  "description": "overview (default), trust, activity, rotation, relationships, raw",
+                  "description": "overview (default), trust, activity, rotation, relationships, raw, changes",
                   "disabled": false
                 }
               ]
@@ -2414,7 +2414,7 @@
                 }
               ]
             },
-            "description": "Admin role required."
+            "description": "Admin role required. Newest first; the 37 scanner fields per finding; timestamps always carry an offset."
           }
         },
         {
@@ -2589,7 +2589,7 @@
                 "allowlist"
               ]
             },
-            "description": "client_id<=200, file_path<=1000, detector<=200, redacted<=500 (all required); reason<=1000, dismissed_by<=200 optional. Upsert.",
+            "description": "Body: client_id*, file_path*, detector*, redacted*, reason. The signed-in user is recorded as dismissed_by.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"file_path\": \"src/config.py\",\n  \"detector\": \"AWS\",\n  \"redacted\": \"AKIA****\",\n  \"reason\": \"test key\"\n}",
@@ -2657,7 +2657,7 @@
                 "decisions"
               ]
             },
-            "description": "decision: real_secret | false_positive. decided_by optional (<=300).",
+            "description": "Body: finding_id*, decision* (real_secret | false_positive). The signed-in user is recorded as decided_by.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"finding_id\": \"REPLACE_ME\",\n  \"decision\": \"false_positive\"\n}",
@@ -2691,7 +2691,7 @@
                 "deep-scan"
               ]
             },
-            "description": "client_id 1-200, repository 1-500, optional platform (github | codecommit). Queues a full-history walk in the tenant's secscan_deepscan_<platform> table for the scanner worker; 202 {status, platform, requested_at, already_running}; 404 CLIENT_NOT_FOUND.",
+            "description": "Body: client_id 1-200, repository 1-500, optional platform (github | codecommit). Queues a full-history walk in the tenant's secscan_deepscan_<platform> table for the scanner worker. 202 {accepted: true, status: running, client_id, repo_key, platform, requested_at, already_running}. 400 INVALID_REPOSITORY when a GitHub repository is not owner/repo or a CodeCommit repository is not one of the client's onboarded ones; 404 CLIENT_NOT_FOUND.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"repository\": \"{{repository}}\"\n}",
@@ -2741,7 +2741,7 @@
                 }
               ]
             },
-            "description": ""
+            "description": "{client_id, repo_key, platform, requested_at, completed_at, commits_scanned, findings, failed_at, error, status: not_started | running | complete | failed} (the same object with status not_started when none was requested). 409 PLATFORM_REQUIRED when the repository exists on both platforms."
           }
         }
       ]
