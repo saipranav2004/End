@@ -22,9 +22,9 @@ export function GraphInputs({ activityAvailable }) {
   const inputs = [
     {
       key: 'inventory',
-      label: 'Identities and credentials',
+      label: 'The boxes: identities and credentials',
       source: 'Discovery inventory (Postgres): identities, credentials',
-      gives: 'The nodes. Workloads (functions, tasks, instances, pipelines, IAM users) and what they authenticate with (roles, keys, secrets), with their privilege level and status.',
+      gives: 'Identities (functions, tasks, instances, pipelines, IAM users) and the credentials they sign in with (roles, keys, secrets), with how much access each has and its status.',
       covered: true,
       links: [
         { to: '/identities', label: 'Identities' },
@@ -33,20 +33,20 @@ export function GraphInputs({ activityAvailable }) {
     },
     {
       key: 'trust',
-      label: 'Trust and binding edges',
+      label: 'The lines: who uses and who may use each role',
       source: 'Postgres trust_edges, written by discovery',
-      gives: 'Who can assume which role (assume_role, cross_account, trusts, federation), and which role each workload runs as (bound_to, service_trust). Drawn dashed.',
+      gives: 'Which role each identity uses (heavy solid line), and who may switch to (assume) a role: another role, another AWS account, an AWS service, or people signing in through company single sign-on (dashed line).',
       covered: true,
     },
     {
       key: 'activity',
-      label: 'Observed calls',
-      source: 'CloudTrail events in ClickHouse, last 90 days',
-      gives: 'accesses edges - what each identity successfully called, with a call count - and created_by, the principal that created it. Drawn solid.',
+      label: 'The grey lines: what was actually used',
+      source: 'AWS activity log (CloudTrail) events in ClickHouse, last 90 days',
+      gives: 'What each identity successfully called, with how many calls, and who created it. Drawn as a solid grey line.',
       covered: activityAvailable !== false,
       note:
         activityAvailable === false
-          ? 'The event store could not be read just now, so the graph shows configuration only.'
+          ? 'The activity log could not be read just now, so the graph shows set-up only, not what was used.'
           : null,
     },
   ];
@@ -54,13 +54,13 @@ export function GraphInputs({ activityAvailable }) {
   const notEvaluated = [
     {
       key: 'guardrails',
-      label: 'SCPs and permission boundaries',
-      note: 'An edge is what a trust policy allows. Organisation-level denies and boundaries are not applied to it.',
+      label: 'Organisation rules (SCPs) and permission limits',
+      note: 'A line shows what a trust policy allows. Organisation-wide denies and permission limits (boundaries) that could still block it are not applied.',
     },
     {
       key: 'escalation',
-      label: 'Privilege escalation paths',
-      note: 'Combinations such as iam:PassRole with a compute permission are not computed, so no edge is drawn as an escalation.',
+      label: 'Ways to gain more access',
+      note: 'Combinations that let an identity give itself more access (for example handing a role to a service it can then run) are not worked out, so no line is drawn as one.',
     },
   ];
 
@@ -78,7 +78,7 @@ export function GraphInputs({ activityAvailable }) {
               <span className="text-[12.5px] font-semibold text-ink">{input.label}</span>
               {input.covered ? (
                 <Tag tone="low" size="sm">
-                  Collected
+                  Included
                 </Tag>
               ) : (
                 <Tag tone="medium" size="sm" dot>
@@ -99,15 +99,14 @@ export function GraphInputs({ activityAvailable }) {
 
         <li className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[12.5px] font-semibold text-ink">Scope</span>
+            <span className="text-[12.5px] font-semibold text-ink">Which accounts and regions</span>
             <Link to="/integrations" className="text-[11px] text-brand hover:underline">
               Integrations
             </Link>
           </div>
           <p className="mt-1 text-[11.5px] leading-relaxed text-ink-2">
-            Your saved accounts and regions. An edge is kept only when both of its ends are in scope, so a
-            path that leaves the selection stops at its edge, and AWS service principals (which have no
-            account) are not drawn.
+            The accounts and regions you selected. A line is drawn only when both of its ends are in them, so
+            a path that leaves your selection stops at its edge.
           </p>
           {settings.isError ? (
             <div className="mt-2">
@@ -121,7 +120,7 @@ export function GraphInputs({ activityAvailable }) {
                 <dt className="text-ink-3">Accounts</dt>
                 <dd className="flex flex-wrap gap-1">
                   {accounts.length === 0 ? (
-                    <span className="text-ink-3">none selected</span>
+                    <span className="text-ink-3">None selected</span>
                   ) : (
                     accounts.map((account) => (
                       <Tag key={account} tone="neutral" size="sm">
@@ -135,7 +134,7 @@ export function GraphInputs({ activityAvailable }) {
                 <dt className="text-ink-3">Regions</dt>
                 <dd className="flex flex-wrap gap-1">
                   {regions.length === 0 ? (
-                    <span className="text-ink-3">all</span>
+                    <span className="text-ink-3">All regions</span>
                   ) : (
                     regions.map((region) => (
                       <Tag key={region} tone="neutral" size="sm">
@@ -151,7 +150,7 @@ export function GraphInputs({ activityAvailable }) {
       </ul>
 
       <div>
-        <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Not evaluated</p>
+        <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Not checked</p>
         <ul className="mt-1.5 flex flex-col gap-2">
           {notEvaluated.map((item) => (
             <li key={item.key} className="rounded-[var(--radius-control)] border border-medium/40 bg-medium-soft p-2.5">

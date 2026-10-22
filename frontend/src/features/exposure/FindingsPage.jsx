@@ -24,9 +24,11 @@ import {
   toAllowlistPayload,
 } from '../../lib/domain';
 import {
+  formatDateTime,
   formatNumber,
   formatRelative,
   humanizeToken,
+
   parseAuthor,
   percentValue,
   shortBranch,
@@ -66,8 +68,8 @@ import { describeExposureError, findingKey, groupByPush, summariseFindings, VERD
 const DEFAULT_PAGE_SIZE = 25;
 
 const VIEWS = [
-  { value: 'findings', label: 'Credentials', icon: List },
-  { value: 'pushes', label: 'By push', icon: GitCommitHorizontal },
+  { value: 'findings', label: 'Secrets', icon: List },
+  { value: 'pushes', label: 'By commit', icon: GitCommitHorizontal },
 ];
 
 /**
@@ -301,7 +303,7 @@ export default function FindingsPage() {
     () => [
       {
         key: 'tier',
-        label: 'Risk tier',
+        label: 'Risk',
         options: SEVERITY_ORDER.filter((value) => (summary.byTier[value] || 0) > 0).map((value) => ({
           value,
           label: severityMeta(value).label,
@@ -315,17 +317,17 @@ export default function FindingsPage() {
       },
       {
         key: 'verdict',
-        label: 'Analyst verdict',
+        label: 'Reviewer verdict',
         options: verdictOptions,
         onToggle: (value) => {
           setPage(1);
           setVerdict((current) => (current === value ? '' : value));
         },
-        note: 'Recorded from the finding drawer. A verdict does not remove a finding - mark it as safe to move it to Accepted.',
+        note: 'Set when someone reviews a secret. A verdict keeps the secret on this list; use "Mark as safe" to move it to Marked safe.',
       },
       {
         key: 'detector',
-        label: 'Detector',
+        label: 'Kind of secret',
         options: summary.detectors.map((entry) => ({
           value: entry.key,
           label: humanizeToken(entry.key),
@@ -348,17 +350,17 @@ export default function FindingsPage() {
       },
       {
         key: 'visibility',
-        label: 'Repository visibility',
+        label: 'Who can see the repository',
         options: visibilityOptions,
         onToggle: (value) => {
           setPage(1);
           setVisibility((current) => (current === value ? '' : value));
         },
-        note: 'Reported by GitHub only. A CodeCommit repository is private to its AWS account by definition, so the scanner has nothing to report.',
+        note: 'Reported by GitHub only. A CodeCommit repository is always private to its AWS account.',
       },
       {
         key: 'category',
-        label: 'Secret category',
+        label: 'Category',
         options: categoryOptions,
         onToggle: (value) => {
           setPage(1);
@@ -367,13 +369,13 @@ export default function FindingsPage() {
       },
       {
         key: 'confidence',
-        label: 'Match confidence',
+        label: 'How sure the match is',
         options: confidenceOptions,
         onToggle: (value) => {
           setPage(1);
           setConfidence((current) => (current === value ? '' : value));
         },
-        note: 'How certain the pattern match is. Separate from risk tier, which is how bad the secret would be if real.',
+        note: 'How sure the scanner is that this is a secret. Separate from risk, which is how much harm it could do if real.',
       },
     ],
     [summary, tier, detector, verdictOptions, repositoryOptions, visibilityOptions, categoryOptions, confidenceOptions],
@@ -383,15 +385,15 @@ export default function FindingsPage() {
     const list = [];
     if (search.trim()) list.push({ key: 'search', label: 'Search', value: search.trim() });
     if (tier) list.push({ key: 'tier', label: 'Risk', value: severityMeta(tier).label });
-    if (detector) list.push({ key: 'detector', label: 'Detector', value: humanizeToken(detector) });
-    if (repository) list.push({ key: 'repository', label: 'Repo', value: repository });
+    if (detector) list.push({ key: 'detector', label: 'Kind', value: humanizeToken(detector) });
+    if (repository) list.push({ key: 'repository', label: 'Repository', value: repository });
     if (verdict) list.push({ key: 'verdict', label: 'Verdict', value: VERDICTS[verdict]?.label ?? verdict });
     if (visibility) {
       list.push({ key: 'visibility', label: 'Visibility', value: repoVisibilityMeta(visibility)?.label ?? visibility });
     }
     if (category) list.push({ key: 'category', label: 'Category', value: humanizeToken(category) });
     if (confidence) {
-      list.push({ key: 'confidence', label: 'Confidence', value: confidenceMeta(confidence)?.short ?? confidence });
+      list.push({ key: 'confidence', label: 'Match', value: confidenceMeta(confidence)?.label ?? confidence });
     }
     return list;
   }, [search, tier, detector, repository, verdict, visibility, category, confidence]);
@@ -460,8 +462,8 @@ export default function FindingsPage() {
     });
     notify({
       variant: 'success',
-      title: 'Exported current view',
-      description: `${formatNumber(sorted.length)} findings written to CSV, with masked values only.`,
+      title: 'Exported this list',
+      description: `${formatNumber(sorted.length)} secrets saved to a CSV file. Values stay masked.`,
     });
   };
 
@@ -471,7 +473,7 @@ export default function FindingsPage() {
       if (!result.ok) {
         notify({
           variant: 'error',
-          title: 'Could not mark it safe',
+          title: 'Could not mark it as safe',
           description: describeExposureError(result.error).message,
         });
         return;
@@ -481,8 +483,8 @@ export default function FindingsPage() {
       notify({
         variant: 'success',
         title: 'Marked as safe',
-        description: `${finding.file_path} moved to Accepted. You can restore it from there.`,
-        action: { label: 'View Accepted', onSelect: () => navigate('/exposure/dismissed') },
+        description: `${finding.file_path} moved to Marked safe. You can bring it back from there.`,
+        action: { label: 'Open Marked safe', onSelect: () => navigate('/exposure/dismissed') },
       });
     },
     [dismissal, notify, navigate],
@@ -498,7 +500,7 @@ export default function FindingsPage() {
           title: 'Verdict not saved',
           description:
             result.error?.status === 404
-              ? 'That finding no longer exists. Refresh the list.'
+              ? 'That secret is no longer on record. Refresh the list.'
               : describeExposureError(result.error).message,
         });
         return;
@@ -512,8 +514,8 @@ export default function FindingsPage() {
       );
       notify({
         variant: 'success',
-        title: 'Verdict recorded',
-        description: `Marked as ${verdictMeta(value).label.toLowerCase()}.`,
+        title: 'Verdict saved',
+        description: `Recorded as ${verdictMeta(value).label.toLowerCase()}.`,
       });
     },
     [decision, notify, user],
@@ -524,12 +526,12 @@ export default function FindingsPage() {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader
-          title={flaggedView ? 'Model-flagged findings' : 'Exposed credentials'}
-          lede="Credentials committed to connected repositories."
+          title={flaggedView ? 'Likely false alarms' : 'Exposed secrets'}
+          lede="Passwords, keys and tokens found in the code of your connected repositories."
           actions={
             flaggedView ? (
               <Button variant="secondary" onClick={() => switchSource('live')}>
-                Back to live findings
+                Back to exposed secrets
               </Button>
             ) : undefined
           }
@@ -549,7 +551,7 @@ export default function FindingsPage() {
   const columns = [
     {
       key: 'finding',
-      header: 'Secret',
+      header: 'Secret and where it is',
       primary: true,
       width: '28%',
       cell: (row) => (
@@ -588,7 +590,7 @@ export default function FindingsPage() {
     },
     {
       key: 'author',
-      header: 'Author',
+      header: 'Committed by',
       width: '16%',
       priority: 'wide',
       cell: (row) => {
@@ -605,7 +607,7 @@ export default function FindingsPage() {
     },
     {
       key: 'action',
-      header: 'Recommended',
+      header: 'What to do',
       width: '13%',
       priority: 'wide',
       cell: (row) => {
@@ -617,21 +619,25 @@ export default function FindingsPage() {
     },
     {
       key: 'detected',
-      header: 'Detected',
+      header: 'Found',
       width: '13%',
       sortable: true,
-      cell: (row) => <span className="text-[12.5px] text-ink-2">{formatRelative(row.created_at)}</span>,
+      cell: (row) => (
+        <span className="text-[12.5px] text-ink-2" title={formatDateTime(row.created_at)}>
+          {formatRelative(row.created_at)}
+        </span>
+      ),
     },
   ];
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={flaggedView ? 'Model-flagged findings' : 'Exposed credentials'}
+        title={flaggedView ? 'Likely false alarms' : 'Exposed secrets'}
         lede={
           flaggedView
-            ? 'Matches the detection model scored as false positives. They are kept out of the live list - confirm the model, or mark one as a real secret.'
-            : 'Secret values are masked. To fix a finding, revoke or rotate the secret where it was issued, then remove it from the code.'
+            ? 'Matches our detection model thinks are not real secrets (false positives). They are kept off the main list. Open one to agree, or record it as a real secret.'
+            : 'Passwords, keys and tokens found in the code of your connected repositories. Values are masked. To fix one, replace (rotate) the secret where it was issued, then remove it from the code.'
         }
         tabs={
           <Tabs
@@ -652,15 +658,15 @@ export default function FindingsPage() {
                 as a peer of the findings it produces. */}
             {flaggedView ? (
               <Button variant="secondary" onClick={() => switchSource('live')}>
-                Back to live findings
+                Back to exposed secrets
               </Button>
             ) : (
               <>
                 <Button variant="secondary" icon={Radar} onClick={() => setDeepScanOpen(true)}>
-                  Deep scan
+                  Scan full history
                 </Button>
                 <Button variant="ghost" icon={Sparkles} onClick={() => switchSource('flagged')}>
-                  Model-flagged
+                  Likely false alarms
                   {Number.isFinite(flaggedCount.data?.count) && (
                     <span data-numeric="" className="ml-1 rounded-full bg-surface-3 px-1.5 text-[11px] font-semibold text-ink-2">
                       {formatNumber(flaggedCount.data.count)}
@@ -670,7 +676,7 @@ export default function FindingsPage() {
               </>
             )}
             <Button as={Link} to="/exposure/dismissed" variant="ghost" icon={ShieldOff}>
-              Accepted
+              Marked safe
             </Button>
           </>
         }
@@ -681,38 +687,38 @@ export default function FindingsPage() {
       ) : (
         <div className="grid gap-3 @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
           <MetricTile
-            label={flaggedView ? 'Model-flagged' : 'Live exposures'}
+            label={flaggedView ? 'Likely false alarms' : 'Open exposed secrets'}
             value={summary.total}
             icon={flaggedView ? Sparkles : FileWarning}
             tone={flaggedView ? 'info' : summary.total > 0 ? 'high' : 'low'}
             caption={
               flaggedView
-                ? 'Scored as false positives by the detection model'
-                : 'Excludes findings marked safe and model-flagged false positives'
+                ? 'Our detection model thinks these are not real secrets'
+                : 'Not counting secrets marked safe or likely false alarms'
             }
           />
           <MetricTile
-            label="High or critical"
+            label="High or critical risk"
             value={highish}
             tone={highish > 0 ? 'critical' : 'low'}
-            caption={`${formatNumber(summary.byTier.MEDIUM || 0)} medium, ${formatNumber(summary.byTier.LOW || 0)} low`}
+            caption={`The rest: ${formatNumber(summary.byTier.MEDIUM || 0)} medium, ${formatNumber(summary.byTier.LOW || 0)} low`}
             meter={percentValue(highish, summary.total)}
-            meterLabel="Share of live exposures"
+            meterLabel={flaggedView ? 'Share of likely false alarms' : 'Share of open exposed secrets'}
           />
           <MetricTile
             label="Repositories affected"
             value={summary.repositoryCount}
             tone="info"
-            caption="Distinct repositories across both platforms"
+            caption="Code repositories with at least one secret, on GitHub and CodeCommit"
           />
           <MetricTile
-            label="Detector types"
+            label="Kinds of secret"
             value={summary.detectors.length}
             tone="medium"
             caption={
               summary.detectors[0]
                 ? `Most common: ${humanizeToken(summary.detectors[0].key)}`
-                : 'No detections'
+                : 'Nothing found'
             }
           />
         </div>
@@ -726,7 +732,7 @@ export default function FindingsPage() {
             appliedCount={chips.length}
             onClearAll={clearAll}
             onClose={toggleRail}
-            mobileTitle="Filter exposures"
+            mobileTitle="Filter exposed secrets"
           />
         }
       >
@@ -746,11 +752,11 @@ export default function FindingsPage() {
                 items={[
                   {
                     key: 'export',
-                    label: 'Export this view',
-                    hint: `CSV of all ${sorted.length} matching findings`,
+                    label: 'Export this list (CSV)',
+                    hint: `All ${sorted.length} matching secrets, values masked`,
                     onSelect: onExport,
                     disabled: sorted.length === 0,
-                    disabledHint: 'Nothing to export - no findings match',
+                    disabledHint: 'Nothing to export - no secrets match',
                   },
                 ]}
               />
@@ -761,13 +767,13 @@ export default function FindingsPage() {
             size="sm"
             value={search}
             onChange={withReset(setSearch)}
-            placeholder="Search repository, file, branch, detector or author…"
+            placeholder="Search repository, file, branch, kind of secret or person…"
             className="w-full min-w-0 sm:max-w-sm"
           />
           <ResultCount
             shown={formatNumber(pagedTotal)}
             total={formatNumber(view === 'pushes' ? groupByPush(allFindings).length : summary.total)}
-            unit={view === 'pushes' ? 'pushes' : flaggedView ? 'flagged findings' : 'exposed credentials'}
+            unit={view === 'pushes' ? 'commits' : flaggedView ? 'likely false alarms' : 'exposed secrets'}
             filtered={chips.length > 0 || platform !== 'all'}
             loading={loading}
           />
@@ -779,7 +785,7 @@ export default function FindingsPage() {
           <GridSkeleton columns={5} rows={10} />
         ) : view === 'findings' ? (
           <DataGrid
-            caption="Exposed credentials"
+            caption="Exposed secrets"
             columns={columns}
             rows={pageRows}
             rowKey={findingKey}
@@ -802,7 +808,7 @@ export default function FindingsPage() {
                     },
                     {
                       key: 'inspect',
-                      label: 'Inspect finding',
+                      label: 'Open details',
                       icon: FileWarning,
                       onSelect: () => setSelected(row),
                     },
@@ -814,8 +820,8 @@ export default function FindingsPage() {
               chips.length > 0 || platform !== 'all' ? (
                 <EmptyState
                   icon={SearchX}
-                  title="No exposures match this view"
-                  description="Nothing in the live set matches the current platform, risk tier and search combination."
+                  title="No secrets match these filters"
+                  description="Nothing on this list matches the platform, filters and search you chose."
                   action={
                     <Button
                       variant="secondary"
@@ -825,28 +831,28 @@ export default function FindingsPage() {
                         setPlatform('all');
                       }}
                     >
-                      Reset view
+                      Clear filters
                     </Button>
                   }
                 />
               ) : flaggedView ? (
                 <EmptyState
                   icon={Sparkles}
-                  title="Nothing flagged by the model"
-                  description="The detection model has not scored any finding as a false positive, so everything the scanner found is in the live list."
+                  title="No likely false alarms"
+                  description="Our detection model has not marked anything as a false alarm, so everything the scanner found is on the main list."
                   action={
                     <Button variant="secondary" size="sm" onClick={() => switchSource('live')}>
-                      Back to live findings
+                      Back to exposed secrets
                     </Button>
                   }
                 />
               ) : (
                 <ClearState
                   title="No secrets exposed in code"
-                  description="The scanner found nothing outstanding across the connected repositories. Anything previously reviewed lives in the Accepted view."
+                  description="The scanner found nothing open in your connected repositories. Secrets someone marked as safe are listed under Marked safe."
                   action={
                     <Button as={Link} to="/exposure/dismissed" variant="secondary" size="sm">
-                      View accepted
+                      Open Marked safe
                     </Button>
                   }
                 />
@@ -864,7 +870,7 @@ export default function FindingsPage() {
             page={safePage}
             pageSize={pageSize}
             total={pagedTotal}
-            unit={view === 'pushes' ? 'pushes' : 'exposed credentials'}
+            unit={view === 'pushes' ? 'commits' : 'exposed secrets'}
             onPageChange={setPage}
             onPageSizeChange={(next) => {
               setPage(1);
@@ -907,8 +913,8 @@ function PushList({ pushes, onSelect }) {
       <EmptyState
         compact
         icon={GitCommitHorizontal}
-        title="No pushes to group"
-        description="No findings match the current filters, so there is nothing to group by commit."
+        title="No commits to show"
+        description="No secrets match the current filters, so there is nothing to group by commit."
       />
     );
   }
@@ -937,7 +943,8 @@ function PushList({ pushes, onSelect }) {
                   </span>
                 </div>
                 <p className="mt-1 truncate text-[11.5px] text-ink-3">
-                  {shortBranch(push.branch)} · {author.name} · {formatRelative(push.createdAt)}
+                  {shortBranch(push.branch)} · {author.name} ·{' '}
+                  <span title={formatDateTime(push.createdAt)}>found {formatRelative(push.createdAt)}</span>
                 </p>
               </div>
 

@@ -35,7 +35,9 @@ const IDENTITY_TYPES = {
   eks_cluster: 'EKS cluster',
   batch_job: 'Batch job',
   iam_user: 'IAM user',
+  iam_user_service_account: 'IAM user used by software',
   iam_role: 'IAM role',
+  root_account: 'Root account',
   rds_instance: 'RDS instance',
   s3_bucket: 'S3 bucket',
   emr_cluster: 'EMR cluster',
@@ -218,27 +220,40 @@ export function privilegeLabel(value) {
 
 /* ── Relationships ───────────────────────────────────────────────────────── */
 
-export const EDGE_LABELS = {
-  assume_role: 'Assumes role',
-  bound_to: 'Bound to',
-  accesses: 'Accesses',
-  trusts: 'Trusts',
-  contains: 'Contains',
-  manages: 'Manages',
-  attached_to: 'Attached to',
-  uses: 'Uses',
-  service_trust: 'Service trust',
-  cross_account: 'Cross-account trust',
-  federated_oidc: 'OIDC federation',
-  federated_saml: 'SAML federation',
-  created_by: 'Created by',
+/* Plain words for each edge type (see the console glossary), read from the
+   identity's side: `out` when it is the source, `in` when it is the target. */
+export const EDGE_WORDS = {
+  assume_role: { out: 'Can switch to (assume)', in: 'Can switch to it (assume)' },
+  bound_to: { out: 'Uses', in: 'Also uses it' },
+  accesses: { out: 'Used', in: 'Was used by it' },
+  trusts: { out: 'Trusts', in: 'Allowed by its trust policy' },
+  contains: { out: 'Contains', in: 'Is part of' },
+  manages: { out: 'Manages', in: 'Manages it' },
+  attached_to: { out: 'Attached to', in: 'Attached to it' },
+  uses: { out: 'Uses', in: 'Uses it' },
+  service_trust: { out: 'An AWS service may use it', in: 'An AWS service may use it' },
+  cross_account: { out: 'Reaches another AWS account', in: 'Another AWS account may use it' },
+  federated_oidc: { out: 'Signs in through web identity (OIDC)', in: 'Web identity sign-in (OIDC) may use it' },
+  federated_saml: { out: 'Signs in through company single sign-on (SAML)', in: 'Company single sign-on (SAML) may use it' },
+  created_by: { out: 'Created by', in: 'Created' },
+  pass_role: { out: 'Can hand a role to a service', in: 'Can hand it to a service' },
 };
+
+/** Outbound wording, keyed by edge type; shared with the credential drawer. */
+export const EDGE_LABELS = Object.fromEntries(Object.entries(EDGE_WORDS).map(([key, words]) => [key, words.out]));
+
+/** The plain phrase for one edge type in one direction. */
+export function edgeWords(type, direction = 'out') {
+  return EDGE_WORDS[type]?.[direction] ?? titleCaseEnum(type);
+}
 
 export function nodeTypeLabel(type, subtype) {
   if (type === 'identity') return identityTypeLabel(subtype);
   if (type === 'credential') return credentialTypeMeta(subtype).label;
   if (type === 'resource') return subtype ? subtype.replace(/^AWS::/, '').replace(/::/g, ' ') : 'Resource';
-  return subtype ? titleCaseEnum(subtype) : 'Unresolved principal';
+  if (type === 'service') return subtype ? `AWS service (${subtype.toUpperCase()})` : 'AWS service';
+  if (type === 'account') return 'AWS account';
+  return subtype ? titleCaseEnum(subtype) : 'Not found in the inventory';
 }
 
 /* ── Severity of the API's own risk signals ──────────────────────────────── */

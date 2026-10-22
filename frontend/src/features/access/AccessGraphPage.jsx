@@ -94,10 +94,12 @@ export default function AccessGraphPage() {
     };
   }, [graph, statusOf]);
 
-  /* The first hop of the most interesting neighbour opens itself, so the graph
-     arrives with a shape to read rather than as two boxes and a line. Once per
-     focus, and only after every first-hop node has been read - otherwise the
-     choice would go to whichever answered first, not to the best one. */
+  /* The first hop opens itself, so the graph arrives with a shape to read
+     rather than as two boxes and a line: every role the focus uses (bound_to),
+     because what an identity can reach is what its roles reach - or, when it
+     uses none, its most interesting neighbour. Once per focus, and only after
+     every first-hop node has been read - otherwise the choice would go to
+     whichever answered first, not to the best one. */
   const autoOpened = useRef(null);
   useEffect(() => {
     /* The URL can name the new focus a render before the graph has switched
@@ -107,10 +109,14 @@ export default function AccessGraphPage() {
     const firstHop = data.nodes.filter((node) => node.depth === 1);
     if (firstHop.some((node) => node.pending || !isSettled(node.id))) return;
     autoOpened.current = focusId;
-    const first = firstHop
-      .filter((node) => node.unseenCount > 0)
-      .sort((a, b) => b.interest - a.interest)[0];
-    if (first) setParams({ open: first.id });
+    const openable = firstHop.filter((node) => node.unseenCount > 0);
+    const focusArn = data.focus?.id;
+    const used = new Set(
+      data.edges.filter((edge) => edge.from === focusArn && edge.kinds.includes('bound_to')).map((edge) => edge.to),
+    );
+    const roles = openable.filter((node) => used.has(node.id));
+    const first = roles.length > 0 ? roles : openable.sort((a, b) => b.interest - a.interest).slice(0, 1);
+    if (first.length > 0) setParams({ open: first.map((node) => node.id).join(',') });
   }, [data, expanded.length, focusId, focusRecord, setParams, isSettled]);
 
   const focusNode = useMemo(() => data?.nodes.find((node) => node.isFocus) ?? null, [data]);
@@ -167,6 +173,7 @@ export default function AccessGraphPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Access graph"
+        lede="What an identity can reach: the roles it uses, who may use those roles, and what it called. Pick a starting point, then open any box to follow it further."
         actions={
           <>
             <FocusPicker
@@ -191,8 +198,8 @@ export default function AccessGraphPage() {
         <div role="status" className="flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-medium/30 bg-medium-soft px-4 py-2.5">
           <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-medium" />
           <p className="min-w-0 flex-1 text-[12.5px] text-ink-2">
-            CloudTrail activity could not be read just now, so some &ldquo;Called&rdquo; links (the resources an identity used) may be
-            missing. Roles, keys and trust relationships are complete.
+            The AWS activity log (CloudTrail) could not be read just now, so some grey &ldquo;Called&rdquo; lines (what an
+            identity used) may be missing. Roles, keys and trust relationships are complete.
           </p>
           <Button variant="secondary" size="sm" icon={RotateCw} onClick={access.retryActivity}>
             Try again
@@ -204,7 +211,7 @@ export default function AccessGraphPage() {
         <Panel prominence="quiet">
           <ErrorState
             error={access.error}
-            title={missingFocus ? 'That identity is not in your current scope' : undefined}
+            title={missingFocus ? 'That identity is not in the accounts and regions you selected' : undefined}
             onRetry={missingFocus ? undefined : access.retry}
           />
         </Panel>
@@ -213,7 +220,7 @@ export default function AccessGraphPage() {
           <EmptyState
             icon={Network}
             title="Nothing to draw yet"
-            description="No identity or credential is in the accounts and regions your scope selects. Widen the scope, or wait for the next discovery run."
+            description="No identity or credential was found in the accounts and regions you selected. Add accounts or regions under Integrations, or wait for the next discovery scan."
             action={
               <Button variant="secondary" as={Link} to="/identities">
                 Open identities
@@ -263,7 +270,7 @@ export default function AccessGraphPage() {
         open={inputsOpen}
         onClose={() => setInputsOpen(false)}
         title="What this graph is built from"
-        description="The nodes are the discovery inventory. Every edge comes from one of two stores, and both are cut to your data scope."
+        description="The boxes are what discovery found in your AWS accounts. Every line comes from your trust policies or from the AWS activity log, limited to the accounts and regions you selected."
         icon={Info}
         tone="brand"
         footer={

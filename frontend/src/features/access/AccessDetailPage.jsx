@@ -17,7 +17,8 @@ import { EmptyState, ErrorState, InlineError } from '../../ui/States';
 import { Tabs } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { useToast } from '../../ui/Toast';
-import { accountOf, edgeKindMeta, subtypeLabel } from './graphModel';
+import { NODE_KINDS, accountOf, edgeKindMeta, edgeLabel, subtypeLabel } from './graphModel';
+import { CopyButton } from '../../ui/Copyable';
 
 /**
  * One identity's access, in full.
@@ -39,10 +40,10 @@ import { accountOf, edgeKindMeta, subtypeLabel } from './graphModel';
  * and a list of them would have to be invented.
  */
 const TABS = [
-  { value: 'access', label: 'Granted and used' },
-  { value: 'routes', label: 'Routes in and out' },
-  { value: 'cross', label: 'Cross-account and trust' },
-  { value: 'resources', label: 'Resources called' },
+  { value: 'access', label: 'What it can do' },
+  { value: 'routes', label: 'Relationships' },
+  { value: 'cross', label: 'Other accounts and trust' },
+  { value: 'resources', label: 'What it used' },
 ];
 
 const settleQuery = { keepPrevious: false };
@@ -189,7 +190,7 @@ export default function AccessDetailPage() {
             when: row.last_seen,
           })),
           ...crossEdges.map((edge) => ({
-            kind: `Edge: ${edgeKindMeta(edge.edge_type).label}`,
+            kind: `Relationship: ${edgeLabel(edge.edge_type, edge.source === identity?.arn ? 'out' : 'in')}`,
             account: accountOf(edge.source === identity?.arn ? edge.target : edge.source),
             principal: edge.source === identity?.arn ? edge.target : edge.source,
             detail: edge.source === identity?.arn ? 'outbound' : 'inbound',
@@ -246,14 +247,14 @@ export default function AccessDetailPage() {
           title="Identity access"
           actions={
             <Button variant="secondary" as={Link} to="/access-graph" icon={ArrowLeft}>
-              Back to the graph
+              Back to the access graph
             </Button>
           }
         />
         <Panel prominence="quiet">
           <ErrorState
             error={overview.error}
-            title={overview.error?.status === 404 ? 'This identity is not in your current scope' : undefined}
+            title={overview.error?.status === 404 ? 'This identity is not in the accounts and regions you selected' : undefined}
             onRetry={overview.error?.status === 404 ? undefined : overview.refetch}
           />
         </Panel>
@@ -279,14 +280,14 @@ export default function AccessDetailPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title={identity.name}
-        lede={identity.arn}
+        lede="Everything this identity is allowed to do, what it actually used, and who or what it is connected to."
         actions={
           <>
             <Button variant="secondary" as={Link} to={accessGraphRoute(identity.id)} icon={Network}>
-              Graph
+              Open access graph
             </Button>
             <Button variant="ghost" as={Link} to={identityRoute(identity.id)} iconRight={ExternalLink}>
-              Identity record
+              Open identity
             </Button>
             <Button
               variant="secondary"
@@ -304,7 +305,7 @@ export default function AccessDetailPage() {
               {subtypeLabel('identity', identity.identity_type)}
             </Tag>
             <Tag tone="neutral" size="sm">
-              {identity.account_id}
+              Account {identity.account_id}
             </Tag>
             {identity.region && (
               <Tag tone="neutral" size="sm">
@@ -318,7 +319,7 @@ export default function AccessDetailPage() {
             )}
             {isAdmin && (
               <Tag tone="critical" size="sm" dot>
-                AdministratorAccess attached
+                Full administrator access
               </Tag>
             )}
             {identity.is_publicly_accessible && (
@@ -327,20 +328,29 @@ export default function AccessDetailPage() {
               </Tag>
             )}
             {identity.last_activity_at && (
-              <span className="text-[11.5px] text-ink-3">Last active {formatRelative(identity.last_activity_at)}</span>
+              <span className="text-[11.5px] text-ink-3" title={formatDateTime(identity.last_activity_at)}>
+                Last active {formatRelative(identity.last_activity_at)}
+              </span>
             )}
+            {/* The AWS address, last: only needed to paste into another tool. */}
+            <span className="flex min-w-0 max-w-full items-center gap-1 text-[11px] text-ink-3">
+              <span className="min-w-0 truncate font-mono" title={identity.arn}>
+                {identity.arn}
+              </span>
+              <CopyButton value={identity.arn} label="Copy ARN" size="sm" />
+            </span>
           </div>
         }
       />
 
       <div className="grid gap-3 @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
         <MetricTile
-          label="Permissions granted"
+          label="Permissions allowed"
           value={permissions.isError ? undefined : summary?.granted_count}
           tone="brand"
           caption={
             permissions.isError
-              ? 'Could not be read'
+              ? 'Could not be loaded. Try again later.'
               : summary
                 ? `${formatNumber(summary.used_count)} used in the last 90 days`
                 : 'Loading'
@@ -348,36 +358,36 @@ export default function AccessDetailPage() {
           className="animate-rise"
         />
         <MetricTile
-          label="Granted, never used"
+          label="Allowed but never used"
           value={permissions.isError ? undefined : summary?.unused_count}
           tone={summary?.unused_count > 0 ? 'medium' : 'low'}
-          caption={summary ? `${formatNumber(summary.utilization_pct)}% of grants in use` : undefined}
+          caption={summary ? `It used ${formatNumber(summary.utilization_pct)}% of its permissions` : undefined}
           meter={summary ? summary.utilization_pct : undefined}
-          meterLabel="Permission utilisation"
+          meterLabel="Share of its permissions it actually used"
           className="animate-rise"
           data-stagger=""
           style={{ '--stagger': 1 }}
         />
         <MetricTile
-          label="Resources called"
+          label="Resources it used"
           value={resources.isError ? undefined : resources.data?.total_resources}
           tone="info"
           caption={
             resources.data && resources.data.data_available === false
-              ? 'Event store unavailable'
-              : 'Last 30 days, from CloudTrail'
+              ? 'Activity log could not be read just now'
+              : 'Last 30 days, from the AWS activity log'
           }
           className="animate-rise"
           data-stagger=""
           style={{ '--stagger': 2 }}
         />
         <MetricTile
-          label="Routes in and out"
+          label="Relationships"
           value={relationships.isError || !relationships.data ? undefined : routes.all.length}
           tone={crossCount > 0 ? 'high' : 'info'}
           caption={
             relationships.data
-              ? `${formatNumber(routes.inbound.length)} in, ${formatNumber(routes.outbound.length)} out${crossCount > 0 ? `, ${formatNumber(crossEdges.length)} cross-account` : ''}`
+              ? `${formatNumber(routes.outbound.length)} from it, ${formatNumber(routes.inbound.length)} to it${crossCount > 0 ? `, ${formatNumber(crossEdges.length)} reach another account` : ''}`
               : undefined
           }
           className="animate-rise"
@@ -391,12 +401,12 @@ export default function AccessDetailPage() {
       <Panel prominence="lead" className="animate-rise">
         <PanelHeader
           prominence="lead"
-          title="Granted against used, by service"
-          subtitle="Each grant on its credentials, and whether a successful CloudTrail call in the last 90 days was covered by it."
+          title="Allowed against used, by AWS service"
+          subtitle="Each permission its credentials allow, and whether the AWS activity log recorded it being used in the last 90 days. Permissions never used can usually be removed."
         />
         {permissions.isError ? (
           <div className="mt-3">
-            <InlineError error={permissions.error} onRetry={permissions.refetch} label="Permissions not loaded" />
+            <InlineError error={permissions.error} onRetry={permissions.refetch} label="Permissions could not be loaded" />
           </div>
         ) : !permissions.data ? (
           <DetailSkeleton rows={3} />
@@ -404,8 +414,8 @@ export default function AccessDetailPage() {
           <EmptyState
             compact
             icon={ShieldCheck}
-            title="No grants recorded"
-            description="Discovery found no permission on the credentials this identity uses."
+            title="No permissions recorded"
+            description="Discovery found no permission on the credentials this identity uses, so it cannot do anything in AWS."
           />
         ) : (
           <div className="mt-3 grid gap-4 @min-[44rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -416,8 +426,8 @@ export default function AccessDetailPage() {
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate font-medium text-ink">{entry.service}</span>
                       {entry.wildcard && (
-                        <Tag tone="high" size="sm">
-                          wildcard
+                        <Tag tone="high" size="sm" title="A wildcard (*) allows every action of this service">
+                          Allows everything
                         </Tag>
                       )}
                     </span>
@@ -435,7 +445,7 @@ export default function AccessDetailPage() {
               ))}
             </ul>
             <div>
-              <SectionLabel>All grants</SectionLabel>
+              <SectionLabel>All permissions</SectionLabel>
               <ProportionBar
                 className="mt-2"
                 height={10}
@@ -448,17 +458,17 @@ export default function AccessDetailPage() {
               />
               <p className="mt-2 text-[12.5px] text-ink-2">
                 {summary?.unused_count > 0
-                  ? `${formatNumber(summary.unused_count)} grant${summary.unused_count === 1 ? ' has' : 's have'} not been used in 90 days. Each is access that could be removed without breaking anything this identity has done.`
-                  : 'Every grant has been used in the last 90 days.'}
+                  ? `${formatNumber(summary.unused_count)} permission${summary.unused_count === 1 ? ' has' : 's have'} not been used in 90 days. Each could be removed without breaking anything this identity has done.`
+                  : 'Every permission has been used in the last 90 days.'}
               </p>
               {(permissions.data.policy_breakdown ?? []).length > 0 && (
                 <>
-                  <SectionLabel className="mt-3">By policy</SectionLabel>
+                  <SectionLabel className="mt-3">By permission policy (used / allowed)</SectionLabel>
                   <ul className="mt-1.5 flex flex-col gap-1 text-[12px]">
                     {permissions.data.policy_breakdown.map((policy) => (
                       <li key={`${policy.policy_name}-${policy.policy_type}`} className="flex justify-between gap-2">
                         <span className="min-w-0 truncate text-ink-2">
-                          {policyName(policy.policy_name)} <span className="text-ink-3">· {policy.policy_type}</span>
+                          {policyName(policy.policy_name)} <span className="text-ink-3">· {humanizeToken(policy.policy_type)}</span>
                         </span>
                         <span data-numeric="" className="shrink-0 text-ink-3">
                           {formatNumber(policy.used_permissions)} / {formatNumber(policy.total_permissions)}
@@ -481,11 +491,11 @@ export default function AccessDetailPage() {
         {tab === 'access' &&
           (permissions.isError ? (
             <div className="p-4">
-              <InlineError error={permissions.error} onRetry={permissions.refetch} label="Permissions not loaded" />
+              <InlineError error={permissions.error} onRetry={permissions.refetch} label="Permissions could not be loaded" />
             </div>
           ) : (
             <DataGrid
-              caption="Granted permissions"
+              caption="Permissions it is allowed"
               columns={grantColumns}
               rows={grants}
               loading={permissions.isLoading}
@@ -494,8 +504,8 @@ export default function AccessDetailPage() {
               emptyState={
                 <EmptyState
                   icon={ShieldCheck}
-                  title="No grants recorded"
-                  description="Discovery found no permission on the credentials this identity uses."
+                  title="No permissions recorded"
+                  description="Discovery found no permission on the credentials this identity uses, so it cannot do anything in AWS."
                 />
               }
             />
@@ -504,7 +514,7 @@ export default function AccessDetailPage() {
         {tab === 'routes' &&
           (relationships.isError ? (
             <div className="p-4">
-              <InlineError error={relationships.error} onRetry={relationships.refetch} label="Relationships not loaded" />
+              <InlineError error={relationships.error} onRetry={relationships.refetch} label="Relationships could not be loaded" />
             </div>
           ) : !relationships.data ? (
             <div className="p-4">
@@ -513,16 +523,16 @@ export default function AccessDetailPage() {
           ) : (
             <div className="grid gap-4 p-4 @min-[52rem]:grid-cols-2">
               <RouteList
-                title="Into this identity"
-                subtitle="What can assume it, runs as it, or called it."
-                rows={routes.inbound}
-                empty="Nothing in scope points at this identity."
+                title="What it uses and reaches"
+                subtitle="The roles it uses, the roles it can switch to, what it called, and who created it."
+                rows={routes.outbound}
+                empty="It uses and reaches nothing in the accounts and regions you selected."
               />
               <RouteList
-                title="Out of this identity"
-                subtitle="What it can assume, runs as, called, and who created it."
-                rows={routes.outbound}
-                empty="This identity points at nothing in scope."
+                title="Who or what uses it"
+                subtitle="Identities and services that use it, may switch to it, or called it."
+                rows={routes.inbound}
+                empty="Nothing in the accounts and regions you selected uses or reaches it."
               />
             </div>
           ))}
@@ -530,18 +540,18 @@ export default function AccessDetailPage() {
         {tab === 'cross' && (
           <div className="grid gap-5 p-4 @min-[52rem]:grid-cols-2">
             <div>
-              <SectionLabel>Calls into other accounts, last 30 days</SectionLabel>
+              <SectionLabel>What it used in other AWS accounts (last 30 days)</SectionLabel>
               {crossAccount.isError ? (
                 <div className="mt-2">
-                  <InlineError error={crossAccount.error} onRetry={crossAccount.refetch} label="Events not loaded" />
+                  <InlineError error={crossAccount.error} onRetry={crossAccount.refetch} label="Activity could not be loaded" />
                 </div>
               ) : !crossAccount.data ? (
                 <DetailSkeleton rows={2} />
               ) : crossRows.length === 0 ? (
                 <p className="mt-2 text-[12px] text-ink-3">
                   {crossAccount.data.data_available === false
-                    ? 'The event store could not be read, so this is unknown.'
-                    : 'No call from this identity reached another account.'}
+                    ? 'The AWS activity log could not be read just now, so this is unknown. Try again later.'
+                    : 'Nothing it did reached another AWS account.'}
                 </p>
               ) : (
                 <ul className="mt-2 flex flex-col">
@@ -549,7 +559,7 @@ export default function AccessDetailPage() {
                     <li key={`${row.target_account_id}-${row.target_resource_arn}`} className="border-b border-line py-2 last:border-0">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <Tag tone="high" size="sm" dot>
-                          {row.target_account_id}
+                          Account {row.target_account_id}
                         </Tag>
                         <span className="min-w-0 truncate text-[12.5px] text-ink" title={row.target_resource_arn}>
                           {row.target_resource_name || row.target_resource_arn}
@@ -557,17 +567,17 @@ export default function AccessDetailPage() {
                       </div>
                       <p className="mt-1 text-[11.5px] text-ink-3">
                         {(row.actions ?? []).join(', ')} · {formatNumber(row.event_count)} calls · last{' '}
-                        {formatRelative(row.last_seen)}
+                        <span title={formatDateTime(row.last_seen)}>{formatRelative(row.last_seen)}</span>
                       </p>
                     </li>
                   ))}
                 </ul>
               )}
 
-              <SectionLabel className="mt-4">Edges that cross an account</SectionLabel>
+              <SectionLabel className="mt-4">Relationships that reach another account</SectionLabel>
               {crossEdges.length === 0 ? (
                 <p className="mt-2 text-[12px] text-ink-3">
-                  {relationships.data ? 'No relationship of this identity crosses an account.' : 'Loading.'}
+                  {relationships.data ? 'None of its relationships reach another AWS account.' : 'Loading.'}
                 </p>
               ) : (
                 <ul className="mt-2 flex flex-col">
@@ -578,9 +588,8 @@ export default function AccessDetailPage() {
                       <li key={`${edge.source}-${edge.target}-${edge.edge_type}`} className="border-b border-line py-2 last:border-0">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Tag tone={edgeKindMeta(edge.edge_type).tone} size="sm">
-                            {edgeKindMeta(edge.edge_type).label}
+                            {out ? edgeLabel(edge.edge_type, 'out') : edgeLabel(edge.edge_type, 'in')}
                           </Tag>
-                          <span className="text-[11px] text-ink-3">{out ? 'to' : 'from'}</span>
                           <span className="min-w-0 truncate font-mono text-[11.5px] text-ink" title={other}>
                             {other}
                           </span>
@@ -593,16 +602,16 @@ export default function AccessDetailPage() {
             </div>
 
             <div>
-              <SectionLabel>Who its credentials trust</SectionLabel>
+              <SectionLabel>Who may use (assume) its credentials</SectionLabel>
               {credentials.isError ? (
                 <div className="mt-2">
-                  <InlineError error={credentials.error} onRetry={credentials.refetch} label="Credentials not loaded" />
+                  <InlineError error={credentials.error} onRetry={credentials.refetch} label="Credentials could not be loaded" />
                 </div>
               ) : !credentials.data ? (
                 <DetailSkeleton rows={2} />
               ) : trustPrincipals.length === 0 ? (
                 <p className="mt-2 text-[12px] text-ink-3">
-                  No trust policy on its credentials names a principal. Nothing can assume them.
+                  No trust policy on its credentials names anyone, so nothing else can use them.
                 </p>
               ) : (
                 <ul className="mt-2 flex flex-col">
@@ -612,18 +621,18 @@ export default function AccessDetailPage() {
                         <span className="min-w-0 font-mono text-[11.5px] break-all text-ink">{principal.principal}</span>
                         {principal.is_external && (
                           <Tag tone="high" size="sm" dot>
-                            External
+                            Another account
                           </Tag>
                         )}
                         {!principal.condition && (
                           <Tag tone="medium" size="sm">
-                            no condition
+                            No extra conditions
                           </Tag>
                         )}
                       </div>
                       <p className="mt-1 text-[11.5px] text-ink-3">
-                        {principal.type} · on {principal.credential}
-                        {principal.condition ? ` · ${principal.condition}` : ''}
+                        {humanizeToken(principal.type)} · may use {principal.credential}
+                        {principal.condition ? ` · only when ${principal.condition}` : ''}
                       </p>
                     </li>
                   ))}
@@ -636,11 +645,11 @@ export default function AccessDetailPage() {
         {tab === 'resources' &&
           (resources.isError ? (
             <div className="p-4">
-              <InlineError error={resources.error} onRetry={resources.refetch} label="Resources not loaded" />
+              <InlineError error={resources.error} onRetry={resources.refetch} label="Resources could not be loaded" />
             </div>
           ) : (
             <DataGrid
-              caption="Resources called"
+              caption="Resources it used"
               columns={resourceColumns}
               rows={resourceRows}
               loading={resources.isLoading}
@@ -649,11 +658,11 @@ export default function AccessDetailPage() {
               emptyState={
                 <EmptyState
                   icon={ShieldCheck}
-                  title={resources.data?.data_available === false ? 'Event store unavailable' : 'No resource called'}
+                  title={resources.data?.data_available === false ? 'Activity log could not be read' : 'Nothing used in the last 30 days'}
                   description={
                     resources.data?.data_available === false
-                      ? 'CloudTrail events could not be read just now, so what this identity called is unknown.'
-                      : 'CloudTrail recorded no successful call from this identity against a resource in the last 30 days.'
+                      ? 'The AWS activity log (CloudTrail) could not be read just now, so what this identity used is unknown. Try again later.'
+                      : 'The AWS activity log recorded no successful call from this identity against a resource in the last 30 days.'
                   }
                 />
               }
@@ -667,7 +676,7 @@ export default function AccessDetailPage() {
 const grantColumns = [
   {
     key: 'action',
-    header: 'Action',
+    header: 'Permission',
     primary: true,
     width: '28%',
     cell: (row) => (
@@ -683,20 +692,20 @@ const grantColumns = [
     width: '24%',
     cell: (row) => (
       <span className="block truncate font-mono text-[12px] text-ink-2" title={row.resource_arn}>
-        {row.resource_arn}
+        {row.resource_arn === '*' ? 'Every resource (*)' : row.resource_arn}
       </span>
     ),
   },
   {
     key: 'policy',
-    header: 'Granted by',
+    header: 'Allowed by',
     width: '18%',
     priority: 'wide',
     cell: (row) => (
       <span className="block min-w-0">
         <span className="block truncate text-[12.5px] text-ink-2">{row.policy_source}</span>
         <span className="block truncate text-[11px] text-ink-3">
-          {row.policy_type} · {row.effect}
+          {humanizeToken(row.policy_type)} · {humanizeToken(row.effect)}
         </span>
       </span>
     ),
@@ -708,11 +717,11 @@ const grantColumns = [
     cell: (row) =>
       row.used ? (
         <Tag tone="info" size="sm">
-          used
+          Used
         </Tag>
       ) : (
         <Tag tone="medium" size="sm" dot>
-          never used
+          Never used
         </Tag>
       ),
   },
@@ -722,7 +731,7 @@ const grantColumns = [
     width: '16%',
     cell: (row) => (
       <span className="text-[12px] text-ink-3" title={row.last_used_at ? formatDateTime(row.last_used_at) : undefined}>
-        {row.last_used_at ? formatRelative(row.last_used_at) : '-'}
+        {row.last_used_at ? formatRelative(row.last_used_at) : 'Not in 90 days'}
       </span>
     ),
   },
@@ -742,19 +751,19 @@ const resourceColumns = [
           </span>
           {row.is_cross_account && (
             <Tag tone="high" size="sm">
-              cross-account
+              Another account
             </Tag>
           )}
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-ink-3">
-          {(row.resource_type || '').replace(/^AWS::/, '').replace(/::/g, ' ')} · {row.account_id}
+          {(row.resource_type || '').replace(/^AWS::/, '').replace(/::/g, ' ')} · account {row.account_id}
         </span>
       </span>
     ),
   },
   {
     key: 'actions',
-    header: 'Actions',
+    header: 'What it did',
     width: '26%',
     cell: (row) => (
       <span className="block truncate font-mono text-[12px] text-ink-2" title={(row.actions ?? []).join(', ')}>
@@ -769,13 +778,13 @@ const resourceColumns = [
     cell: (row) => (
       <span data-numeric="" className="text-[12.5px] text-ink-2">
         {formatNumber(row.read_count)} / {formatNumber(row.write_count)}
-        {row.error_count > 0 && <span className="text-high"> · {formatNumber(row.error_count)} err</span>}
+        {row.error_count > 0 && <span className="text-high"> · {formatNumber(row.error_count)} failed</span>}
       </span>
     ),
   },
   {
     key: 'last',
-    header: 'Last access',
+    header: 'Last used',
     width: '16%',
     priority: 'wide',
     cell: (row) => (
@@ -785,6 +794,10 @@ const resourceColumns = [
     ),
   },
 ];
+
+/* The service's relationship labels are plain already; this covers the one an
+   older build still sends. */
+const PLAIN_RELATIONSHIP = { 'Bound to': 'Uses' };
 
 function RouteList({ title, subtitle, rows, empty }) {
   return (
@@ -799,17 +812,17 @@ function RouteList({ title, subtitle, rows, empty }) {
             <li key={row.key} className="border-b border-line py-2 last:border-0">
               <div className="flex flex-wrap items-center gap-1.5">
                 <Tag tone="neutral" size="sm">
-                  {row.relationship}
+                  {PLAIN_RELATIONSHIP[row.relationship] ?? row.relationship}
                 </Tag>
                 <span className="min-w-0 truncate text-[12.5px] text-ink" title={row.target_arn}>
                   {row.target_type === 'resource' || row.target_type === 'unknown'
                     ? arnResource(row.target_arn)
                     : row.target_name || row.target_arn}
                 </span>
-                <span className="text-[11px] text-ink-3">{humanizeToken(row.target_type)}</span>
+                <span className="text-[11px] text-ink-3">{NODE_KINDS[row.target_type]?.label ?? humanizeToken(row.target_type)}</span>
                 {row.crossAccount && (
                   <Tag tone="high" size="sm">
-                    crosses accounts
+                    Another account
                   </Tag>
                 )}
               </div>
@@ -824,7 +837,7 @@ function RouteList({ title, subtitle, rows, empty }) {
                     : null,
                 ]
                   .filter(Boolean)
-                  .join(' · ') || 'From configuration'}
+                  .join(' · ') || 'Set up in AWS, not a recorded call'}
               </p>
             </li>
           ))}

@@ -30,9 +30,9 @@ const RESULT_OPTIONS = [
 ];
 
 const RW_OPTIONS = [
-  { value: 'all', label: 'Reads and writes' },
+  { value: 'all', label: 'Reads and changes' },
   { value: 'read', label: 'Read-only' },
-  { value: 'write', label: 'Mutating' },
+  { value: 'write', label: 'Made changes' },
 ];
 
 /**
@@ -63,7 +63,7 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
   const columns = [
     {
       key: 'event',
-      header: 'Event',
+      header: 'Call',
       primary: true,
       width: '24%',
       cell: (row) => {
@@ -79,7 +79,7 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
                   : 'border-high/30 bg-high-soft text-high'
             }
             title={row.event_name || 'Unnamed event'}
-            meta={row.event_source || '-'}
+            meta={row.event_source || 'Service not recorded'}
           />
         );
       },
@@ -90,10 +90,10 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
       width: '22%',
       cell: (row) => (
         <span className="block min-w-0" title={row.resource_arn || undefined}>
-          <span className="block truncate text-[12.5px] text-ink-2">{row.resource_name || row.resource_arn || '-'}</span>
+          <span className="block truncate text-[12.5px] text-ink-2">{row.resource_name || row.resource_arn || 'No resource'}</span>
           <span className="block truncate text-[11px] text-ink-3">
             {row.resource_type ? row.resource_type.replace(/^AWS::/, '') : 'No resource recorded'}
-            {row.is_cross_account ? ' · cross-account' : ''}
+            {row.is_cross_account ? ' · another AWS account' : ''}
           </span>
         </span>
       ),
@@ -107,7 +107,7 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
         return (
           <Tag tone={failed ? 'critical' : row.is_read_only ? 'neutral' : 'high'} size="sm" className="max-w-full">
             <span className="truncate" title={failed ? row.error_message || row.error_code : undefined}>
-              {failed ? row.error_code || 'Failed' : row.is_read_only ? 'Read-only' : 'Mutating'}
+              {failed ? row.error_code || 'Failed' : row.is_read_only ? 'Read-only' : 'Made changes'}
             </span>
           </Tag>
         );
@@ -121,9 +121,9 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
       cell: (row) => (
         <span className="block min-w-0">
           <span className="block truncate font-mono text-[12px] text-ink-2" title={row.caller_arn}>
-            {row.credential_name || '-'}
+            {row.credential_name || 'Not matched'}
           </span>
-          <span className="block truncate text-[11px] text-ink-3">{row.caller_type || '-'}</span>
+          <span className="block truncate text-[11px] text-ink-3">{row.caller_type || ''}</span>
         </span>
       ),
     },
@@ -134,9 +134,9 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
       priority: 'wide',
       cell: (row) => (
         <span className="block min-w-0">
-          <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || '-'}</span>
+          <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || 'Not recorded'}</span>
           <span className="block truncate text-[11px] text-ink-3" title={row.user_agent}>
-            {row.aws_region || '-'}
+            {row.aws_region || ''}
           </span>
         </span>
       ),
@@ -162,13 +162,13 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
         trailing={
           <TableToolbar>
             {!compact && <SegmentedControl label="View mode" options={VIEWS} value={state.view} onChange={(view) => patch({ view })} />}
-            <RefreshButton onRefresh={query.refetch} refreshing={query.isRefreshing} label="Refresh events" />
+            <RefreshButton onRefresh={query.refetch} refreshing={query.isRefreshing} label="Refresh calls" />
           </TableToolbar>
         }
       >
         {leading}
         <RangePicker state={state} patch={patch} />
-        <ResultCount shown={formatNumber(rows.length)} total={formatNumber(total)} unit="events" filtered={filtered} loading={loading} />
+        <ResultCount shown={formatNumber(rows.length)} total={formatNumber(total)} unit="calls" filtered={filtered} loading={loading} />
       </RecordBar>
 
       <EventFilters identityId={identityId} state={state} patch={patch} clearFilters={clearFilters} compact={compact} />
@@ -178,8 +178,8 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
       ) : unavailable ? (
         <EmptyState
           icon={DatabaseZap}
-          title="Event store unavailable"
-          description="CloudTrail events cannot be read right now, so this identity's activity is unknown - not empty. The inventory is unaffected. Try again shortly."
+          title="The activity log could not be read"
+          description="The AWS activity log (CloudTrail) cannot be read right now, so this identity's activity is unknown, not empty. The rest of its record is unaffected. Try again in a few minutes."
           action={
             <Button variant="secondary" size="sm" onClick={query.refetch}>
               Try again
@@ -194,8 +194,8 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
             onSelect={openEvent}
             emptyHint={
               filtered
-                ? 'No event in this window matches every filter applied.'
-                : `No CloudTrail event was recorded for this identity ${range.phrase}.`
+                ? 'No call in this period matches every filter applied.'
+                : `No call was recorded for this identity ${range.phrase}. Try a longer range.`
             }
           />
         </div>
@@ -205,12 +205,12 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
             events={rows}
             loading={loading}
             onSelect={openEvent}
-            emptyHint={`No CloudTrail event was recorded for this identity ${range.phrase}.`}
+            emptyHint={`No call was recorded for this identity ${range.phrase}.`}
           />
         </div>
       ) : (
         <DataGrid
-          caption="CloudTrail events"
+          caption="Calls recorded in the AWS activity log"
           columns={columns}
           rows={rows}
           rowKey={(row, index) => row.event_id || index}
@@ -223,8 +223,8 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
             filtered ? (
               <EmptyState
                 icon={SearchX}
-                title="No events match these filters"
-                description={`Events exist for this identity, but none ${range.phrase} satisfy every filter applied.`}
+                title="No calls match these filters"
+                description={`This identity made calls, but none ${range.phrase} match every filter applied.`}
                 action={
                   <Button variant="secondary" size="sm" onClick={clearFilters}>
                     Clear filters
@@ -234,7 +234,7 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
             ) : (
               <EmptyState
                 icon={Eye}
-                title="No CloudTrail events in this window"
+                title="No calls in this period"
                 description={`Nothing was recorded for this identity or its credentials ${range.phrase}. Try a longer range.`}
               />
             )
@@ -247,7 +247,7 @@ export function EventTimeline({ identityId, state, patch, clearFilters, compact 
           page={state.page}
           pageSize={state.size}
           total={total}
-          unit="events"
+          unit="calls"
           onPageChange={(page) => patch({ page })}
           onPageSizeChange={(size) => patch({ size })}
         />
@@ -405,7 +405,7 @@ export function EventFilters({ identityId, state, patch, clearFilters, compact =
       service: ['Service', state.service],
       action: ['Action', state.action],
       result: ['Result', state.result === 'error' ? 'Failed' : 'Succeeded'],
-      rw: ['Mode', state.rw === 'read' ? 'Read-only' : 'Mutating'],
+      rw: ['Reads or changes', state.rw === 'read' ? 'Read-only' : 'Made changes'],
       resource: ['Resource contains', state.resource],
       ip: ['Source IP', state.ip],
       cred: ['Credential', state.cred ? credName(state.cred) : ''],
@@ -421,7 +421,7 @@ export function EventFilters({ identityId, state, patch, clearFilters, compact =
           <FilterSelect label="Service" value={state.service} onChange={(value) => patch({ service: value })} options={serviceOptions} placeholder="Any service" loading={summaryQuery.isLoading && !summaryQuery.data} />
           <FilterSelect label="Action" value={state.action} onChange={(value) => patch({ action: value })} options={actionOptions} placeholder="Any action" loading={summaryQuery.isLoading && !summaryQuery.data} />
           <FilterSelect label="Result" value={state.result} onChange={(value) => patch({ result: value })} options={RESULT_OPTIONS} />
-          <FilterSelect label="Mode" value={state.rw} onChange={(value) => patch({ rw: value })} options={RW_OPTIONS} />
+          <FilterSelect label="Reads or changes" value={state.rw} onChange={(value) => patch({ rw: value })} options={RW_OPTIONS} />
           <FilterSelect label="Source IP" value={state.ip} onChange={(value) => patch({ ip: value })} options={ipOptions} placeholder="Any source IP" loading={ipsQuery.isLoading && !ipsQuery.data} />
           <FilterSelect label="Credential" value={state.cred} onChange={(value) => patch({ cred: value })} options={credOptions} placeholder="Any credential" loading={credsQuery.isLoading && !credsQuery.data} />
           <label className="flex min-w-0 flex-col gap-1">

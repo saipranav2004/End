@@ -1,4 +1,4 @@
-import { Component, useMemo } from 'react';
+import { Component, useEffect, useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Braces, Dna, Fingerprint, GitCompareArrows, ShieldCheck, Waypoints } from 'lucide-react';
 import { accessGraphRoute, genomeRouteFor } from '../../lib/identityLinks';
@@ -17,9 +17,11 @@ import { BandTag, ScoreRing } from '../posture/parts';
 import { IdentityActivity } from '../activity/IdentityActivity';
 import { IdentityTags } from './IdentityDrawer';
 import { IdentityRecordPanels, recordTabs, useIdentityTab } from './IdentityRecord';
-import { functionalClassMeta, identityTypeLabel } from './meta';
+import { identityTypeLabel } from './meta';
 
-const RECORD_KEYS = new Set(['overview', 'permissions', 'credentials', 'roles', 'raw']);
+const RECORD_KEYS = new Set(['overview', 'permissions', 'credentials', 'relationships', 'raw']);
+/* Old tab names, so a saved link still lands: Role use became Relationships. */
+const RENAMED_TABS = { roles: 'relationships' };
 /* Event-view keys the Activity tab keeps in the URL; dropped when leaving it. */
 const ACTIVITY_KEYS = ['range', 'service', 'action', 'result', 'rw', 'resource', 'ip', 'cred', 'page', 'size', 'view', 'section', 'event'];
 
@@ -52,8 +54,20 @@ export default function IdentityPage() {
     const base = recordTabs(overview);
     return [base[0], { value: 'posture', label: 'Posture', icon: ShieldCheck }, ...base.slice(1), { value: 'changes', label: 'Changes', icon: GitCompareArrows }, { value: 'raw', label: 'Raw', icon: Braces }];
   }, [overview]);
-  const requested = searchParams.get('tab') || 'overview';
+  const rawTab = searchParams.get('tab') || 'overview';
+  const requested = RENAMED_TABS[rawTab] ?? rawTab;
   const tab = tabs.some((entry) => entry.value === requested) ? requested : 'overview';
+  useEffect(() => {
+    if (!RENAMED_TABS[rawTab]) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set('tab', RENAMED_TABS[rawTab]);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [rawTab, setSearchParams]);
   const setTab = (value) => {
     const next = new URLSearchParams(searchParams);
     if (value !== 'activity') ACTIVITY_KEYS.forEach((key) => next.delete(key));
@@ -77,8 +91,8 @@ export default function IdentityPage() {
           {missing ? (
             <EmptyState
               icon={Fingerprint}
-              title="No identity with that id"
-              description="It may be outside the accounts and regions you have selected, or a later discovery run removed it. Find it again from Identities."
+              title="This identity was not found"
+              description="It may be outside the accounts and regions you have selected, or a later discovery scan removed it. Go back to Identities to find it again."
               action={back}
             />
           ) : (
@@ -111,23 +125,23 @@ export default function IdentityPage() {
         title={
           <span className="flex min-w-0 items-center gap-3">
             {scored && Number.isFinite(scored.score) && (
-              <Link to="?tab=posture" replace aria-label={`Posture score ${scored.score}, open the Posture tab`} className="shrink-0">
+              <Link to="?tab=posture" replace aria-label={`Security score ${scored.score} of 100, open the Posture tab`} className="shrink-0">
                 <ScoreRing score={scored.score} band={scored.band} grade={scored.grade} size={40} />
               </Link>
             )}
             <span className="min-w-0 truncate font-mono">{identity.name}</span>
           </span>
         }
-        lede={`${identityTypeLabel(identity.identity_type)} · ${functionalClassMeta(identity.functional_class).label} · ${identity.account_id} · ${identity.region}`}
+        lede={`${identityTypeLabel(identity.identity_type)} in AWS account ${identity.account_id} (${identity.region})`}
         actions={
           <>
             {back}
             <Button variant="secondary" as={Link} to={accessGraphRoute(identity.id)} icon={Waypoints}>
-              Access graph
+              Open access graph
             </Button>
             {genome && (
               <Button variant="secondary" as={Link} to={genome} icon={Dna}>
-                NHI Genome
+                Open NHI Genome
               </Button>
             )}
           </>

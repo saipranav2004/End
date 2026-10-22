@@ -4,7 +4,7 @@ import { Crosshair, ExternalLink, Fingerprint, Radius } from 'lucide-react';
 import { findPosture, getCredentialTab, getIdentityTab } from '../../lib/api/access';
 import { useQuery } from '../../lib/hooks/useQuery';
 import { accessDetailRoute, genomeRouteFor, identityRoute } from '../../lib/identityLinks';
-import { formatNumber, formatRelative, humanizeToken } from '../../lib/format';
+import { formatDateTime, formatNumber, formatRelative, humanizeToken } from '../../lib/format';
 import { severityMeta } from '../../lib/domain';
 import { Button } from '../../ui/Button';
 import { CopyButton } from '../../ui/Copyable';
@@ -15,7 +15,7 @@ import { InlineError } from '../../ui/States';
 import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 import { KIND_LABEL, riskReason } from './graphTheme';
-import { NODE_KINDS, edgeKindMeta, edgesOf, subtypeLabel } from './graphModel';
+import { NODE_KINDS, edgeKindMeta, edgeLabel, edgesOf, subtypeLabel } from './graphModel';
 
 /**
  * The selected node, in tabs.
@@ -41,16 +41,16 @@ import { NODE_KINDS, edgeKindMeta, edgesOf, subtypeLabel } from './graphModel';
 
 const ALL_TABS = [
   { value: 'summary', label: 'Summary' },
-  { value: 'connections', label: 'Connections' },
+  { value: 'connections', label: 'Relationships' },
   { value: 'activity', label: 'Activity' },
-  { value: 'permissions', label: 'Permissions' },
-  { value: 'credentials', label: 'Credentials' },
-  { value: 'bound', label: 'Bound to' },
-  { value: 'trust', label: 'Trust' },
+  { value: 'permissions', label: 'What it can do' },
+  { value: 'credentials', label: 'Credentials it uses' },
+  { value: 'bound', label: 'Used by' },
+  { value: 'trust', label: 'Who can use it' },
 ];
 
 export const PRIVILEGE_LEVELS = {
-  4: { label: 'Admin', tone: 'critical' },
+  4: { label: 'Administrator', tone: 'critical' },
   3: { label: 'High', tone: 'high' },
   2: { label: 'Medium', tone: 'medium' },
   1: { label: 'Low', tone: 'low' },
@@ -161,7 +161,7 @@ export function IdentityPanel({ node, isFocusNode, store, status, error, onRetry
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">
-              {isFocusNode ? 'Focus' : 'Selected'} · {node.typeLabel || KIND_LABEL[node.kind] || node.kind}
+              {isFocusNode ? 'Starting point' : 'Selected'} · {node.typeLabel || KIND_LABEL[node.kind] || node.kind}
             </p>
             <h2 className="mt-0.5 truncate text-[16px] font-semibold text-ink" title={node.name}>
               {node.name}
@@ -169,7 +169,7 @@ export function IdentityPanel({ node, isFocusNode, store, status, error, onRetry
           </div>
           {node.unseenCount > 0 && !isFocusNode && (
             <Button variant="secondary" size="sm" onClick={() => onExpand(node)}>
-              {isOpen ? 'Collapse' : `Open ${node.unseenCount}`}
+              {isOpen ? 'Hide its connections' : `Show ${node.unseenCount} connected`}
             </Button>
           )}
         </div>
@@ -182,17 +182,17 @@ export function IdentityPanel({ node, isFocusNode, store, status, error, onRetry
           )}
           {privilege && !node.isAdmin && (
             <Tag tone={privilege.tone} size="sm">
-              {privilege.label} privilege
+              {privilege.label} access
             </Tag>
           )}
           {node.externalTrust && (
             <Tag tone="high" size="sm" dot>
-              Trusted from another account
+              Can be used from another account
             </Tag>
           )}
           {node.accountName && (
             <Tag tone="neutral" size="sm">
-              {node.accountName}
+              Account {node.accountName}
             </Tag>
           )}
           {node.environment && (
@@ -202,7 +202,7 @@ export function IdentityPanel({ node, isFocusNode, store, status, error, onRetry
           )}
           {typeof node.depth === 'number' && node.depth > 0 && (
             <Tag tone="info" size="sm">
-              {node.depth} hop{node.depth === 1 ? '' : 's'} out
+              {node.depth} step{node.depth === 1 ? '' : 's'} away
             </Tag>
           )}
         </div>
@@ -214,7 +214,7 @@ export function IdentityPanel({ node, isFocusNode, store, status, error, onRetry
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain">
         {status === 'error' && (
-          <InlineError error={error} onRetry={() => onRetry(node.id)} label="Connections not loaded" />
+          <InlineError error={error} onRetry={() => onRetry(node.id)} label="Its relationships could not be loaded" />
         )}
 
         {activeTab === 'summary' && (
@@ -254,19 +254,33 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
   return (
     <>
       {detail.isError && (
-        <InlineError error={detail.error} onRetry={detail.refetch} label="Record not loaded" />
+        <InlineError error={detail.error} onRetry={detail.refetch} label="Its details could not be loaded" />
+      )}
+
+      {signals.length > 0 && (
+        <div>
+          <SectionLabel>Risks</SectionLabel>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {signals.map((signal) => {
+              const meta = severityMeta(signal.severity);
+              return (
+                <li key={signal.signal} className="flex items-start gap-1.5">
+                  <Tag tone={meta.tone} size="sm" dot>
+                    {meta.label}
+                  </Tag>
+                  <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-ink-2">{signal.signal}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <div>
-        <SectionLabel>Record</SectionLabel>
+        <SectionLabel>At a glance</SectionLabel>
         <dl className="mt-1.5 flex flex-col gap-1 text-[11.5px]">
-          <div className="flex items-start gap-1">
-            <dt className="sr-only">ARN</dt>
-            <dd className="min-w-0 flex-1 font-mono text-[10.5px] leading-snug break-all text-ink-2">{node.arn}</dd>
-            <CopyButton value={node.arn} label="Copy ARN" size="sm" />
-          </div>
           {!node.identityId && !node.credentialId && (
-            <Row label="Kind" value={NODE_KINDS[node.kind]?.description} />
+            <p className="text-[11.5px] leading-relaxed text-ink-2">{NODE_KINDS[node.kind]?.description}</p>
           )}
           {detail.isLoading && (node.identityId || node.credentialId) ? (
             <DetailSkeleton rows={3} />
@@ -275,20 +289,22 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
               <>
                 <Row label="Status" value={humanizeToken(record.status)} warn={record.status && record.status !== 'active'} />
                 {record.region && <Row label="Region" value={record.region} />}
-                {'owner' in record && <Row label="Owner" value={record.owner} fallback="Unassigned" warn={!record.owner} />}
+                {'owner' in record && <Row label="Owner" value={record.owner} fallback="No owner recorded" warn={!record.owner} />}
                 {record.created_by && <Row label="Created by" value={record.created_by.split('/').pop()} title={record.created_by} />}
                 {record.last_activity_at !== undefined && (
                   <Row
                     label="Last activity"
                     value={record.last_activity_at ? formatRelative(record.last_activity_at) : null}
-                    fallback="None recorded"
+                    title={record.last_activity_at ? formatDateTime(record.last_activity_at) : undefined}
+                    fallback="Never used"
                   />
                 )}
                 {record.last_used_at !== undefined && (
                   <Row
                     label="Last used"
                     value={record.last_used_at ? formatRelative(record.last_used_at) : null}
-                    fallback="Never recorded"
+                    title={record.last_used_at ? formatDateTime(record.last_used_at) : undefined}
+                    fallback="Never used"
                   />
                 )}
                 {typeof record.age_days === 'number' && <Row label="Age" value={`${formatNumber(record.age_days)} days`} />}
@@ -300,7 +316,7 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
 
       {node.identityId && (
         <div>
-          <SectionLabel>Posture</SectionLabel>
+          <SectionLabel>Security score (0-100)</SectionLabel>
           {posture.isLoading ? (
             <DetailSkeleton rows={1} />
           ) : score && typeof score.score === 'number' ? (
@@ -319,31 +335,12 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
                 )}
               </p>
               <Link to={identityRoute(node.identityId, 'posture')} className="text-[11.5px] text-brand hover:underline">
-                Posture record
+                How it is scored
               </Link>
             </div>
           ) : (
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">No posture score for this identity yet.</p>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">Not scored yet.</p>
           )}
-        </div>
-      )}
-
-      {signals.length > 0 && (
-        <div>
-          <SectionLabel>Risk signals</SectionLabel>
-          <ul className="mt-1.5 flex flex-col gap-1">
-            {signals.map((signal) => {
-              const meta = severityMeta(signal.severity);
-              return (
-                <li key={signal.signal} className="flex items-start gap-1.5">
-                  <Tag tone={meta.tone} size="sm" dot>
-                    {meta.label}
-                  </Tag>
-                  <span className="min-w-0 flex-1 text-[11.5px] leading-snug text-ink-2">{signal.signal}</span>
-                </li>
-              );
-            })}
-          </ul>
         </div>
       )}
 
@@ -351,17 +348,17 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
         <div className="flex flex-wrap gap-1.5">
           {!isFocusNode && discoveryId && (
             <Button variant="secondary" size="sm" icon={Crosshair} onClick={() => onFocus(discoveryId)}>
-              Focus here
+              Start the graph here
             </Button>
           )}
           {node.identityId && (
             <Button variant="ghost" size="sm" as={Link} to={accessDetailRoute(node.identityId)} iconRight={Radius}>
-              Access detail
+              Full access detail
             </Button>
           )}
           {node.identityId && (
             <Button variant="ghost" size="sm" as={Link} to={identityRoute(node.identityId)} iconRight={ExternalLink}>
-              Identity record
+              Open identity
             </Button>
           )}
           {!node.identityId && node.credentialId && (
@@ -372,16 +369,28 @@ function SummaryPane({ node, isFocusNode, detail, posture, discoveryId, onFocus 
               to={`/credentials?search=${encodeURIComponent(node.name)}`}
               iconRight={ExternalLink}
             >
-              In credentials
+              Open credential
             </Button>
           )}
           {genome && (
             <Button variant="ghost" size="sm" as={Link} to={genome} iconRight={Fingerprint}>
-              Behaviour
+              Normal behaviour
             </Button>
           )}
         </div>
       )}
+
+      {/* The address only software needs, last and closed. */}
+      <details className="rounded-[var(--radius-control)] border border-line bg-surface-2">
+        <summary className="cursor-pointer px-2.5 py-1.5 text-[11.5px] font-medium text-ink-2">Technical details</summary>
+        <dl className="flex flex-col gap-1 border-t border-line px-2.5 py-2 text-[11.5px]">
+          <dt className="text-ink-3">AWS address (ARN)</dt>
+          <dd className="flex items-start gap-1">
+            <span className="min-w-0 flex-1 font-mono text-[10.5px] leading-snug break-all text-ink-2">{node.arn}</span>
+            <CopyButton value={node.arn} label="Copy ARN" size="sm" />
+          </dd>
+        </dl>
+      </details>
     </>
   );
 }
@@ -398,8 +407,8 @@ function ConnectionsPane({ node, connections }) {
   return (
     <>
       <dl className="grid grid-cols-2 gap-1.5">
-        <Figure label="Connected nodes" value={formatNumber(node.neighbourCount ?? 0)} />
-        <Figure label="On the canvas" value={formatNumber(shown)} />
+        <Figure label="Connected to" value={formatNumber(node.neighbourCount ?? 0)} />
+        <Figure label="Shown on the graph" value={formatNumber(shown)} />
       </dl>
       <ul className="flex flex-col">
         {rows.map((edge) => (
@@ -410,12 +419,18 @@ function ConnectionsPane({ node, connections }) {
               </Tag>
               {edge.crossAccount && (
                 <Tag tone="critical" size="sm" dot>
-                  cross-account
+                  Another AWS account
                 </Tag>
               )}
             </div>
             <p className="mt-1 truncate text-[12px] text-ink" title={edge.otherArn}>
               {edge.other?.name ?? edge.otherArn}
+              {edge.other && (
+                <span className="text-[10.5px] text-ink-3">
+                  {' '}
+                  · {subtypeLabel(edge.other.kind, edge.other.subtype) || KIND_LABEL[edge.other.kind]}
+                </span>
+              )}
             </p>
             <p className="text-[10.5px] text-ink-3">
               {[
@@ -424,14 +439,14 @@ function ConnectionsPane({ node, connections }) {
                   ? `${edge.observed ? 'last call' : 'recorded'} ${formatRelative(edge.lastObservedAt)}`
                   : null,
                 edge.kinds.length > 1
-                  ? `also ${edge.kinds
+                  ? `also: ${edge.kinds
                       .filter((kind) => kind !== edge.kind)
-                      .map((kind) => edgeKindMeta(kind).label.toLowerCase())
+                      .map((kind) => edgeLabel(kind, edge.direction).toLowerCase())
                       .join(', ')}`
                   : null,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join(' · ') || (edge.observed ? 'Seen in the activity log' : 'Set up in AWS, not a recorded call')}
             </p>
           </li>
         ))}
@@ -440,20 +455,9 @@ function ConnectionsPane({ node, connections }) {
   );
 }
 
-const INBOUND = {
-  assume_role: 'Assumable by',
-  cross_account: 'Assumable from',
-  bound_to: 'Used by',
-  trusts: 'Trusts',
-  accesses: 'Called by',
-  created_by: 'Created',
-  service_trust: 'Trusts service',
-};
-
+/* "Used by nhi-activity-ec2-role": read from this node's side. */
 function relationLabel(edge) {
-  if (edge.direction === 'in') return INBOUND[edge.kind] ?? `${edgeKindMeta(edge.kind).label} (in)`;
-  if (edge.kind === 'trusts') return 'Named in trust of';
-  return edgeKindMeta(edge.kind).label;
+  return edgeLabel(edge.kind, edge.direction);
 }
 
 /** What it did in the last 30 days, from CloudTrail. */
@@ -466,17 +470,17 @@ function ActivityPane({ activity, total }) {
   return (
     <>
       <dl className="grid grid-cols-3 gap-1.5">
-        <Figure label="Events" value={formatNumber(total)} />
+        <Figure label="Recorded actions" value={formatNumber(total)} />
         <Figure
-          label="Error rate"
-          value={typeof analytics.error_rate_pct === 'number' ? `${analytics.error_rate_pct}%` : '-'}
+          label="Failed (% of actions)"
+          value={typeof analytics.error_rate_pct === 'number' ? `${analytics.error_rate_pct}%` : 'Not recorded'}
           tone={analytics.error_rate_pct > 5 ? 'medium' : 'neutral'}
         />
         <Figure label="Regions" value={formatNumber((analytics.active_regions ?? []).length)} />
-        <Figure label="Source IPs" value={formatNumber((analytics.source_ips ?? []).length)} />
+        <Figure label="Network addresses (IPs)" value={formatNumber((analytics.source_ips ?? []).length)} />
         <Figure
-          label="Denied"
-          value={typeof analytics.access_denied_rate_pct === 'number' ? `${analytics.access_denied_rate_pct}%` : '-'}
+          label="Refused (% of actions)"
+          value={typeof analytics.access_denied_rate_pct === 'number' ? `${analytics.access_denied_rate_pct}%` : 'Not recorded'}
           tone={analytics.access_denied_rate_pct > 0 ? 'critical' : 'neutral'}
         />
       </dl>
@@ -499,7 +503,7 @@ function ActivityPane({ activity, total }) {
 
       {actions.length > 0 && (
         <div>
-          <SectionLabel>Most used actions</SectionLabel>
+          <SectionLabel>What it did most</SectionLabel>
           <ul className="mt-1.5 flex flex-col gap-1">
             {actions.slice(0, 6).map((action) => (
               <li key={action.action} className="flex items-baseline justify-between gap-2">
@@ -515,7 +519,7 @@ function ActivityPane({ activity, total }) {
 
       {services.length > 0 && (
         <div>
-          <SectionLabel>Busiest services</SectionLabel>
+          <SectionLabel>AWS services it used most</SectionLabel>
           <ul className="mt-1.5 flex flex-col gap-1.5">
             {services.slice(0, 5).map((service) => (
               <li key={service.service}>
@@ -538,8 +542,8 @@ function ActivityPane({ activity, total }) {
       )}
 
       <p className="text-[11px] leading-relaxed text-ink-3">
-        Counted from CloudTrail events over the last 30 days
-        {analytics.usage_pattern ? `; usage pattern: ${analytics.usage_pattern.toLowerCase()}` : ''}.
+        Counted from the AWS activity log (CloudTrail) over the last 30 days
+        {analytics.usage_pattern ? `; usage pattern: ${humanizeToken(analytics.usage_pattern).toLowerCase()}` : ''}.
       </p>
     </>
   );
@@ -553,26 +557,26 @@ function PermissionsPane({ permissions, identityId }) {
   return (
     <>
       <dl className="grid grid-cols-3 gap-1.5">
-        <Figure label="Granted" value={formatNumber(summary.granted_count)} />
-        <Figure label="Used" value={formatNumber(summary.used_count)} />
+        <Figure label="Allowed" value={formatNumber(summary.granted_count)} />
+        <Figure label="Used (90 days)" value={formatNumber(summary.used_count)} />
         <Figure
-          label="Unused"
+          label="Never used"
           value={formatNumber(summary.unused_count)}
           tone={summary.unused_count > 0 ? 'medium' : 'neutral'}
         />
       </dl>
       <div>
         <div className="flex items-baseline justify-between text-[11.5px]">
-          <span className="text-ink-3">Utilisation</span>
+          <span className="text-ink-3">Share of its permissions it actually used</span>
           <span data-numeric="" className="font-medium text-ink-2">
             {formatNumber(summary.utilization_pct)}%
           </span>
         </div>
-        <Meter className="mt-1" value={summary.utilization_pct} tone="info" label="Permission utilisation" />
+        <Meter className="mt-1" value={summary.utilization_pct} tone="info" label="Share of its permissions it actually used" />
       </div>
       {unused.length > 0 && (
         <div>
-          <SectionLabel>Granted, never used</SectionLabel>
+          <SectionLabel>Allowed but never used</SectionLabel>
           <ul className="mt-1.5 flex flex-col gap-1">
             {unused.slice(0, 8).map((row) => (
               <li key={`${row.action}-${row.resource_arn}`} className="flex items-baseline justify-between gap-2">
@@ -583,7 +587,7 @@ function PermissionsPane({ permissions, identityId }) {
               </li>
             ))}
           </ul>
-          {unused.length > 8 && <p className="mt-1 text-[11px] text-ink-3">{unused.length - 8} more.</p>}
+          {unused.length > 8 && <p className="mt-1 text-[11px] text-ink-3">And {unused.length - 8} more in full access detail.</p>}
         </div>
       )}
       {identityId && (
@@ -618,7 +622,7 @@ function CredentialList({ credentials }) {
               </span>
               {policies.includes('AdministratorAccess') && (
                 <Tag tone="critical" size="sm" dot>
-                  Admin
+                  Full administrator access
                 </Tag>
               )}
             </div>
@@ -629,16 +633,16 @@ function CredentialList({ credentials }) {
               <Row
                 label="Last used"
                 value={life.last_used_at ? formatRelative(life.last_used_at) : null}
-                fallback="Never recorded"
+                fallback="Never used"
               />
               <Row
-                label="Rotation"
-                value={life.rotation_enabled ? (life.rotation_overdue ? 'Overdue' : 'Enabled') : 'Not enabled'}
+                label="Key change (rotation)"
+                value={life.rotation_enabled ? (life.rotation_overdue ? 'Overdue' : 'On schedule') : 'Not set up'}
                 warn={!life.rotation_enabled || life.rotation_overdue}
               />
-              {policies.length > 0 && <Row label="Policies" value={policies.join(', ')} title={policies.join(', ')} />}
+              {policies.length > 0 && <Row label="Permission policies" value={policies.join(', ')} title={policies.join(', ')} />}
               {external.length > 0 && (
-                <Row label="External trust" value={external.map((principal) => principal.principal).join(', ')} warn />
+                <Row label="Usable from another account by" value={external.map((principal) => principal.principal).join(', ')} warn />
               )}
             </dl>
           </li>
@@ -682,7 +686,7 @@ function TrustPane({ trust }) {
     <>
       {principals.length > 0 && (
         <div>
-          <SectionLabel>Trusted principals</SectionLabel>
+          <SectionLabel>Who may use (assume) it</SectionLabel>
           <ul className="mt-1.5 flex flex-col gap-1.5">
             {principals.map((principal) => (
               <li
@@ -693,13 +697,13 @@ function TrustPane({ trust }) {
                   <span className="min-w-0 font-mono text-[11px] break-all text-ink">{principal.principal}</span>
                   {principal.is_external && (
                     <Tag tone="high" size="sm" dot>
-                      External
+                      Another account
                     </Tag>
                   )}
                 </div>
                 <p className="mt-1 text-[10.5px] text-ink-3">
-                  {principal.type}
-                  {principal.condition ? ` · condition ${principal.condition}` : ' · no condition'}
+                  {humanizeToken(principal.type)}
+                  {principal.condition ? ` · only when ${principal.condition}` : ' · no extra conditions'}
                 </p>
               </li>
             ))}
@@ -717,7 +721,7 @@ function TrustPane({ trust }) {
       )}
       {policies.length > 0 && (
         <div>
-          <SectionLabel>Attached policies</SectionLabel>
+          <SectionLabel>Permission policies</SectionLabel>
           <ul className="mt-1.5 flex flex-col gap-1">
             {policies.map((policy) => (
               <li key={policy} className="flex items-center gap-1.5">
@@ -736,7 +740,7 @@ function TrustPane({ trust }) {
           </ul>
         </div>
       )}
-      <Row label="Permission boundary" value={boundary} fallback="None" warn={!boundary} />
+      <Row label="Permission limit (boundary)" value={boundary} fallback="No limit set" warn={!boundary} />
     </>
   );
 }

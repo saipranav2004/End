@@ -49,8 +49,8 @@ import { FILTER_PARAMS, SIGNALS, SORTABLE, SORT_FIELDS, describeFilters, readFil
 const VIEW_PRESETS = [
   { key: 'all', label: 'All identities', params: {}, countKey: 'all' },
   { key: 'public', label: 'Publicly accessible', params: { is_publicly_accessible: 'true' }, countKey: 'public' },
-  { key: 'stale', label: 'Stale 90+', params: { min_idle_days: '90' }, countKey: 'stale' },
-  { key: 'idle', label: 'Idle 30+', params: { min_idle_days: '30' }, countKey: 'idle' },
+  { key: 'stale', label: 'Unused 90+ days', params: { min_idle_days: '90' }, countKey: 'stale' },
+  { key: 'idle', label: 'Idle 30+ days', params: { min_idle_days: '30' }, countKey: 'idle' },
 ];
 
 const DENSITY_KEY = 'dna.grid.density';
@@ -235,7 +235,7 @@ export default function IdentitiesPage() {
     return [
       {
         key: 'signals',
-        label: 'Risk signals',
+        label: 'Risks',
         options: SIGNALS.map((signal) => ({
           value: signal.key,
           label: signal.label,
@@ -246,7 +246,7 @@ export default function IdentitiesPage() {
           const signal = SIGNALS.find((entry) => entry.key === value);
           if (signal) toggleParam(signal.param, signal.value);
         },
-        note: 'Idle and stale are measured from the last CloudTrail event of the identity or any credential bound to it.',
+        note: 'Idle and unused are measured from the last call by the identity or any of its credentials in the AWS activity log (CloudTrail).',
       },
       listGroup('type', 'Identity type', 'identity_type', facets?.identity_types, 'type', API_IDENTITY_TYPES, identityTypeLabel),
       listGroup(
@@ -259,7 +259,7 @@ export default function IdentitiesPage() {
         (value) => functionalClassMeta(value).label,
       ),
       listGroup('env', 'Environment', 'environment', facets?.environments, 'environment', API_ENVIRONMENTS, environmentLabel),
-      listGroup('status', 'Lifecycle status', 'status', facets?.statuses, 'status', API_IDENTITY_STATUSES, (value) => lifecycleMeta(value).label),
+      listGroup('status', 'Status', 'status', facets?.statuses, 'status', API_IDENTITY_STATUSES, (value) => lifecycleMeta(value).label),
       {
         key: 'owner',
         label: 'Owner',
@@ -270,7 +270,7 @@ export default function IdentitiesPage() {
           active: searchParams.get('owner') === entry.owner,
         })),
         onToggle: (value) => toggleParam('owner', value),
-        note: 'The owners holding the most identities. Identities with no owner tag cannot be filtered on; the Owner column reads Unassigned for them.',
+        note: 'The owners with the most identities. Identities with no owner tag cannot be filtered here; the Owner column reads No owner for them.',
         defaultOpen: false,
       },
     ];
@@ -297,7 +297,7 @@ export default function IdentitiesPage() {
         { header: 'Publicly accessible', value: (row) => (row.is_publicly_accessible ? 'yes' : 'no') },
         { header: 'VPC', value: (row) => row.vpc_id },
         { header: 'Bound credentials', value: (row) => row.bound_credentials_count },
-        { header: 'Permission utilisation %', value: (row) => row.permission_utilization_pct },
+        { header: 'Share of permissions used %', value: (row) => row.permission_utilization_pct },
         { header: 'Last activity', value: (row) => row.last_activity_at },
         { header: 'Idle days', value: (row) => row.idle_days },
         { header: 'Created (AWS)', value: (row) => row.created_at_aws },
@@ -362,7 +362,7 @@ export default function IdentitiesPage() {
     },
     {
       key: 'posture',
-      header: 'Posture',
+      header: 'Security score',
       width: '12%',
       cell: (row) => <PostureCell entry={postureIndex.data?.get(row.arn)} loading={!postureIndex.data && !postureIndex.isError} />,
     },
@@ -377,7 +377,7 @@ export default function IdentitiesPage() {
             className={row.owner ? 'block truncate text-[12.5px] text-ink-2' : 'block truncate text-[12.5px] text-ink-3 italic'}
             title={row.owner || undefined}
           >
-            {row.owner || 'Unassigned'}
+            {row.owner || 'No owner'}
           </span>
           {/* Who created it and how long ago, on one line: age reads best beside its creator. */}
           {(row.created_by || Number.isFinite(row.age_days)) && (
@@ -408,7 +408,7 @@ export default function IdentitiesPage() {
           {/* Region first: most identities carry no environment tag, and
               "No environment" would take the line that says where it runs. */}
           <span className="block truncate text-[12.5px] text-ink-2">
-            {[row.environment && environmentLabel(row.environment), row.region].filter(Boolean).join(' · ') || '-'}
+            {[row.environment && environmentLabel(row.environment), row.region].filter(Boolean).join(' · ') || 'Not recorded'}
           </span>
           <span className="block truncate text-[11px] text-ink-3" title={`Account ${row.account_id}, ${row.region}`}>
             <span className="font-mono tabular-nums">{row.account_id}</span>
@@ -427,7 +427,7 @@ export default function IdentitiesPage() {
     },
     {
       key: 'activity',
-      header: 'Activity',
+      header: 'Last activity',
       width: '13%',
       sortable: true,
       cell: (row) => <ActivityCell identity={row} activityAvailable={activityAvailable} />,
@@ -437,7 +437,8 @@ export default function IdentitiesPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Identity explorer"
+        title="Identities"
+        lede="Workloads, services and automations that act in your AWS accounts. Select one to see what it can do, who can use it and what it did."
         tabs={
           <Tabs
             size="sm"
@@ -537,8 +538,8 @@ export default function IdentitiesPage() {
 
           {!activityAvailable && query.data && (
             <p role="status" className="border-b border-line bg-medium-soft px-4 py-2 text-[12px] text-ink-2 sm:px-5">
-              CloudTrail data could not be read just now, so last activity, idle days and permission use are unknown rather
-              than zero. The inventory itself is complete.
+              The AWS activity log (CloudTrail) could not be read just now, so last activity, idle days and permissions used are
+              unknown, not zero. The list of identities itself is complete. Refresh in a few minutes.
             </p>
           )}
 
@@ -628,14 +629,14 @@ export default function IdentitiesPage() {
   );
 }
 
-/** The identity's posture score and band, as the Posture page states them. */
+/** The identity's security (posture) score and band, as the Posture page states them. */
 function PostureCell({ entry, loading }) {
   if (!entry) {
-    return <span className="text-[12px] text-ink-3">{loading ? '…' : 'Not scored'}</span>;
+    return <span className="text-[12px] text-ink-3">{loading ? '…' : 'Not scored yet'}</span>;
   }
   const band = bandMeta(String(entry.band || '').toLowerCase());
   return (
-    <span className="flex min-w-0 items-center gap-1.5" title={`Posture score ${entry.score} of 100 - ${band.label}`}>
+    <span className="flex min-w-0 items-center gap-1.5" title={`Security score ${entry.score} of 100 - ${band.label}`}>
       <ScoreRing score={entry.score} band={entry.band} size={28} />
       <span className="min-w-0 truncate text-[12px] font-medium" style={{ color: `var(--t-${band.tone})` }}>
         {band.label}

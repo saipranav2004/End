@@ -45,7 +45,7 @@ export function IdentityDrawer({ identity, open, onClose }) {
               iconRight={ArrowUpRight}
               className="ml-auto text-[12px]"
             >
-              Open full record
+              Open identity page
             </Button>
           )}
         </div>

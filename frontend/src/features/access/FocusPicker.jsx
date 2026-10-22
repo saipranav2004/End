@@ -35,7 +35,7 @@ export function FocusPicker({ options, value, onChange, partial = false }) {
     return [
       {
         key: 'external',
-        label: 'Trusted from another account',
+        label: 'Can be used from another account',
         rows: identities.filter((o) => o.externalTrust),
       },
       {
@@ -100,7 +100,7 @@ export function FocusPicker({ options, value, onChange, partial = false }) {
               type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter by name or ARN..."
+              placeholder="Filter by name or AWS address (ARN)..."
               aria-label="Filter starting points"
               className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-3"
             />
@@ -108,7 +108,7 @@ export function FocusPicker({ options, value, onChange, partial = false }) {
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
             {groups.length === 0 ? (
-              <p className="px-3 py-4 text-center text-[12px] text-ink-3">Nothing matches that.</p>
+              <p className="px-3 py-4 text-center text-[12px] text-ink-3">Nothing matches that name. Try part of it, or the AWS address (ARN).</p>
             ) : (
               groups.map((group) => (
                 <div key={group.key}>
@@ -146,7 +146,7 @@ export function FocusPicker({ options, value, onChange, partial = false }) {
           </div>
           {partial && (
             <p className="shrink-0 border-t border-line px-2.5 py-1.5 text-[10.5px] text-ink-3">
-              The first {options.length} records in scope are listed. Open the Identities screen to search
+              The first {options.length} records in scope are listed. Search the Identities page to find
               the rest.
             </p>
           )}

@@ -11,7 +11,7 @@ import {
 import '@xyflow/react/dist/base.css';
 import { Maximize2, Minimize2, PanelRight, RotateCcw } from 'lucide-react';
 import { EDGE_STYLE, edgeStyleFor, toneFor } from './graphTheme';
-import { edgeKindMeta } from './graphModel';
+import { EDGE_GROUPS, EDGE_KINDS, edgeKindMeta } from './graphModel';
 import { HOP_METRICS, hopLabels, layoutHops } from './hopLayout';
 import { nodeTypes } from './GraphNodes';
 import { IconButton } from '../../ui/Button';
@@ -152,26 +152,30 @@ function FlowInner({
       const arrow = { type: 'arrowclosed', width: 14, height: 14, color: style.stroke };
 
       /* The label is on the edge only where the relationship is not obvious
-         from the two nodes it joins. "Runs as" between a function and its
-         role says nothing new; "cross-account" between two roles is the
-         whole point. */
+         from the two nodes it joins, or while the reader hovers either end:
+         "another account" between two roles is the whole point, "Uses"
+         between an instance and its role is only worth saying on request. */
+      const active = hoverSets?.edges.has(edge.id);
       return {
         id: edge.id,
         source: reversed ? edge.to : edge.from,
         target: reversed ? edge.from : edge.to,
         type: 'smoothstep',
         animated: false,
-        label: edge.crossAccount ? 'cross-account' : undefined,
+        label: active ? meta.label : edge.crossAccount ? 'another account' : undefined,
         ariaLabel: `${meta.label}${edge.callCount ? `, ${edge.callCount} calls` : ''}`,
         labelShowBg: true,
         labelBgPadding: [4, 2],
         labelBgBorderRadius: 4,
         markerEnd: reversed ? undefined : arrow,
         markerStart: reversed ? arrow : undefined,
+        /* index.css dashes and animates every edge path; a solid group
+           has to say "none" inline or it is drawn dashed like the rest. */
         style: {
           stroke: style.stroke,
           strokeWidth: style.strokeWidth,
-          strokeDasharray: style.dash ?? undefined,
+          strokeDasharray: style.dash ?? 'none',
+          animation: style.dash ? undefined : 'none',
         },
         className: cn(
           hoverSets && !hoverSets.edges.has(edge.id) && 'access-edge-dimmed',
@@ -460,7 +464,7 @@ function FlowInner({
           ))}
         </div>
         <span className="hidden shrink-0 text-[10.5px] text-ink-3 @min-[32rem]:inline">
-          {(data?.nodes?.length ?? 0)} of {data?.totalNodes ?? 0} found so far
+          Showing {(data?.nodes?.length ?? 0)} of {data?.totalNodes ?? 0} found so far
         </span>
         {expanded && inspector && (
           <IconButton
@@ -552,25 +556,23 @@ function FlowInner({
       </div>
 
       {/* The legend and the gestures, on one strip.
-          A directional graph with two line styles needs to say which is which:
-          the reader can see that some edges are red and dashed, and nothing on
-          screen told them that meant a documented escalation rather than
-          "important". Here: dashed is configuration, solid is what CloudTrail
-          saw used, red is a step into another AWS account. */}
+          One key per edge group, so every line the canvas can draw is named:
+          heavy solid is the role an identity uses, dashed is a trust policy,
+          grey is what CloudTrail saw, red is a step into another account. */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-line bg-surface-2 px-3 py-1.5 text-[10.5px] text-ink-3">
-        <span className="flex items-center gap-3">
-          <LegendKey label="Trust or binding" tone="base" />
-          <LegendKey label="Observed calls" tone="observed" />
-          <LegendKey label="Crosses accounts" tone="crossAccount" />
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {Object.keys(EDGE_GROUPS).map((group) => (
+            <LegendKey key={group} group={group} />
+          ))}
         </span>
         <span aria-hidden="true" className="hidden text-line-strong @min-[44rem]:inline">
           |
         </span>
         <span className="min-w-0">
           <span className="@min-[32rem]:hidden">
-            {(data?.nodes?.length ?? 0)} of {data?.totalNodes ?? 0} found so far ·{' '}
+            Showing {(data?.nodes?.length ?? 0)} of {data?.totalNodes ?? 0} found so far ·{' '}
           </span>
-          Click a node to inspect · the chevron for its next hop · drag a node to move it
+          Click a box for its details · the arrow on a box shows what it connects to · hover a box to name its lines
         </span>
       </div>
     </div>
@@ -584,10 +586,16 @@ function FlowInner({
  * dot: the difference between the three kinds is as much the dash pattern as
  * the hue, and a dot cannot show a dash.
  */
-function LegendKey({ label, tone }) {
-  const style = EDGE_STYLE[tone] ?? EDGE_STYLE.base;
+function LegendKey({ group }) {
+  const style = EDGE_STYLE[group];
+  const meta = EDGE_GROUPS[group];
+  /* The hover text lists every relationship drawn this way. */
+  const kinds = Object.values(EDGE_KINDS)
+    .filter((kind) => kind.group === group)
+    .map((kind) => kind.label);
+  const title = `${meta.description}${kinds.length ? ` Includes: ${kinds.join('; ')}.` : ''}`;
   return (
-    <span className="flex shrink-0 items-center gap-1.5">
+    <span className="flex shrink-0 items-center gap-1.5" title={title}>
       <svg aria-hidden="true" width="20" height="6" viewBox="0 0 20 6" className="shrink-0 overflow-visible">
         <line
           x1="0"
@@ -600,7 +608,7 @@ function LegendKey({ label, tone }) {
           strokeLinecap="round"
         />
       </svg>
-      <span>{label}</span>
+      <span>{meta.label}</span>
     </span>
   );
 }

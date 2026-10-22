@@ -54,11 +54,12 @@ export default function ActivityPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="API activity"
+        title="Activity"
+        lede="Every call an identity made to AWS, read from the AWS activity log (CloudTrail)."
         actions={
           identity ? (
             <Button variant="secondary" as={Link} to={identityRoute(identity.id, 'activity')} iconRight={ArrowUpRight}>
-              Open full record
+              Open identity page
             </Button>
           ) : null
         }
@@ -70,11 +71,11 @@ export default function ActivityPage() {
         <Panel>
           <EmptyState
             icon={Activity}
-            title={identityQuery.error?.status === 404 || identityQuery.error?.status === 400 ? 'No identity with that id' : 'The identity could not be loaded'}
+            title={identityQuery.error?.status === 404 || identityQuery.error?.status === 400 ? 'This identity was not found' : 'The identity could not be loaded'}
             description={
               identityQuery.error?.status === 404 || identityQuery.error?.status === 400
-                ? 'It may be outside the accounts and regions you have selected. Choose another.'
-                : identityQuery.error?.message
+                ? 'It may be outside the accounts and regions you have selected. Choose another identity.'
+                : `${identityQuery.error?.message || 'Something went wrong.'} Try again, or choose another identity.`
             }
             action={picker}
           />
@@ -90,7 +91,7 @@ export default function ActivityPage() {
               {identityTypeLabel(identity.identity_type)} in account <span className="font-mono">{identity.account_id}</span>
               {identity.last_activity_at
                 ? ` · last call ${formatRelative(identity.last_activity_at)} (${formatDateTime(identity.last_activity_at)})`
-                : ' · no call recorded'}
+                : ' · no call recorded yet'}
             </p>
           )}
         </>
@@ -111,7 +112,7 @@ function StartHere({ picker, onChoose }) {
     <Panel prominence="lead" className="animate-rise">
       <PanelHeader
         title="Choose an identity"
-        subtitle="Pick an identity to see every AWS API call it made, including calls made with its keys and roles."
+        subtitle="Pick an identity to see every call it made to AWS, including calls made with its keys and roles."
         actions={<div className="w-72 max-w-full">{picker}</div>}
       />
       <p className="mt-5 text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">Most recently active</p>
@@ -124,7 +125,10 @@ function StartHere({ picker, onChoose }) {
           <ListSkeleton rows={4} />
         </div>
       ) : !activityAvailable ? (
-        <p className="mt-2 text-[12.5px] text-ink-3">CloudTrail data cannot be read right now, so recent activity is unknown.</p>
+        <p className="mt-2 text-[12.5px] text-ink-3">
+          The AWS activity log (CloudTrail) cannot be read right now, so recent activity is unknown. You can still choose an
+          identity above.
+        </p>
       ) : rows.length === 0 ? (
         <p className="mt-2 text-[12.5px] text-ink-3">No identities in your scope.</p>
       ) : (
@@ -138,7 +142,7 @@ function StartHere({ picker, onChoose }) {
               >
                 <span className="truncate text-[13px] font-semibold text-ink">{row.name || row.arn}</span>
                 <span className="truncate text-[11.5px] text-ink-3">
-                  {identityTypeLabel(row.identity_type)} · {row.last_activity_at ? formatRelative(row.last_activity_at) : 'no activity recorded'}
+                  {identityTypeLabel(row.identity_type)} · {row.last_activity_at ? formatRelative(row.last_activity_at) : 'never used'}
                 </span>
               </button>
             </li>

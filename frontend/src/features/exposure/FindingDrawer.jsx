@@ -53,9 +53,9 @@ import { findingKey, modelVerdict, verdictMeta } from './scannerState';
  */
 const DRAWER_TABS = [
   { value: 'overview', label: 'Overview' },
-  { value: 'location', label: 'Location & commit' },
+  { value: 'location', label: 'Where and who' },
   { value: 'timeline', label: 'Timeline' },
-  { value: 'raw', label: 'Raw match' },
+  { value: 'raw', label: 'The code' },
 ];
 
 export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecide, deciding }) {
@@ -85,6 +85,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
   const authoredAt = parseCommitAuthoredAt(finding.commit_authored_at);
   const size = commitSize(finding);
   const committer = finding.committer ? parseAuthor(finding.committer) : null;
+  const verification = verificationMeta(finding.verification_status);
   /* Same person in the overwhelming majority of commits; worth a row only when
      they differ, which is the case that tells an operator something. */
   const committerDiffers = Boolean(committer?.name && committer.name !== author.name);
@@ -143,29 +144,23 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
       <div className="flex flex-col gap-5 px-4 py-4 sm:px-5">
         {tab === 'overview' && (
           <>
+          {/* The next step first: what the scanner recommends, in words. */}
+          <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-3.5">
+            <SectionLabel>What to do</SectionLabel>
+            <p className="mt-1.5 text-[13px] font-semibold text-ink">{action.label}</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-2">
+              Replace (rotate) the secret where it was issued so the old value stops working, then remove
+              it from the code. Deleting the commit alone is not enough: copies of the repository keep it.
+            </p>
+          </div>
+
           <VerdictSection finding={finding} onDecide={onDecide} deciding={deciding} />
 
           <div>
-            <SectionLabel>Assessment</SectionLabel>
+            <SectionLabel>How serious it is</SectionLabel>
             <DetailList className="mt-1">
-              <DetailRow label="Detector">{humanizeToken(finding.detector)}</DetailRow>
-              <DetailRow label="Detector severity">
-                {finding.severity ? humanizeToken(finding.severity) : '-'}
-              </DetailRow>
-              <DetailRow label="Match confidence">
-                {confidence ? (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <Tag tone={confidence.tone} size="sm">
-                      {confidence.short}
-                    </Tag>
-                    <span className="text-[11.5px] text-ink-3">
-                      How certain the pattern match is, not how bad the secret is.
-                    </span>
-                  </span>
-                ) : (
-                  <MissingValue finding={finding} field="confidence" />
-                )}
-              </DetailRow>
+              <DetailRow label="Risk">{risk.label}</DetailRow>
+              <DetailRow label="Kind of secret">{humanizeToken(finding.detector)}</DetailRow>
               <DetailRow label="Category">
                 {finding.category ? (
                   humanizeToken(finding.category)
@@ -173,28 +168,41 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                   <MissingValue finding={finding} field="category" />
                 )}
               </DetailRow>
-              <DetailRow label="Actionable risk">{risk.label}</DetailRow>
-              <DetailRow label="Recommended action">{action.label}</DetailRow>
-              <DetailRow label="Verification">
-                {finding.verification_status === 'UNSUPPORTED'
-                  ? 'Not checked - liveness verification is unavailable on this deployment'
-                  : humanizeToken(finding.verification_status)}
+              <DetailRow label="Does it still work?">{verification.label}</DetailRow>
+              <DetailRow label="How sure the match is">
+                {confidence ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Tag tone={confidence.tone} size="sm">
+                      {confidence.short}
+                    </Tag>
+                    <span className="text-[11.5px] text-ink-3">
+                      How sure the scanner is that this is a secret, not how much harm it could do.
+                    </span>
+                  </span>
+                ) : (
+                  <MissingValue finding={finding} field="confidence" />
+                )}
+              </DetailRow>
+              <DetailRow label="Scanner's severity">
+                {finding.severity ? humanizeToken(finding.severity) : <span className="text-[12px] text-ink-3">Not recorded</span>}
               </DetailRow>
             </DetailList>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
-              “Not checked” means the scanner has no permission to test whether the credential still
-              works. It is not a statement that the secret is inactive.
-            </p>
+            {verification.unchecked && (
+              <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
+                “Not checked” means the scanner could not test whether the secret still works. It does not
+                mean the secret is safe.
+              </p>
+            )}
           </div>
 
 
           {hasRepoContext(finding) && (
             <div>
-              <SectionLabel>The repository it sits in</SectionLabel>
+              <SectionLabel>Who can see the repository</SectionLabel>
               <DetailList className="mt-1">
                 <DetailRow label="Visibility">
                   {visibility ? (
-                    <span className="flex flex-col gap-0.5">
+                    <span className="flex flex-col items-start gap-0.5">
                       <Tag tone={visibility.tone} size="sm" dot={visibility.tone !== 'neutral'}>
                         {visibility.label}
                       </Tag>
@@ -204,15 +212,13 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                     <MissingValue finding={finding} field="repo_visibility" />
                   )}
                 </DetailRow>
-                <DetailRow label="Stars">
-                  {Number.isFinite(finding.repo_stars) ? (
+                {Number.isFinite(finding.repo_stars) && (
+                  <DetailRow label="Stars">
                     <span data-numeric="">{formatNumber(finding.repo_stars)}</span>
-                  ) : (
-                    <MissingValue finding={finding} field="repo_stars" />
-                  )}
-                </DetailRow>
-                <DetailRow label="Forks">
-                  {Number.isFinite(finding.repo_forks) ? (
+                  </DetailRow>
+                )}
+                {Number.isFinite(finding.repo_forks) && (
+                  <DetailRow label="Copies (forks)">
                     <>
                       <span data-numeric="">{formatNumber(finding.repo_forks)}</span>
                       {finding.repo_forks > 0 && (
@@ -222,18 +228,22 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                         </span>
                       )}
                     </>
-                  ) : (
-                    <MissingValue finding={finding} field="repo_forks" />
-                  )}
-                </DetailRow>
-                <DetailRow label="Repository last pushed">
-                  {finding.repo_pushed_at ? (
-                    formatRelative(finding.repo_pushed_at)
-                  ) : (
-                    <MissingValue finding={finding} field="repo_pushed_at" />
-                  )}
-                </DetailRow>
+                  </DetailRow>
+                )}
+                {finding.repo_pushed_at && (
+                  <DetailRow label="Last change to the repository">
+                    <span title={formatDateTime(finding.repo_pushed_at)}>{formatRelative(finding.repo_pushed_at)}</span>
+                  </DetailRow>
+                )}
               </DetailList>
+              <MissingSummary
+                finding={finding}
+                fields={[
+                  ['repo_stars', 'stars'],
+                  ['repo_forks', 'forks'],
+                  ['repo_pushed_at', 'last change'],
+                ]}
+              />
             </div>
           )}
 
@@ -243,7 +253,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
         {tab === 'location' && (
           <>
           <div>
-            <SectionLabel>Location</SectionLabel>
+            <SectionLabel>Where it is</SectionLabel>
             <DetailList className="mt-1">
               <DetailRow label="Repository" mono>
                 <CopyableValue value={finding.repository} />
@@ -252,7 +262,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                 <CopyableValue value={finding.file_path} />
               </DetailRow>
               <DetailRow label="Line">
-                <span data-numeric="">{finding.line_number ?? '-'}</span>
+                {finding.line_number ?? <span className="text-[12px] text-ink-3">Not recorded</span>}
               </DetailRow>
               <DetailRow label="Branch" mono>
                 {shortBranch(finding.branch)}
@@ -266,18 +276,15 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
 
 
           <div>
-            <SectionLabel>Attribution</SectionLabel>
+            <SectionLabel>Who added it</SectionLabel>
             <DetailList className="mt-1">
               <DetailRow label="Author">{author.name}</DetailRow>
               <DetailRow label="Email" mono>
-                {author.email || '-'}
+                {author.email || <span className="font-sans text-[12px] text-ink-3">No email recorded</span>}
               </DetailRow>
-              <DetailRow label="Detected">
+              <DetailRow label="Found by the scanner">
                 {formatRelative(finding.created_at)}
                 <span className="ml-1.5 text-ink-3">({formatDateTime(finding.created_at)})</span>
-              </DetailRow>
-              <DetailRow label="AWS account" mono>
-                {finding.client_id || '-'}
               </DetailRow>
             </DetailList>
           </div>
@@ -285,7 +292,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
 
           {hasCommitContext(finding) && (
             <div>
-              <SectionLabel>The commit that introduced it</SectionLabel>
+              <SectionLabel>The commit that added it</SectionLabel>
               {finding.commit_message && (
                 <p className="mt-1.5 rounded-[var(--radius-control)] border border-line bg-surface-2 p-3 text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-2">
                   {finding.commit_message}
@@ -301,7 +308,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
                     </span>
                   </DetailRow>
                 )}
-                <DetailRow label="Written">
+                <DetailRow label="Committed">
                   {authoredAt ? (
                     <>
                       {formatRelative(authoredAt)}
@@ -352,11 +359,10 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
         {tab === 'raw' && (
           <>
           <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-3.5">
-            <SectionLabel>Redacted value</SectionLabel>
-            <p className="mt-1.5 font-mono text-[13px] break-all text-ink">{finding.redacted || '-'}</p>
+            <SectionLabel>Masked value</SectionLabel>
+            <p className="mt-1.5 font-mono text-[13px] break-all text-ink">{finding.redacted || 'Not recorded'}</p>
             <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
-              The scanner never returns the real secret - this masked form is the only version
-              available through the API.
+              The scanner never shares the real secret. This masked form is the only version we hold.
             </p>
           </div>
 
@@ -366,13 +372,33 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
               triage - it is what somebody quotes in a support ticket, and the
               first thing they are asked for. A finding recorded before the
               field existed has none, which is why it is guarded. */}
-          {finding.finding_id !== undefined && finding.finding_id !== null && (
-            <div>
-              <SectionLabel>Record id</SectionLabel>
-              <p className="mt-1.5 font-mono text-[12px] break-all text-ink-2">{finding.finding_id}</p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">The scanner's reference for this finding, for support requests.</p>
-            </div>
-          )}
+          <details className="order-last">
+            <summary className="cursor-pointer text-[12px] font-medium text-ink-2">Technical details</summary>
+            <DetailList className="mt-1">
+              {finding.finding_id !== undefined && finding.finding_id !== null && (
+                <DetailRow label="Finding ID" mono>
+                  <CopyableValue value={finding.finding_id} className="break-all" />
+                  <span className="mt-0.5 block font-sans text-[11.5px] text-ink-3">Quote this in a support request.</span>
+                </DetailRow>
+              )}
+              <DetailRow label="Scanner client ID" mono>
+                {finding.client_id || <span className="font-sans text-[12px] text-ink-3">Not recorded</span>}
+              </DetailRow>
+              <DetailRow label="Detector code" mono>
+                {finding.detector || <span className="font-sans text-[12px] text-ink-3">Not recorded</span>}
+              </DetailRow>
+              <DetailRow label="Check result code" mono>
+                {finding.verification_status || <span className="font-sans text-[12px] text-ink-3">Not recorded</span>}
+              </DetailRow>
+              {(finding.ml_model_version || Number.isFinite(finding.ml_score)) && (
+                <DetailRow label="Detection model">
+                  {finding.ml_decision ? `${finding.ml_decision} · ` : ''}
+                  {Number.isFinite(finding.ml_score) ? `score ${finding.ml_score.toFixed(3)}` : ''}
+                  {finding.ml_model_version ? ` · version ${finding.ml_model_version}` : ''}
+                </DetailRow>
+              )}
+            </DetailList>
+          </details>
 
           {/* The line the secret sits on, masked by the scanner the same way the
               value is. Shown next to the value because "what does this code
@@ -381,6 +407,7 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
           {finding.line_preview && (
             <div>
               <SectionLabel>The line it was found on</SectionLabel>
+
               <pre className="mt-1.5 overflow-x-auto rounded-[var(--radius-control)] border border-line bg-inset p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-ink-2">
                 {finding.line_preview}
               </pre>
@@ -407,8 +434,8 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
         <Modal
           open
           onClose={dismissing ? () => {} : () => setConfirming(false)}
-          title="Mark this finding as safe?"
-          description="Use this when the secret is a test value, already rotated, or not a real credential. The finding moves to Accepted and stops appearing in Exposed credentials. You can restore it from Accepted at any time."
+          title="Mark this secret as safe?"
+          description="Use this when it is a test value, already replaced (rotated), or not a real secret. It moves from Exposed secrets to Marked safe, and you can bring it back from there at any time."
           icon={ShieldCheck}
           footer={
             <>
@@ -434,11 +461,11 @@ export function FindingDrawer({ finding, onClose, onDismiss, dismissing, onDecid
             </div>
             {finding.analyst_decision === 'real_secret' && (
               <p className="rounded-[var(--radius-control)] border border-medium/30 bg-medium-soft px-3 py-2 text-[12.5px] leading-relaxed text-ink-2">
-                This finding is marked as a real secret. Rotate it at the source before marking it safe - removing
-                it from the code does not make a leaked secret safe.
+                Someone recorded this as a real secret. Replace (rotate) it where it was issued before marking it
+                safe - removing it from the code does not make a leaked secret safe.
               </p>
             )}
-            <Field label="Reason" htmlFor="dismiss-reason" hint="Why it is safe. Shown to whoever reviews the Accepted list later.">
+            <Field label="Reason" htmlFor="dismiss-reason" hint="Why it is safe. Shown to whoever reviews the Marked safe list later.">
               <Input
                 id="dismiss-reason"
                 value={reason}
@@ -468,9 +495,9 @@ function VerdictSection({ finding, onDecide, deciding }) {
 
   return (
     <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-3.5">
-      <SectionLabel>Verdict</SectionLabel>
+      <SectionLabel>Is it a real secret?</SectionLabel>
       <DetailList className="mt-1">
-        <DetailRow label="Detection model">
+        <DetailRow label="Our detection model">
           {model ? (
             <span className="flex flex-wrap items-center gap-1.5">
               <Tag tone={model.tone} size="sm">
@@ -478,15 +505,15 @@ function VerdictSection({ finding, onDecide, deciding }) {
               </Tag>
               {model.score !== null && (
                 <span data-numeric="" className="text-[11.5px] text-ink-3" title={model.version ? `Model ${model.version}` : undefined}>
-                  {Math.round(model.score * 100)}% confidence
+                  {Math.round(model.score * 100)}% sure
                 </span>
               )}
             </span>
           ) : (
-            <span className="text-[12px] text-ink-3">Not scored</span>
+            <span className="text-[12px] text-ink-3">Not checked by the model</span>
           )}
         </DetailRow>
-        <DetailRow label="Analyst">
+        <DetailRow label="Your team">
           {recorded ? (
             <span className="flex flex-col gap-0.5">
               <span>
@@ -496,7 +523,11 @@ function VerdictSection({ finding, onDecide, deciding }) {
               </span>
               <span className="text-[11.5px] text-ink-3">
                 {finding.analyst_decided_by ? `${finding.analyst_decided_by}, ` : ''}
-                {finding.analyst_decided_at ? formatRelative(finding.analyst_decided_at) : ''}
+                {finding.analyst_decided_at ? (
+                  <span title={formatDateTime(finding.analyst_decided_at)}>{formatRelative(finding.analyst_decided_at)}</span>
+                ) : (
+                  ''
+                )}
               </span>
             </span>
           ) : (
@@ -515,7 +546,7 @@ function VerdictSection({ finding, onDecide, deciding }) {
             aria-pressed={finding.analyst_decision === 'real_secret'}
             onClick={() => onDecide(finding, 'real_secret')}
           >
-            Real secret
+            Yes, it is real
           </Button>
           <Button
             size="sm"
@@ -526,10 +557,10 @@ function VerdictSection({ finding, onDecide, deciding }) {
             aria-pressed={finding.analyst_decision === 'false_positive'}
             onClick={() => onDecide(finding, 'false_positive')}
           >
-            False positive
+            No, false positive
           </Button>
           <span className="text-[11.5px] text-ink-3">
-            {recorded ? 'Changing it replaces the recorded verdict.' : 'Recorded with your name.'}
+            {recorded ? 'Choosing again replaces the saved answer.' : 'Saved with your name. It does not remove the secret from the list.'}
           </span>
         </div>
       )}
@@ -573,7 +604,7 @@ function FindingTimeline({ finding, authoredAt }) {
   const events = [
     authoredAt && {
       key: 'authored',
-      label: 'Secret committed',
+      label: 'Secret added to the code',
       at: authoredAt,
       detail: finding.commit_id
         ? `In ${shortCommit(finding.commit_id)} on ${shortBranch(finding.branch) || 'the default branch'}.`
@@ -582,16 +613,16 @@ function FindingTimeline({ finding, authoredAt }) {
     },
     finding.created_at && {
       key: 'detected',
-      label: 'Detected by the scanner',
+      label: 'Found by the scanner',
       at: finding.created_at,
-      detail: `${humanizeToken(finding.detector)} matched this value.`,
+      detail: `Recognised as: ${humanizeToken(finding.detector)}.`,
       tone: 'high',
     },
     finding.repo_pushed_at && {
       key: 'pushed',
-      label: 'Repository last pushed',
+      label: 'Last change to the repository',
       at: finding.repo_pushed_at,
-      detail: 'The most recent push to the repository, secret or not.',
+      detail: 'The most recent push to the repository, whether or not it touched the secret.',
       tone: 'neutral',
     },
   ].filter(Boolean);
@@ -616,8 +647,8 @@ function FindingTimeline({ finding, authoredAt }) {
   if (events.length === 0) {
     return (
       <p className="text-[12.5px] leading-relaxed text-ink-3">
-        This deployment reports no timestamps for the commit or the repository, so there is no
-        sequence to draw. The detection time is on the Overview tab.
+        No dates were recorded for the commit or the repository, so there is no timeline to show.
+        When the scanner found it is on the Where and who tab.
       </p>
     );
   }
@@ -626,7 +657,7 @@ function FindingTimeline({ finding, authoredAt }) {
     <div className="flex flex-col gap-4">
       {exposedDays !== null && (
         <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-3.5">
-          <SectionLabel>Undetected for</SectionLabel>
+          <SectionLabel>Exposed before anyone found it</SectionLabel>
           <p className="mt-1 text-[20px] leading-none font-semibold text-ink">
             <span data-numeric="">{formatNumber(exposedDays)}</span>{' '}
             <span className="text-[13px] font-normal text-ink-2">
@@ -634,7 +665,8 @@ function FindingTimeline({ finding, authoredAt }) {
             </span>
           </p>
           <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">
-            Between the commit being written and the scanner finding it. Anyone with read access to
+            Between the secret being committed and the scanner finding it. Anyone with read access to
+
             the repository could have read the value for that whole period, which is why rotating it
             matters more than deleting the commit.
           </p>
@@ -674,5 +706,29 @@ function FindingTimeline({ finding, authoredAt }) {
         ))}
       </ol>
     </div>
+  );
+}
+
+/** The scanner's liveness check, in words. Only ACTIVE / INACTIVE are answers. */
+function verificationMeta(value) {
+  const key = String(value || '').toUpperCase();
+  if (key === 'ACTIVE') return { label: 'Yes - the scanner confirmed it still works', unchecked: false };
+  if (key === 'INACTIVE') return { label: 'No - the scanner confirmed it no longer works', unchecked: false };
+  return { label: 'Not checked', unchecked: true };
+}
+
+/**
+ * Several empty facts as one line rather than a row of blanks each. Says
+ * whether the platform cannot report them or they were simply not recorded.
+ */
+function MissingSummary({ finding, fields }) {
+  const missing = fields.filter(([field]) => missingFieldReason(finding, field));
+  if (missing.length === 0) return null;
+  const notApplicable = missing.every(([field]) => missingFieldReason(finding, field) === 'not-applicable');
+  const names = missing.map(([, label]) => label).join(', ');
+  return (
+    <p className="mt-1.5 text-[11.5px] text-ink-3">
+      {notApplicable ? `Not reported by ${platformMeta(finding.platform).label}: ${names}.` : `Not recorded: ${names}.`}
+    </p>
   );
 }

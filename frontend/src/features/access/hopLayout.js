@@ -174,6 +174,6 @@ export function layoutHops({ nodes = [], edges = [], groups = [] }, previousRows
 /** Column headings: hop distance from the focus, which is what a column means. */
 export function hopLabels(columnCount) {
   return Array.from({ length: Math.max(0, columnCount) }, (_, index) =>
-    index === 0 ? 'Focus' : index === 1 ? '1 hop' : `${index} hops`,
+    index === 0 ? 'Starting point' : index === 1 ? '1 step away' : `${index} steps away`,
   );
 }

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ArrowLeftRight, ArrowUpRight, Info, KeyRound, ListChecks, ShieldAlert } from 'lucide-react';
+import { Activity, ArrowLeftRight, ArrowUpRight, ChevronRight, Info, KeyRound, ListChecks, ShieldAlert, Waypoints } from 'lucide-react';
 import { fetchIdentity } from '../../lib/api/inventory';
 import { useQuery } from '../../lib/hooks';
-import { identityRoute } from '../../lib/identityLinks';
+import { accessDetailRoute, identityRoute } from '../../lib/identityLinks';
+import { Button } from '../../ui/Button';
 import { formatDateTime, formatNumber, formatRelative, percentValue, policyName, titleCaseEnum } from '../../lib/format';
 import { SegmentedControl, TabPanel } from '../../ui/Tabs';
 import { DetailList, DetailRow, SectionLabel } from '../../ui/Panel';
@@ -14,13 +15,13 @@ import { Meter } from '../../ui/Meter';
 import { DetailSkeleton, Skeleton } from '../../ui/Skeleton';
 import { JsonBlock, RawJson } from '../../ui/RawJson';
 import { cn } from '../../ui/cn';
-import { ClearState, EmptyState, InlineError } from '../../ui/States';
+import { EmptyState, InlineError } from '../../ui/States';
 import { EventTimeline } from '../activity/EventTimeline';
 import { useEventState } from '../activity/eventState';
 import {
-  EDGE_LABELS,
   bindingLabel,
   credentialTypeMeta,
+  edgeWords,
   environmentLabel,
   functionalClassMeta,
   identityTypeLabel,
@@ -34,7 +35,7 @@ export const RECORD_TABS = [
   { value: 'overview', label: 'Overview', icon: Info },
   { value: 'permissions', label: 'Permissions', icon: ListChecks },
   { value: 'credentials', label: 'Credentials', icon: KeyRound },
-  { value: 'roles', label: 'Role use', icon: ArrowLeftRight },
+  { value: 'relationships', label: 'Relationships', icon: ArrowLeftRight },
   { value: 'activity', label: 'Activity', icon: Activity },
 ];
 
@@ -68,7 +69,7 @@ function Fact({ label, children, wide = false }) {
 
 function TabError({ query, label }) {
   if (query.error?.status === 404) {
-    return <EmptyState compact title="Not in the inventory" description="A later discovery run may have removed this identity." />;
+    return <EmptyState compact title="Not in the inventory" description="A later discovery scan may have removed this identity. Go back to Identities to find it again." />;
   }
   return <InlineError error={query.error} onRetry={query.refetch} label={label} />;
 }
@@ -97,8 +98,8 @@ export function IdentityRecordPanels({ identityId, tab, active = true, overviewQ
       <TabPanel tabValue="credentials" value={tab}>
         {tab === 'credentials' && active && <CredentialsPanel identityId={identityId} />}
       </TabPanel>
-      <TabPanel tabValue="roles" value={tab}>
-        {tab === 'roles' && active && <RoleUsePanel identityId={identityId} overview={overviewQuery.data} />}
+      <TabPanel tabValue="relationships" value={tab}>
+        {tab === 'relationships' && active && <RelationshipsPanel identityId={identityId} overview={overviewQuery.data} />}
       </TabPanel>
       <TabPanel tabValue="activity" value={tab}>
         {tab === 'activity' && active && <CompactActivity identityId={identityId} />}
@@ -129,6 +130,8 @@ function OverviewPanel({ identityId, query, active, compact }) {
   const kinds = [...new Set(credentials.map((entry) => credentialTypeMeta(entry.credential_type).label))];
   const takers = whoCanTakeItOn(relationshipsQuery.data, identity.arn);
   const raised = (data.risk_signals ?? []).filter((signal) => signal.status).length;
+  const classLabel = functionalClassMeta(identity.functional_class).label;
+  const discovery = data.discovery ?? {};
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,56 +140,57 @@ function OverviewPanel({ identityId, query, active, compact }) {
           <Fact label="What it is">
             {identityTypeLabel(identity.identity_type)}
             <span className="block text-[12px] text-ink-3">
-              {functionalClassMeta(identity.functional_class).label}
-              {identity.category && identity.category.toLowerCase() !== String(identity.identity_type).toLowerCase()
+              {classLabel} workload
+              {identity.category &&
+              ![String(identity.identity_type), classLabel].some((value) => value.toLowerCase() === identity.category.toLowerCase())
                 ? ` · ${identity.category}`
                 : ''}
             </span>
           </Fact>
-          <Fact label="Where">
-            <span className="font-mono text-[12.5px]">{identity.account_id}</span>
+          <Fact label="Where it runs">
+            AWS account <span className="font-mono text-[12.5px]">{identity.account_id}</span>
             <span className="block text-[12px] text-ink-3">
               {identity.region} · {environmentLabel(identity.environment)}
             </span>
           </Fact>
-          <Fact label="Owner">
-            {identity.owner || <span className="font-semibold text-high">No owner</span>}
+          <Fact label="Who owns it">
+            {identity.owner || <span className="font-semibold text-high">No owner recorded</span>}
             <span className="block truncate text-[12px] text-ink-3" title={identity.created_by || undefined}>
-              {identity.created_by ? `Created by ${identity.created_by.split('/').pop()}` : 'Creator not seen in CloudTrail'}
+              {identity.created_by ? `Created by ${identity.created_by.split('/').pop()}` : 'No creator recorded in the AWS activity log'}
             </span>
           </Fact>
-          <Fact label={primary ? `Acts as (${credentialTypeMeta(primary.credential_type).label})` : 'Acts as'} wide>
+          <Fact label={primary ? `Runs as (${credentialTypeMeta(primary.credential_type).label})` : 'Runs as'} wide>
             {primary ? (
               <>
                 <span className="font-mono text-[12.5px]">{primary.name}</span>
                 <span className="block text-[11.5px] text-ink-3">
                   {bindingLabel(primary.binding_type)}
-                  {primary.trust_principal ? ` · trusted principal ${primary.trust_principal}` : ''}
+                  {primary.trust_principal ? ` · may be used by ${primary.trust_principal}` : ''}
                 </span>
               </>
             ) : (
-              'No credential bound'
+              'No credential linked'
             )}
           </Fact>
-          <Fact label="Permissions">
+          <Fact label="What it can do">
             {granted > 0 ? (
               <>
-                {formatNumber(granted)} actions granted
+                {formatNumber(granted)} actions allowed
                 <span className="block text-[12px] text-ink-3">
-                  {formatNumber(used)} used in 90 days · {shareText(used, granted)}
+                  {formatNumber(used)} of them used in 90 days ({shareText(used, granted)})
                 </span>
               </>
             ) : (
-              'No granted actions recorded'
+              'No allowed actions recorded'
             )}
           </Fact>
-          <Fact label="Authenticates with">
-            {credentials.length === 0 ? 'Nothing on record' : kinds.join(', ')}
+          <Fact label="Signs in with">
+            {credentials.length === 0 ? 'Nothing recorded' : kinds.join(', ')}
             <span className="block text-[12px] text-ink-3">
-              {formatNumber(credentials.length)} bound credential{credentials.length === 1 ? '' : 's'}
+              {formatNumber(credentials.length)} credential{credentials.length === 1 ? '' : 's'}
             </span>
           </Fact>
-          <Fact label="Can be taken on by">
+          <Fact label="Who can use it">
             {relationshipsQuery.isLoading && !relationshipsQuery.data ? (
               <Skeleton className="h-4 w-32 rounded" />
             ) : relationshipsQuery.isError ? (
@@ -195,29 +199,38 @@ function OverviewPanel({ identityId, query, active, compact }) {
               primary?.trust_principal ? (
                 <>
                   <span className="font-mono text-[12.5px]">{primary.trust_principal}</span>
-                  <span className="block text-[12px] text-ink-3">Through its role&apos;s trust policy</span>
+                  <span className="block text-[12px] text-ink-3">Allowed by its role&apos;s trust policy</span>
                 </>
               ) : (
-                'Nothing recorded besides its own binding'
+                'Only itself'
               )
             ) : (
               <>
                 {takers[0].name}
                 <span className="block text-[12px] text-ink-3">
-                  {EDGE_LABELS[takers[0].edgeType] ?? titleCaseEnum(takers[0].edgeType)}
-                  {takers.length > 1 ? ` and ${takers.length - 1} more` : ''}
+                  {edgeWords(takers[0].edgeType, 'in')}
+                  {takers.length > 1 ? ` · and ${takers.length - 1} more` : ''}
                 </span>
               </>
             )}
+            {identityId && (
+              <Link to={identityRoute(identityId, 'relationships')} className="mt-0.5 block text-[12px] font-medium text-brand hover:underline">
+                See all relationships
+              </Link>
+            )}
           </Fact>
           <Fact label="Last activity">
-            {identity.last_activity_at ? formatRelative(identity.last_activity_at) : 'No activity recorded'}
+            {identity.last_activity_at ? (
+              <span title={formatDateTime(identity.last_activity_at)}>{formatRelative(identity.last_activity_at)}</span>
+            ) : (
+              'Never used'
+            )}
             <span className="block text-[12px] text-ink-3">
-              {identity.last_activity_at ? formatDateTime(identity.last_activity_at) : 'Not seen in CloudTrail'}
+              {identity.last_activity_at ? formatDateTime(identity.last_activity_at) : 'No call in the AWS activity log'}
             </span>
             {Number.isFinite(identity.idle_days) && (
               <span className={cn('block text-[12px]', identity.idle_days >= 90 ? 'font-medium text-high' : 'text-ink-3')}>
-                Idle {formatNumber(identity.idle_days)} {identity.idle_days === 1 ? 'day' : 'days'}
+                {identity.idle_days >= 90 ? 'Unused for 90+ days · ' : ''}Idle {formatNumber(identity.idle_days)} {identity.idle_days === 1 ? 'day' : 'days'}
               </span>
             )}
           </Fact>
@@ -225,16 +238,16 @@ function OverviewPanel({ identityId, query, active, compact }) {
       </section>
 
       <div>
-        <SectionLabel>Risk signals{raised > 0 ? ` · ${raised} raised` : ''}</SectionLabel>
+        <SectionLabel>Risks{raised > 0 ? ` · ${raised} found` : ' · none found'}</SectionLabel>
         <div className="mt-1">
           <SignalBreakdown signals={data.risk_signals} />
         </div>
         <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">
-          Signals are evaluated by discovery on this record and its bound credentials.
+          Checked by the discovery scan on this identity and its credentials.
           {identityId && (
             <>
               {' '}
-              The scored evaluation, with fixes, is on the{' '}
+              Its security score and how to fix each risk are on the{' '}
               <Link to={identityRoute(identityId, 'posture')} className="font-medium text-brand hover:underline">
                 Posture tab
               </Link>
@@ -245,9 +258,9 @@ function OverviewPanel({ identityId, query, active, compact }) {
       </div>
 
       <div>
-        <SectionLabel>Bound credentials</SectionLabel>
+        <SectionLabel>What it signs in with</SectionLabel>
         {credentials.length === 0 ? (
-          <p className="mt-2 text-[12.5px] text-ink-3">No credential is bound to this identity.</p>
+          <p className="mt-2 text-[12.5px] text-ink-3">No credential is linked to this identity.</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2">
             {credentials.map((credential) => (
@@ -264,14 +277,14 @@ function OverviewPanel({ identityId, query, active, compact }) {
                   </Link>
                   <span className="block text-[11.5px] text-ink-3">
                     {credentialTypeMeta(credential.credential_type).label} · {bindingLabel(credential.binding_type)}
-                    {credential.is_primary ? ' · primary' : ''}
+                    {credential.is_primary ? ' · main' : ''}
                   </span>
                 </span>
                 <span className="w-44 shrink-0">
                   <span className="flex justify-between text-[11.5px] text-ink-3">
                     <span>
                       {Number(credential.granted_actions_count) > 0
-                        ? `${formatNumber(credential.used_actions_count)} of ${formatNumber(credential.granted_actions_count)} actions used`
+                        ? `${formatNumber(credential.used_actions_count)} of ${formatNumber(credential.granted_actions_count)} allowed actions used`
                         : 'Uses the permissions of the identity it belongs to'}
                     </span>
                   </span>
@@ -279,11 +292,12 @@ function OverviewPanel({ identityId, query, active, compact }) {
                     className="mt-1"
                     height={4}
                     value={credential.utilization_pct ?? 0}
-                    label={`${credential.utilization_pct ?? 0}% of granted actions used`}
+                    label={`${credential.utilization_pct ?? 0}% of allowed actions used`}
                   />
                 </span>
                 <span className="text-[11.5px] text-ink-3">
-                  {formatNumber(credential.attached_policies_count)} attached · {formatNumber(credential.inline_policies_count)} inline
+                  {formatNumber(credential.attached_policies_count)} attached {Number(credential.attached_policies_count) === 1 ? 'policy' : 'policies'} ·{' '}
+                  {formatNumber(credential.inline_policies_count)} inline
                 </span>
               </li>
             ))}
@@ -293,13 +307,13 @@ function OverviewPanel({ identityId, query, active, compact }) {
 
       <div className={cn('grid gap-6', !compact && 'xl:grid-cols-2')}>
         <div>
-          <SectionLabel>Placement</SectionLabel>
+          <SectionLabel>Network and status</SectionLabel>
           <DetailList className="mt-1">
-            <DetailRow label="Lifecycle status">{lifecycleMeta(identity.status).label}</DetailRow>
-            <DetailRow label="Internet exposure">
-              {identity.is_publicly_accessible ? <span className="font-semibold text-critical">Publicly accessible</span> : 'Not publicly accessible'}
+            <DetailRow label="Status">{lifecycleMeta(identity.status).label}</DetailRow>
+            <DetailRow label="Reachable from the internet">
+              {identity.is_publicly_accessible ? <span className="font-semibold text-critical">Yes, publicly accessible</span> : 'No'}
             </DetailRow>
-            <DetailRow label="VPC" mono>
+            <DetailRow label="Private network (VPC)" mono>
               {identity.vpc_id || <span className="font-sans text-ink-3">Not in a VPC</span>}
             </DetailRow>
             {identity.subnet_id && (
@@ -313,7 +327,7 @@ function OverviewPanel({ identityId, query, active, compact }) {
               </DetailRow>
             )}
             {identity.parent_arn && (
-              <DetailRow label="Parent" mono>
+              <DetailRow label="Part of" mono>
                 <CopyableValue value={identity.parent_arn} />
               </DetailRow>
             )}
@@ -321,44 +335,60 @@ function OverviewPanel({ identityId, query, active, compact }) {
         </div>
 
         <div>
-          <SectionLabel>How it was found</SectionLabel>
-          <DetailList className="mt-1">
-            <DetailRow label="Discovered by">{data.discovery?.discovery_source ? titleCaseEnum(data.discovery.discovery_source) : '-'}</DetailRow>
-            <DetailRow label="Credential resolved by">{data.discovery?.credential_resolution || '-'}</DetailRow>
-            <DetailRow label="Data sources">{data.discovery?.data_sources || '-'}</DetailRow>
-            <DetailRow label="Created in AWS">
-              {formatDateTime(identity.created_at_aws)}
-              {Number.isFinite(identity.age_days) && <span className="ml-1.5 text-ink-3">({formatNumber(identity.age_days)} days ago)</span>}
-            </DetailRow>
-            <DetailRow label="First discovered">{formatDateTime(identity.first_seen_at)}</DetailRow>
-            <DetailRow label="Last discovered">{formatDateTime(identity.last_seen_at)}</DetailRow>
-          </DetailList>
-        </div>
-      </div>
-
-      <div className={cn('grid gap-6', !compact && 'xl:grid-cols-2')}>
-        <div>
           <SectionLabel>Tags</SectionLabel>
           <TagList tags={data.tags} />
           {(data.missing_tags ?? []).length > 0 && (
             <p className="mt-2 text-[12px] text-ink-3">
-              Missing recommended tags: <span className="text-ink-2">{data.missing_tags.join(', ')}</span>
+              Recommended tags it lacks: <span className="text-ink-2">{data.missing_tags.join(', ')}</span>
             </p>
           )}
         </div>
-
-        <div>
-          <SectionLabel>{identityTypeLabel(identity.identity_type)} attributes</SectionLabel>
-          <AttributeList attributes={data.type_attributes} />
-        </div>
       </div>
 
-      {!compact && (
-        <p className="text-[11.5px] text-ink-3">
-          ARN <CopyableValue value={identity.arn} /> · inventory id <span className="font-mono">{identity.id}</span>
-        </p>
-      )}
+      <Disclosure label="Technical details" hint="How it was found, AWS attributes and IDs">
+        <div className={cn('grid gap-6', !compact && 'xl:grid-cols-2')}>
+          <div>
+            <SectionLabel>How it was found</SectionLabel>
+            <DetailList className="mt-1">
+              <DetailRow label="Found by">{discovery.discovery_source ? titleCaseEnum(discovery.discovery_source) : 'Not recorded'}</DetailRow>
+              <DetailRow label="Credential matched by">{discovery.credential_resolution || 'Not recorded'}</DetailRow>
+              <DetailRow label="Data sources">{discovery.data_sources || 'Not recorded'}</DetailRow>
+              <DetailRow label="Created in AWS">
+                {identity.created_at_aws ? formatDateTime(identity.created_at_aws) : 'Not recorded'}
+                {Number.isFinite(identity.age_days) && <span className="ml-1.5 text-ink-3">({formatNumber(identity.age_days)} days ago)</span>}
+              </DetailRow>
+              <DetailRow label="First found">{formatDateTime(identity.first_seen_at)}</DetailRow>
+              <DetailRow label="Last found">{formatDateTime(identity.last_seen_at)}</DetailRow>
+              <DetailRow label="ARN" mono>
+                <CopyableValue value={identity.arn} />
+              </DetailRow>
+              <DetailRow label="Inventory id" mono>
+                <CopyableValue value={identity.id} />
+              </DetailRow>
+            </DetailList>
+          </div>
+
+          <div>
+            <SectionLabel>{identityTypeLabel(identity.identity_type)} attributes from AWS</SectionLabel>
+            <AttributeList attributes={data.type_attributes} />
+          </div>
+        </div>
+      </Disclosure>
     </div>
+  );
+}
+
+/** A collapsed group, for technical details a first read can skip. */
+function Disclosure({ label, hint, children }) {
+  return (
+    <details className="group min-w-0 rounded-[var(--radius-control)] border border-line">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[12.5px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-ink-3 transition-transform group-open:rotate-90" />
+        <span>{label}</span>
+        {hint && <span className="min-w-0 truncate text-[11.5px] font-normal text-ink-3">{hint}</span>}
+      </summary>
+      <div className="border-t border-line px-3.5 py-3">{children}</div>
+    </details>
   );
 }
 
@@ -410,27 +440,28 @@ function PermissionsPanel({ identityId }) {
   return (
     <div className="flex flex-col gap-6">
       <TabIntro>
-        What the policies on this identity&apos;s credentials grant, and which of those actions CloudTrail saw it use in the
-        last 90 days. An action granted and never used is access an attacker gets for free.
+        What the policies on this identity&apos;s credentials allow, and which of those actions it was seen using in the AWS
+        activity log (CloudTrail) over the last 90 days. An action allowed but never used is access an attacker would get for
+        free, so it is the first thing to remove.
       </TabIntro>
 
       <section aria-label="Utilisation" className="grid gap-4 rounded-[var(--radius-control)] border border-line bg-surface-2 p-4 sm:grid-cols-4">
-        <Figure label="Actions granted" value={summary.granted_count} />
+        <Figure label="Actions allowed" value={summary.granted_count} />
         <Figure label="Used (90 days)" value={summary.used_count} tone="text-low" />
         <Figure label="Never used" value={summary.unused_count} tone={summary.unused_count > 0 ? 'text-high' : undefined} />
         <div>
-          <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Utilisation</p>
+          <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Share used</p>
           <p data-numeric="" className="mt-1 text-[22px] font-bold text-ink">
             {formatNumber(summary.utilization_pct)}%
           </p>
-          <Meter className="mt-1.5" height={5} value={summary.utilization_pct} label="Share of granted actions used" />
+          <Meter className="mt-1.5" height={5} value={summary.utilization_pct} label="Share of allowed actions used" />
         </div>
       </section>
 
       <div>
-        <SectionLabel>By policy</SectionLabel>
+        <SectionLabel>Where the permissions come from</SectionLabel>
         {breakdown.length === 0 ? (
-          <p className="mt-2 text-[12.5px] text-ink-3">No policy is recorded on this identity&apos;s credentials.</p>
+          <p className="mt-2 text-[12.5px] text-ink-3">No permission policy is recorded on this identity&apos;s credentials.</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2.5">
             {breakdown.map((policy) => (
@@ -442,7 +473,7 @@ function PermissionsPanel({ identityId }) {
                 <span>
                   <span className="flex justify-between text-[11.5px] text-ink-3">
                     <span>
-                      {formatNumber(policy.used_permissions)} of {formatNumber(policy.total_permissions)} used
+                      {formatNumber(policy.used_permissions)} of {formatNumber(policy.total_permissions)} actions used
                     </span>
                     <span data-numeric="">{shareText(policy.used_permissions, policy.total_permissions)}</span>
                   </span>
@@ -456,12 +487,12 @@ function PermissionsPanel({ identityId }) {
 
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <SectionLabel>Granted permissions</SectionLabel>
+          <SectionLabel>Allowed actions</SectionLabel>
           <SegmentedControl label="Show" options={USE_FILTERS} value={use} onChange={setUse} />
         </div>
         <DataGrid
           className="mt-2"
-          caption="Granted permissions"
+          caption="Allowed actions"
           rows={rows}
           rowKey={(row, index) => `${row.policy_source}-${row.action}-${row.resource_arn}-${index}`}
           density="compact"
@@ -473,8 +504,8 @@ function PermissionsPanel({ identityId }) {
               width: '30%',
               cell: (row) => (
                 <span className="block min-w-0">
-                  <span className="block truncate font-mono text-[12.5px] text-ink">{row.action || '(no action recorded)'}</span>
-                  <span className="block truncate text-[11px] text-ink-3">{row.service || '-'}</span>
+                  <span className="block truncate font-mono text-[12.5px] text-ink">{row.action || 'No action recorded'}</span>
+                  <span className="block truncate text-[11px] text-ink-3">{row.service || 'Service not recorded'}</span>
                 </span>
               ),
             },
@@ -484,26 +515,27 @@ function PermissionsPanel({ identityId }) {
               width: '24%',
               cell: (row) => (
                 <span className={cn('block truncate font-mono text-[12px]', row.resource_arn === '*' ? 'text-high' : 'text-ink-2')} title={row.resource_arn}>
-                  {row.resource_arn === '*' ? '* (any resource)' : row.resource_arn}
+                  {row.resource_arn === '*' ? '* (every resource)' : row.resource_arn || 'Not recorded'}
                 </span>
               ),
             },
             {
               key: 'policy',
-              header: 'Granted by',
+              header: 'Allowed by',
               width: '20%',
               priority: 'wide',
               cell: (row) => (
                 <span className="block min-w-0">
                   <span className="block truncate text-[12.5px] text-ink-2">{policyName(row.policy_source)}</span>
                   <span className="block truncate text-[11px] text-ink-3">
-                    {titleCaseEnum(row.policy_type)} · {row.effect}
+                    {titleCaseEnum(row.policy_type)} policy · {row.effect === 'Deny' ? 'denies' : 'allows'}
                   </span>
                 </span>
               ),
             },
             {
               key: 'used',
+      none: 'resources it used',
               header: 'Used (90 days)',
               width: '16%',
               cell: (row) =>
@@ -523,9 +555,9 @@ function PermissionsPanel({ identityId }) {
           ]}
           emptyState={
             (data.permissions ?? []).length === 0 ? (
-              <EmptyState compact icon={ListChecks} title="No granted permissions recorded" description="Discovery recorded no effective permissions for this identity's credentials." />
+              <EmptyState compact icon={ListChecks} title="No allowed actions recorded" description="The discovery scan found no permissions on this identity's credentials." />
             ) : (
-              <EmptyState compact icon={ListChecks} title={use === 'used' ? 'Nothing used' : 'Everything granted was used'} description="Switch the filter to see the rest." />
+              <EmptyState compact icon={ListChecks} title={use === 'used' ? 'None of its allowed actions were used' : 'Every allowed action was used'} description="Choose All to see the rest." />
             )
           }
         />
@@ -557,11 +589,11 @@ function CredentialsPanel({ identityId }) {
   return (
     <>
       <TabIntro>
-        What this identity authenticates with: the role it acts as, its keys, and the secrets bound to it. A role issues
-        short-lived credentials; a key or secret lasts until someone rotates it.
+        What this identity signs in with: the role it runs as, its keys and its secrets. A role hands out short-lived sign-ins
+        that expire on their own; a key or secret lasts until someone replaces it (key change, or rotation).
       </TabIntro>
       {credentials.length === 0 ? (
-        <EmptyState compact icon={KeyRound} title="No credentials on this identity" description="Nothing is bound to it in the inventory." />
+        <EmptyState compact icon={KeyRound} title="No credentials on this identity" description="Nothing in the inventory is linked to it for signing in." />
       ) : (
         <ul className="flex flex-col gap-3">
           {credentials.map((credential) => {
@@ -576,35 +608,35 @@ function CredentialsPanel({ identityId }) {
                     {meta.label}
                     <span className="ml-2 text-[12px] font-normal text-ink-3">
                       {bindingLabel(credential.binding_type)}
-                      {credential.is_primary ? ' · primary' : ''}
+                      {credential.is_primary ? ' · main' : ''}
                     </span>
                     {credential.binding_source && (
-                      <span className="mt-0.5 block font-mono text-[11px] font-normal break-all text-ink-3" title="Where discovery found the binding">
-                        via {credential.binding_source}
+                      <span className="mt-0.5 block font-mono text-[11px] font-normal break-all text-ink-3" title="Where the discovery scan found the link">
+                        Found through {credential.binding_source}
                       </span>
                     )}
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {life.rotation_overdue && (
                       <Tag tone="high" size="sm" dot>
-                        Rotation overdue
+                        Key change overdue
                       </Tag>
                     )}
                     {meta.longLived && !life.rotation_enabled && (
                       <Tag tone="medium" size="sm">
-                        No rotation schedule
+                        No automatic key change
                       </Tag>
                     )}
                     {(credential.trust_principals ?? []).some((principal) => principal.is_external) && (
                       <Tag tone="medium" size="sm">
-                        External trust
+                        Usable from outside your accounts
                       </Tag>
                     )}
                     <Link
                       to={`/credentials?search=${encodeURIComponent(credential.name)}&credential=${encodeURIComponent(credential.credential_id)}`}
                       className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
                     >
-                      Open in Credentials
+                      Open credential
                       <ArrowUpRight aria-hidden="true" className="size-3.5" />
                     </Link>
                   </div>
@@ -615,10 +647,10 @@ function CredentialsPanel({ identityId }) {
                 </div>
 
                 <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-                  <MiniFact label="Created">{formatDateTime(life.created_at_aws)}</MiniFact>
+                  <MiniFact label="Created">{life.created_at_aws ? formatDateTime(life.created_at_aws) : 'Not recorded'}</MiniFact>
                   {Number.isFinite(life.age_days) && <MiniFact label="Age">{formatNumber(life.age_days)} days</MiniFact>}
                   <MiniFact label="Last used">{life.last_used_at ? formatRelative(life.last_used_at) : 'No use recorded'}</MiniFact>
-                  <MiniFact label="Rotation">
+                  <MiniFact label="Key change (rotation)">
                     {life.rotation_enabled
                       ? life.rotation_interval_days
                         ? `Every ${formatNumber(life.rotation_interval_days)} days`
@@ -626,37 +658,37 @@ function CredentialsPanel({ identityId }) {
                       : meta.longLived
                         ? life.last_rotated_at
                           ? 'Not scheduled'
-                          : 'Never rotated'
-                        : 'Not applicable'}
+                          : 'Never changed'
+                        : 'Not needed (short-lived)'}
                   </MiniFact>
                   {life.last_rotated_at && (
-                    <MiniFact label="Last rotated">
+                    <MiniFact label="Last changed">
                       <span title={formatDateTime(life.last_rotated_at)}>{formatRelative(life.last_rotated_at)}</span>
                     </MiniFact>
                   )}
                   {/* A role's credentials are issued per session: its "days since rotation" is only its age. */}
                   {meta.longLived && Number.isFinite(life.days_since_rotation) && (
-                    <MiniFact label="Since rotation">{formatNumber(life.days_since_rotation)} days</MiniFact>
+                    <MiniFact label="Since last change">{formatNumber(life.days_since_rotation)} days</MiniFact>
                   )}
                   <MiniFact label={life.expires_at ? 'Expires' : life.max_session_duration ? 'Session limit' : 'Expires'}>
                     {life.expires_at
                       ? formatDateTime(life.expires_at)
                       : life.max_session_duration
                         ? `${formatNumber(Math.round(life.max_session_duration / 60))} min`
-                        : 'Never'}
+                        : 'Never expires'}
                   </MiniFact>
                 </dl>
 
                 {(credential.trust_principals ?? []).length > 0 && (
                   <div className="mt-3">
-                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Trusted principals</p>
+                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Who may use it (trust policy)</p>
                     <ul className="mt-1 flex flex-wrap gap-1.5">
                       {credential.trust_principals.map((principal) => (
                         <li key={`${principal.type}-${principal.principal}`}>
                           <Tag tone={principal.is_external ? 'medium' : 'neutral'} size="sm">
                             <span className="truncate">
                               <span className="font-mono">{principal.principal}</span>
-                              {` · ${principal.type}${principal.is_external ? ' · external' : ''}${principal.condition ? ' · conditioned' : ''}`}
+                              {` · ${principalKind(principal.type)}${principal.is_external ? ' · outside your accounts' : ''}${principal.condition ? ' · with conditions' : ' · no conditions'}`}
                             </span>
                           </Tag>
                         </li>
@@ -667,7 +699,7 @@ function CredentialsPanel({ identityId }) {
 
                 {(policies.length > 0 || inline.length > 0) && (
                   <div className="mt-3">
-                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Policies</p>
+                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Permission policies</p>
                     <ul className="mt-1 flex flex-wrap gap-1.5">
                       {/* The API names these {name, arn}; older payloads used policy_name / policy_arn. */}
                       {policies.map((policy, index) => (
@@ -686,21 +718,21 @@ function CredentialsPanel({ identityId }) {
 
                 {life.permission_boundary_arn && (
                   <p className="mt-2 text-[12px] text-ink-3">
-                    Capped by permission boundary <span className="font-mono text-ink-2">{life.permission_boundary_arn}</span>
+                    Permission limit (boundary): <span className="font-mono text-ink-2">{life.permission_boundary_arn}</span>
                   </p>
                 )}
 
                 {(credential.assumable_roles ?? []).length > 0 && (
                   <div className="mt-3">
-                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Can assume</p>
+                    <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Can switch to (assume)</p>
                     <ul className="mt-1 flex flex-col gap-1">
                       {credential.assumable_roles.map((role) => (
                         <li key={role.target_role_arn} className="min-w-0 text-[12px] text-ink-3">
                           <span className="font-mono text-ink-2" title={role.target_role_arn}>
                             {role.target_role_arn.split('/').pop()}
                           </span>
-                          {role.target_account && <span className="font-mono"> · {role.target_account}</span>}
-                          {role.last_assumed ? ` · last assumed ${formatRelative(role.last_assumed)}` : ' · not seen assumed'}
+                          {role.target_account && <span> · account <span className="font-mono">{role.target_account}</span></span>}
+                          {role.last_assumed ? ` · last switched ${formatRelative(role.last_assumed)}` : ' · never seen switching'}
                         </li>
                       ))}
                     </ul>
@@ -708,7 +740,7 @@ function CredentialsPanel({ identityId }) {
                 )}
 
                 {credential.trust_policy && (
-                  <JsonBlock label="View trust policy JSON" value={credential.trust_policy} className="mt-3 bg-surface" />
+                  <JsonBlock label="Trust policy (JSON)" value={credential.trust_policy} className="mt-3 bg-surface" />
                 )}
               </li>
             );
@@ -728,70 +760,97 @@ function MiniFact({ label, children }) {
   );
 }
 
-/* ── Role use ────────────────────────────────────────────────────────────── */
+/* ── Relationships ───────────────────────────────────────────────────────── */
 
-const OUTBOUND_ASSUME = new Set(['assume_role', 'cross_account', 'federated_oidc', 'federated_saml']);
+const SWITCH_TO = new Set(['assume_role', 'cross_account', 'federated_oidc', 'federated_saml', 'pass_role']);
+const FROM_OUTSIDE = new Set(['service_trust', 'cross_account', 'federated_oidc', 'federated_saml']);
+const CAN_USE = new Set(['assume_role', 'trusts', 'manages', 'uses', 'pass_role']);
 
-function RoleUsePanel({ identityId, overview }) {
-  const query = useIdentityTab(identityId, 'relationships', { extra: { depth: 2 } });
-  const credentialsQuery = useIdentityTab(identityId, 'credentials');
-  const arn = overview?.identity?.arn;
-
-  const model = useMemo(() => {
-    const graph = query.data?.graph;
-    if (!graph) return null;
-    const current = arn || graph.nodes?.find((node) => node.is_current)?.arn;
-    const nodes = new Map((graph.nodes ?? []).map((node) => [node.arn, node]));
-    const subjects = new Set([current]);
-    for (const edge of graph.edges ?? []) if (edge.source === current && edge.edge_type === 'bound_to') subjects.add(edge.target);
-    const via = (subject) => (subject === current ? null : nodes.get(subject)?.name || subject);
-    const row = (edge, other, subject) => {
-      const node = nodes.get(other);
-      return {
-        key: `${edge.source}|${edge.target}|${edge.edge_type}`,
-        arn: other,
-        name: node?.name || other.split(/[/:]/).pop() || other,
-        type: nodeTypeLabel(node?.type, node?.subtype),
-        identityLink: node?.type === 'identity',
-        edgeType: edge.edge_type,
-        via: via(subject),
-        lastObserved: edge.last_observed_at,
-        calls: edge.call_count,
-      };
+/**
+ * Every edge of `tab=relationships` (depth 2, so an instance's role and what
+ * that role trusts or reaches are included), sorted into plain questions.
+ * "Subjects" are the identity and the roles/keys it runs as: an edge onto its
+ * role is an edge onto it, shown "via" that role. An edge that fits no
+ * question lands in "Other connections", so nothing the API returns is lost.
+ */
+function relationshipModel(data, arn) {
+  const graph = data?.graph;
+  if (!graph) return null;
+  const current = arn || graph.nodes?.find((node) => node.is_current)?.arn;
+  const nodes = new Map((graph.nodes ?? []).map((node) => [node.arn, node]));
+  const edges = graph.edges ?? [];
+  const subjects = new Set([current]);
+  for (const edge of edges) if (edge.source === current && edge.edge_type === 'bound_to') subjects.add(edge.target);
+  const nameOf = (value) => nodes.get(value)?.name || String(value).split(/[/:]/).pop() || value;
+  const row = (edge, other, subject, direction) => {
+    const node = nodes.get(other);
+    return {
+      key: `${edge.source}|${edge.target}|${edge.edge_type}`,
+      arn: other,
+      name: nameOf(other),
+      nodeType: node?.type,
+      type: nodeTypeLabel(node?.type, node?.subtype),
+      edgeTypes: [edge.edge_type],
+      direction,
+      via: subject && subject !== current ? nameOf(subject) : null,
+      lastObserved: edge.last_observed_at,
+      calls: edge.call_count,
     };
-    const inbound = [];
-    const sharedWith = [];
-    const assumes = [];
-    const reaches = [];
-    for (const edge of graph.edges ?? []) {
-      if (subjects.has(edge.target) && !subjects.has(edge.source)) {
-        if (INBOUND_TRUST.has(edge.edge_type)) inbound.push(row(edge, edge.source, edge.target));
-        else if (edge.edge_type === 'bound_to') sharedWith.push(row(edge, edge.source, edge.target));
-      }
-      if (subjects.has(edge.source) && !subjects.has(edge.target)) {
-        if (OUTBOUND_ASSUME.has(edge.edge_type)) assumes.push(row(edge, edge.target, edge.source));
-        else if (edge.edge_type === 'accesses') reaches.push(row(edge, edge.target, edge.source));
+  };
+  const out = { runsAs: [], sharedWith: [], canUse: [], outside: [], switchTo: [], used: [], createdBy: [], other: [] };
+  for (const edge of edges) {
+    const type = edge.edge_type;
+    const inbound = subjects.has(edge.target) && !subjects.has(edge.source);
+    const outbound = subjects.has(edge.source) && !subjects.has(edge.target);
+    if (edge.source === current && type === 'bound_to') out.runsAs.push(row(edge, edge.target, null, 'out'));
+    else if (inbound) {
+      const entry = row(edge, edge.source, edge.target, 'in');
+      if (type === 'bound_to') out.sharedWith.push(entry);
+      else if (FROM_OUTSIDE.has(type) || entry.nodeType === 'service') out.outside.push(entry);
+      else if (CAN_USE.has(type)) out.canUse.push(entry);
+      else if (type === 'created_by') out.createdBy.push(entry);
+      else out.other.push(entry);
+    } else if (outbound) {
+      const entry = row(edge, edge.target, edge.source, 'out');
+      if (SWITCH_TO.has(type)) out.switchTo.push(entry);
+      else if (type === 'accesses') out.used.push(entry);
+      else if (type === 'created_by') out.createdBy.push(entry);
+      else out.other.push(entry);
+    } else {
+      /* Between its own roles, or further away (depth 3): named from its source. */
+      out.other.push({ ...row(edge, edge.target, null, 'out'), via: edge.source === current ? null : nameOf(edge.source) });
+    }
+  }
+  out.used.sort((a, b) => (b.calls ?? 0) - (a.calls ?? 0));
+  /* One row per principal: a role trusted both directly and cross-account is
+     one relationship described two ways. */
+  const merge = (list) => {
+    const byKey = new Map();
+    for (const entry of list) {
+      const key = `${entry.arn}|${entry.via ?? ''}|${entry.direction}`;
+      const existing = byKey.get(key);
+      if (!existing) byKey.set(key, { ...entry });
+      else {
+        if (!existing.edgeTypes.includes(entry.edgeTypes[0])) existing.edgeTypes.push(entry.edgeTypes[0]);
+        if (Date.parse(entry.lastObserved || 0) > Date.parse(existing.lastObserved || 0)) existing.lastObserved = entry.lastObserved;
       }
     }
-    reaches.sort((a, b) => (b.calls ?? 0) - (a.calls ?? 0));
-    /* One row per principal: a role trusted both directly and cross-account
-       is one relationship described two ways. */
-    const merge = (list) => {
-      const byKey = new Map();
-      for (const entry of list) {
-        const key = `${entry.arn}|${entry.via ?? ''}`;
-        const existing = byKey.get(key);
-        if (!existing) byKey.set(key, { ...entry, edgeTypes: [entry.edgeType] });
-        else {
-          if (!existing.edgeTypes.includes(entry.edgeType)) existing.edgeTypes.push(entry.edgeType);
-          if (Date.parse(entry.lastObserved || 0) > Date.parse(existing.lastObserved || 0)) existing.lastObserved = entry.lastObserved;
-        }
-      }
-      return [...byKey.values()];
-    };
-    return { inbound: merge(inbound), sharedWith: merge(sharedWith), assumes: merge(assumes), reaches };
-  }, [query.data, arn]);
+    return [...byKey.values()];
+  };
+  return Object.fromEntries(Object.entries(out).map(([key, list]) => [key, key === 'used' ? list : merge(list)]));
+}
 
+function RelationshipsPanel({ identityId, overview }) {
+  const query = useIdentityTab(identityId, 'relationships', { extra: { depth: 2 } });
+  const credentialsQuery = useIdentityTab(identityId, 'credentials');
+  const identity = overview?.identity;
+  const model = useMemo(() => relationshipModel(query.data, identity?.arn), [query.data, identity?.arn]);
+
+  /* Credential deep links need the inventory id, which the graph does not carry. */
+  const credentialIds = useMemo(
+    () => new Map((credentialsQuery.data?.credentials ?? []).map((credential) => [credential.arn, credential])),
+    [credentialsQuery.data],
+  );
   const principals = useMemo(
     () =>
       (credentialsQuery.data?.credentials ?? []).flatMap((credential) =>
@@ -800,134 +859,213 @@ function RoleUsePanel({ identityId, overview }) {
     [credentialsQuery.data],
   );
 
-  if (query.isError && !query.data) return <TabError query={query} label="Role use unavailable" />;
+  if (query.isError && !query.data) return <TabError query={query} label="Relationships unavailable" />;
   if (!model) return <DetailSkeleton rows={6} />;
 
-  const relColumns = (whoHeader, { showCalls = false } = {}) => [
+  const linkFor = (row) => {
+    if (row.nodeType === 'identity') return `/identities?search=${encodeURIComponent(row.arn)}`;
+    if (row.nodeType !== 'credential') return null;
+    const credential = credentialIds.get(row.arn);
+    return credential
+      ? `/credentials?search=${encodeURIComponent(credential.name)}&credential=${encodeURIComponent(credential.credential_id)}`
+      : `/credentials?search=${encodeURIComponent(row.name)}`;
+  };
+  const noActivity = query.data?.activity_data_available === false;
+  const creator = identity?.created_by;
+
+  const sections = [
     {
-      key: 'who',
-      header: whoHeader,
-      primary: true,
-      width: '36%',
-      cell: (row) => (
-        <span className="block min-w-0">
-          <span className="block truncate font-mono text-[12.5px] text-ink" title={row.arn}>
-            {row.name}
-          </span>
-          <span className="block truncate text-[11px] text-ink-3">{row.type}</span>
-        </span>
-      ),
-    },
-    {
-      key: 'how',
-      header: 'How',
-      width: '22%',
-      cell: (row) => (
-        <span className="block min-w-0">
-          <span className="block truncate text-[12.5px] text-ink-2">
-            {(row.edgeTypes ?? [row.edgeType]).map((type) => EDGE_LABELS[type] ?? titleCaseEnum(type)).join(' · ')}
-          </span>
-          {row.via && <span className="block truncate text-[11px] text-ink-3">via {row.via}</span>}
-        </span>
-      ),
-    },
-    ...(showCalls
-      ? [
-          {
-            key: 'calls',
-            header: 'Calls',
-            align: 'right',
-            width: '12%',
-            cell: (row) => (
-              <span data-numeric="" className="text-[13px] font-semibold text-ink">
-                {row.calls === null || row.calls === undefined ? '-' : formatNumber(row.calls)}
+      key: 'runsAs',
+      none: 'what it runs as',
+      title: 'What it runs as',
+      help: 'The roles and keys this identity signs in with. Whoever controls one of these can act as it.',
+      /* Its binding says how it uses each one (instance profile, access key...). */
+      rows: model.runsAs.map((row) => {
+        const binding = credentialIds.get(row.arn)?.binding_type;
+        return binding ? { ...row, how: `Uses it as its ${bindingLabel(binding).toLowerCase()}` } : row;
+      }),
+      extra: model.sharedWith.length > 0 && (
+        <p className="mt-2 flex items-start gap-1.5 text-[12px] text-medium">
+          <ShieldAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Also used by{' '}
+            {model.sharedWith.map((entry, index) => (
+              <span key={entry.key}>
+                {index > 0 && ', '}
+                <RelName row={entry} to={linkFor(entry)} inline />
+                {entry.via && ` (via ${entry.via})`}
               </span>
-            ),
-          },
-        ]
-      : []),
-    {
-      key: 'last',
-      header: 'Last observed',
-      width: '18%',
-      cell: (row) => (
-        <span className="block text-[12px] text-ink-2" title={formatDateTime(row.lastObserved)}>
-          {row.lastObserved ? formatRelative(row.lastObserved) : '-'}
-        </span>
+            ))}
+            . If either is taken over, both are.
+          </span>
+        </p>
       ),
     },
-  ];
-
-  return (
-    <div className="flex flex-col gap-6">
-      <TabIntro>
-        Who can take on this identity&apos;s role, which roles it can take on in turn, and what it was seen reaching. Trust comes
-        from the role&apos;s trust policy and the inventory&apos;s trust edges; calls are counted from CloudTrail.
-      </TabIntro>
-
-      <section>
-        <SectionLabel>Can be taken on by</SectionLabel>
-        {principals.length > 0 && (
-          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Principals the trust policy allows">
+    {
+      key: 'canUse',
+      none: 'who can use it',
+      title: 'Who can use it',
+      help: 'Other identities, roles and users that can switch to this identity or the roles it runs as.',
+      rows: model.canUse,
+    },
+    {
+      key: 'outside',
+      none: 'AWS services or other accounts that can use it',
+      title: 'AWS services and other accounts that can use it',
+      help: 'Trust relationships: AWS services, other AWS accounts and sign-in providers allowed to use its roles.',
+      rows: model.outside,
+      extra: principals.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[12px] text-ink-3">Its trust policy allows:</p>
+          <ul className="mt-1 flex flex-wrap gap-1.5" aria-label="Principals the trust policy allows">
             {principals.map((principal) => (
-              <li key={`${principal.credential}-${principal.principal}`}>
+              <li key={`${principal.credential}-${principal.principal}`} className="max-w-full">
                 <Tag tone={principal.is_external ? 'medium' : 'neutral'} size="sm">
-                  <span className="truncate">
+                  <span className="truncate" title={`On ${principal.credential}`}>
                     <span className="font-mono">{principal.principal}</span>
-                    {` · ${principal.type}${principal.is_external ? ' · external' : ''}${principal.condition ? ' · conditioned' : ' · no condition'}`}
+                    {` · ${principalKind(principal.type)}${principal.is_external ? ' · outside your accounts' : ''}${principal.condition ? ' · with conditions' : ' · no conditions'}`}
                   </span>
                 </Tag>
               </li>
             ))}
           </ul>
-        )}
-        {model.inbound.length === 0 ? (
-          <p className="mt-2 text-[12.5px] text-ink-3">
-            {principals.length > 0
-              ? 'No other identity in the inventory is recorded assuming or trusting it beyond the trust policy above.'
-              : 'Nothing in the inventory can assume this identity or its role.'}
-          </p>
-        ) : (
-          <DataGrid className="mt-2" caption="Who can take on this identity" rows={model.inbound} rowKey={(row) => row.key} columns={relColumns('Principal')} emptyState={null} density="compact" />
-        )}
-        {model.sharedWith.length > 0 && (
-          <p className="mt-2 flex items-start gap-1.5 text-[12px] text-medium">
-            <ShieldAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            Its role is also bound to {model.sharedWith.map((entry) => entry.name).join(', ')} - a compromise of either is a
-            compromise of both.
-          </p>
-        )}
-      </section>
+        </div>
+      ),
+      count: model.outside.length + principals.length,
+    },
+    {
+      key: 'switchTo',
+      none: 'roles it can switch to',
+      title: 'What it can switch to',
+      help: 'Roles it can take on (assume) or hand to a service, including roles in other AWS accounts.',
+      rows: model.switchTo,
+    },
+    {
+      key: 'used',
+      none: 'resources it used',
+      title: 'What it used',
+      help: 'Resources it called, read from the AWS activity log (CloudTrail), busiest first.',
+      rows: model.used,
+      showCalls: true,
+      count: noActivity ? 1 : model.used.length,
+      extra: noActivity && (
+        <p className="mt-2 flex items-start gap-1.5 text-[12.5px] text-medium">
+          <ShieldAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          The AWS activity log (CloudTrail) could not be read just now, so what it used is unknown, not none.
+          {model.used.length > 0 ? ' The list may be incomplete.' : ' Try again later.'}
+        </p>
+      ),
+    },
+    {
+      key: 'createdBy',
+      none: 'who created it',
+      title: 'Who created it',
+      help: 'The person or automation recorded as creating it.',
+      rows: model.createdBy,
+      when: 'Created',
+      count: model.createdBy.length + (creator ? 1 : 0),
+      extra: creator && model.createdBy.length === 0 && (
+        <p className="mt-2 text-[12.5px] text-ink-2">
+          <span className="font-mono" title={creator}>
+            {creator.split('/').pop()}
+          </span>
+          <span className="block text-[11.5px] text-ink-3">From the AWS activity log</span>
+        </p>
+      ),
+    },
+    {
+      key: 'other',
+      none: 'other connections',
+      title: 'Other connections',
+      help: 'Further links in the inventory, such as what contains or manages it.',
+      rows: model.other,
+    },
+  ];
+  const shown = sections.filter((section) => (section.count ?? section.rows.length) > 0);
+  const empty = sections.filter((section) => (section.count ?? section.rows.length) === 0 && section.key !== 'other');
 
-      <section>
-        <SectionLabel>Roles it can assume</SectionLabel>
-        {model.assumes.length === 0 ? (
-          <ClearState compact title="No role chaining" description="It is not recorded assuming any other role." />
-        ) : (
-          <DataGrid className="mt-2" caption="Roles this identity can assume" rows={model.assumes} rowKey={(row) => row.key} columns={relColumns('Role')} emptyState={null} density="compact" />
-        )}
-      </section>
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <p className="max-w-3xl min-w-[min(100%,20rem)] flex-1 text-[12.5px] leading-relaxed text-ink-3">
+          Everything this identity is connected to: what it runs as, who and what can use it, what it can switch to and what
+          it used. Select a name to open it.
+        </p>
+        <Button variant="secondary" size="sm" as={Link} to={accessDetailRoute(identityId)} icon={Waypoints}>
+          Open in access graph
+        </Button>
+      </div>
 
-      <section>
-        <SectionLabel>What it reached (CloudTrail)</SectionLabel>
-        {query.data?.activity_data_available === false && (
-          <p className="mt-2 flex items-start gap-1.5 text-[12.5px] text-medium">
-            <ShieldAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            CloudTrail could not be read just now, so what it reached is unknown, not none.
-            {model.reaches.length > 0 ? ' The rows below may be incomplete.' : ''}
-          </p>
-        )}
-        {model.reaches.length === 0 ? (
-          query.data?.activity_data_available === false ? null : (
-            <p className="mt-2 text-[12.5px] text-ink-3">No resource access was recorded for it in the activity window.</p>
-          )
-        ) : (
-          <DataGrid className="mt-2" caption="Resources this identity reached" rows={model.reaches} rowKey={(row) => row.key} columns={relColumns('Resource', { showCalls: true })} emptyState={null} density="compact" />
-        )}
-      </section>
+      {shown.map((section) => (
+        <section key={section.key} aria-labelledby={`rel-${section.key}`}>
+          <h3 id={`rel-${section.key}`} className="text-[13px] font-semibold text-ink">
+            {section.title}
+            {section.rows.length > 0 && <span className="ml-1.5 font-normal text-ink-3">{formatNumber(section.rows.length)}</span>}
+          </h3>
+          <p className="mt-0.5 text-[12px] text-ink-3">{section.help}</p>
+          {section.rows.length > 0 && <RelList rows={section.rows} linkFor={linkFor} showCalls={section.showCalls} when={section.when} />}
+          {section.extra}
+        </section>
+      ))}
+
+      {empty.length > 0 && (
+        <p className="text-[12.5px] text-ink-3">
+          Nothing recorded for {empty.map((section) => section.none).filter(Boolean).join(', ')}.
+        </p>
+      )}
 
       {credentialsQuery.isError && <InlineError error={credentialsQuery.error} onRetry={credentialsQuery.refetch} label="Trust policy unavailable" />}
+
+      <JsonBlock label="Technical details: relationship data as returned" value={query.data} />
     </div>
+  );
+}
+
+const PRINCIPAL_KINDS = { Service: 'AWS service', AWS: 'AWS account or role', Federated: 'sign-in provider', CanonicalUser: 'AWS account' };
+const principalKind = (type) => PRINCIPAL_KINDS[type] ?? type ?? 'principal';
+
+function RelName({ row, to, inline = false }) {
+  const className = cn('font-mono text-[12.5px] font-medium', inline ? 'text-ink-2' : 'block truncate text-ink');
+  return to ? (
+    <Link to={to} title={row.arn} className={cn(className, 'hover:text-brand hover:underline')}>
+      {row.name}
+    </Link>
+  ) : (
+    <span title={row.arn} className={className}>
+      {row.name}
+    </span>
+  );
+}
+
+/** Related items as rows: name and plain type first, then how, then when. */
+function RelList({ rows, linkFor, showCalls = false, when = 'Last seen' }) {
+  return (
+    <ul className="mt-2 divide-y divide-line rounded-[var(--radius-control)] border border-line bg-surface-2">
+      {rows.map((row) => (
+        <li key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5">
+          <span className="min-w-0 flex-[1_1_14rem]">
+            <RelName row={row} to={linkFor(row)} />
+            <span className="block truncate text-[11.5px] text-ink-3">
+              {row.type}
+              {row.via ? ` · via ${row.via}` : ''}
+            </span>
+          </span>
+          <span className="min-w-0 flex-[1_1_10rem] text-[12.5px] text-ink-2">
+            {row.how ?? row.edgeTypes.map((type) => edgeWords(type, row.direction)).join(' · ')}
+          </span>
+          <span className="shrink-0 text-right text-[12px] text-ink-3 sm:w-36">
+            {showCalls && Number.isFinite(row.calls) && (
+              <span data-numeric="" className="block font-semibold text-ink">
+                {formatNumber(row.calls)} {row.calls === 1 ? 'call' : 'calls'}
+              </span>
+            )}
+            <span className="block" title={row.lastObserved ? formatDateTime(row.lastObserved) : undefined}>
+              {row.lastObserved ? `${when} ${formatRelative(row.lastObserved)}` : when === 'Created' ? 'Date not recorded' : 'No use recorded'}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -942,7 +1080,7 @@ function RawPanel({ identityId, name }) {
 
   return (
     <RawJson
-      intro="The inventory record exactly as discovery stored it, the cloud API's response when it was kept, and the credential the identity resolved to. For audits and support tickets."
+      intro="Everything the discovery scan stored for this identity, exactly as received: the inventory record, the AWS response when it was kept, and the credential it was matched to. Useful for audits and support tickets."
       filename={`identity-${name || identityId}.json`}
       payload={data}
       blocks={[
@@ -965,9 +1103,9 @@ function CompactActivity({ identityId }) {
     <div className="-mx-4 -my-4 sm:-mx-5">
       <EventTimeline identityId={identityId} state={state} patch={patch} clearFilters={clearFilters} compact />
       <p className="border-t border-line px-4 py-3 text-[12px] text-ink-3 sm:px-5">
-        Filters, heatmap, source IPs, sessions and errors are on the{' '}
+        Filters, busiest hours, where calls came from, sessions and failed calls are on the{' '}
         <Link to={identityRoute(identityId, 'activity')} className="font-medium text-brand hover:underline">
-          full activity record
+          identity&apos;s Activity tab
         </Link>
         .
       </p>
@@ -1012,7 +1150,7 @@ export function AttributeList({ attributes }) {
  * objects as their own label/value pairs; anything nested deeper stays JSON.
  */
 function AttributeValue({ value, depth = 0 }) {
-  if (value === null || value === undefined || value === '') return <span className="text-ink-3">-</span>;
+  if (value === null || value === undefined || value === '') return <span className="font-sans text-ink-3">Not recorded</span>;
   if (Array.isArray(value)) {
     if (value.length === 0) return <span className="text-ink-3">None</span>;
     if (value.length === 1 && typeof value[0] !== 'object') return String(value[0]);

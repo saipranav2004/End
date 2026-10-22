@@ -26,7 +26,7 @@ import {
 } from '../../lib/api/overview';
 import { useQuery } from '../../lib/hooks';
 import { NEUTRAL_SERIES, SERIES_TOKENS, severityMeta } from '../../lib/domain';
-import { formatDate, formatNumber, formatRelative, humanizeToken, parseDate, percentValue } from '../../lib/format';
+import { formatDate, formatDateTime, formatNumber, formatRelative, humanizeToken, parseDate, percentValue } from '../../lib/format';
 import { genomeRoute } from '../../lib/identityLinks';
 import { PageHeader } from '../../shell/PageHeader';
 import { BarList } from '../../charts/BarList';
@@ -112,9 +112,10 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Dashboard"
+        lede="The workloads, services and automations that act in your AWS accounts: what is at risk now, what the last discovery scan changed, what you have, and where to look next."
         actions={
           <Button variant="secondary" icon={RotateCw} onClick={refreshAll} loading={refreshing}>
-            Refresh
+            Refresh figures
           </Button>
         }
         meta={
@@ -130,102 +131,144 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
         }
       />
 
-      <PostureBanner query={postureQuery} />
+      {/* ── 1. At risk now: the score, the headline counts and the signals ── */}
+      <DashboardSection title="At risk now">
+        <PostureBanner query={postureQuery} />
 
-      {/* ── Headline counters ───────────────────────────────────────────── */}
-      {loadingOverview ? (
-        <>
-          <LoadingAnnouncement label="Loading inventory figures" />
-          <StatStripSkeleton count={4} />
-        </>
-      ) : overviewFailed ? (
-        <InlineError error={overviewQuery.error} onRetry={overviewQuery.refetch} label="Inventory figures unavailable" />
-      ) : (
-        <HeadlineTiles kpis={kpis} charts={charts} activity={overview.activityDataAvailable} exposure={exposure} findingsQuery={findingsQuery} findingSummary={findingSummary} />
-      )}
+        {loadingOverview ? (
+          <>
+            <LoadingAnnouncement label="Loading inventory figures" />
+            <StatStripSkeleton count={4} />
+          </>
+        ) : overviewFailed ? (
+          <InlineError error={overviewQuery.error} onRetry={overviewQuery.refetch} label="Inventory figures could not be loaded" />
+        ) : (
+          <HeadlineTiles kpis={kpis} charts={charts} activity={overview.activityDataAvailable} exposure={exposure} findingsQuery={findingsQuery} findingSummary={findingSummary} />
+        )}
 
-      {/* ── What the latest scan changed ───────────────────────────────── */}
-      {!loadingOverview && !overviewFailed && <RecentChangesCard recent={overview?.recentChanges} />}
-
-      {/* ── Signals + population ────────────────────────────────────────── */}
-      <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <Panel prominence="lead" className="animate-rise" data-stagger="" style={{ '--stagger': 3 }}>
-          <PanelHeader prominence="lead" title="Risk signals" />
-          <div className="mt-3">
-            {overviewFailed ? (
-              <Unavailable source="discovery" />
-            ) : (
-              <SignalsBody overview={overview} loading={loadingOverview} />
-            )}
-          </div>
-        </Panel>
-
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 4 }}>
-          <IdentityMix overview={overview} loading={loadingOverview} failed={overviewFailed} />
-        </Panel>
-      </div>
-
-      {/* ── Credential surface + growth ─────────────────────────────────── */}
-      <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 5 }}>
-          <CredentialSurface overview={overview} loading={loadingOverview} failed={overviewFailed} />
-        </Panel>
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 6 }}>
-          <InventoryGrowth overview={overview} loading={loadingOverview} failed={overviewFailed} />
-        </Panel>
-      </div>
-
-      {/* ── Trust, credential use, activity ─────────────────────────────── */}
-      <ActivityRow overview={overview} loading={loadingOverview} failed={overviewFailed} />
-
-      {/* ── Behaviour + credential exposure ─────────────────────────────── */}
-      <div className={cn('grid gap-4', exposure && '@min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]')}>
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 7 }}>
-          <BehaviourPanel query={genomeQuery} wide={!exposure} />
-        </Panel>
-
-        {exposure && (
-          <Panel prominence="default" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
+        <div className={cn('grid gap-4', exposure && '@min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]')}>
+          <Panel prominence="lead" className="animate-rise" data-stagger="" style={{ '--stagger': 3 }}>
             <PanelHeader
-              title="Credential exposure"
-              actions={
-                <Button as={Link} to="/exposure" variant="secondary" size="sm" iconRight={ArrowRight}>
-                  Review findings
-                </Button>
-              }
+              prominence="lead"
+              title="What needs attention"
+              subtitle="Each line is a share of all your identities or credentials, largest share first. Select one to open the list."
             />
-            <div className="mt-4">
-              <FindingsMiniPanel query={findingsQuery} summary={findingSummary} />
+            <div className="mt-3">
+              {overviewFailed ? (
+                <Unavailable source="discovery" />
+              ) : (
+                <SignalsBody overview={overview} loading={loadingOverview} />
+              )}
             </div>
           </Panel>
-        )}
-      </div>
 
-      {/* ── Where to look first ─────────────────────────────────────────── */}
-      <div className="grid gap-4 @min-[44rem]:grid-cols-2 @min-[60rem]:grid-cols-3">
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 9 }}>
-          <WeakestIdentities query={postureQuery} />
-        </Panel>
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 10 }}>
-          <ExpiringCredentials overview={overview} loading={loadingOverview} failed={overviewFailed} />
-        </Panel>
-        <Panel prominence="quiet" className="animate-rise @min-[44rem]:col-span-2 @min-[60rem]:col-span-1" data-stagger="" style={{ '--stagger': 11 }}>
-          <TopOwners overview={overview} loading={loadingOverview} failed={overviewFailed} />
-        </Panel>
-      </div>
+          {exposure && (
+            <Panel prominence="default" className="animate-rise" data-stagger="" style={{ '--stagger': 4 }}>
+              <PanelHeader
+                title="Exposed secrets"
+                subtitle="Secrets found in code in your connected repositories."
+                actions={
+                  <Button as={Link} to="/exposure" variant="secondary" size="sm" iconRight={ArrowRight}>
+                    Review exposed secrets
+                  </Button>
+                }
+              />
+              <div className="mt-4">
+                <FindingsMiniPanel query={findingsQuery} summary={findingSummary} />
+              </div>
+            </Panel>
+          )}
+        </div>
+      </DashboardSection>
+
+      {/* ── 2. What the latest discovery scan changed ─────────────────────── */}
+      {!loadingOverview && !overviewFailed && overview?.recentChanges && (
+        <DashboardSection title="What changed">
+          <RecentChangesCard recent={overview.recentChanges} />
+        </DashboardSection>
+      )}
+
+      {/* ── 3. What you have: identities, credentials, trust ────────────────── */}
+      <DashboardSection title="What you have">
+        <div className="grid gap-4 @min-[52rem]:grid-cols-2">
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 5 }}>
+            <IdentityMix overview={overview} loading={loadingOverview} failed={overviewFailed} />
+          </Panel>
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 6 }}>
+            <CredentialSurface overview={overview} loading={loadingOverview} failed={overviewFailed} />
+          </Panel>
+          {hasTrust(overview) && (
+            <Panel prominence="quiet" className="animate-rise @min-[52rem]:col-span-2" data-stagger="" style={{ '--stagger': 7 }}>
+              <TrustEdges overview={overview} />
+            </Panel>
+          )}
+        </div>
+      </DashboardSection>
+
+      {/* ── 4. Trends: growth, use, activity, normal behaviour ─────────────── */}
+      <DashboardSection title="Trends and activity">
+        <div className="grid gap-4 @min-[52rem]:grid-cols-2">
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
+            <InventoryGrowth overview={overview} loading={loadingOverview} failed={overviewFailed} />
+          </Panel>
+          {showsEvents(overview) && (
+            <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 9 }}>
+              <EventVolume overview={overview} />
+            </Panel>
+          )}
+          {showsUse(overview) && (
+            <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 10 }}>
+              <CredentialUse overview={overview} />
+            </Panel>
+          )}
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 11 }}>
+            <BehaviourPanel query={genomeQuery} />
+          </Panel>
+        </div>
+      </DashboardSection>
+
+      {/* ── 5. Where to look next ───────────────────────────────────────────── */}
+      <DashboardSection title="Where to look next">
+        <div className="grid gap-4 @min-[44rem]:grid-cols-2 @min-[60rem]:grid-cols-3">
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 12 }}>
+            <WeakestIdentities query={postureQuery} />
+          </Panel>
+          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 13 }}>
+            <ExpiringCredentials overview={overview} loading={loadingOverview} failed={overviewFailed} />
+          </Panel>
+          <Panel prominence="quiet" className="animate-rise @min-[44rem]:col-span-2 @min-[60rem]:col-span-1" data-stagger="" style={{ '--stagger': 14 }}>
+            <TopOwners overview={overview} loading={loadingOverview} failed={overviewFailed} />
+          </Panel>
+        </div>
+      </DashboardSection>
 
       {offerExposureSetup && (
         <p className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
           <FileWarning aria-hidden="true" className="size-3.5 shrink-0" />
-          Scanning repositories for committed credentials is off for this workspace.
+          Looking for secrets committed to your code repositories is off for this workspace.
           <Link to="/integrations" className="font-medium text-brand hover:underline">
-            Set it up in Integrations
+            Turn it on in Integrations
           </Link>
         </p>
       )}
     </div>
   );
 }
+
+/** One group of the dashboard, under a small heading that names the question it answers. */
+function DashboardSection({ title, children }) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-4">
+      <h2 className="text-[11px] font-semibold tracking-[0.12em] text-ink-3 uppercase">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/* Each of these panels shows only when the API serves its figures; older builds do not. */
+const hasTrust = (overview) => Boolean(overview) && (overview.charts.trustEdgesByType !== null || overview.kpis.trustEdges !== null);
+const showsUse = (overview) => Boolean(overview) && overview.charts.credentialUtilization !== null;
+const showsEvents = (overview) => Boolean(overview) && overview.charts.eventVolume !== null;
 
 /**
  * A secondary panel whose service failed. The failure and its Retry are shown
@@ -237,8 +280,8 @@ function Unavailable({ source }) {
     <p className="flex items-center gap-2 rounded-[var(--radius-control)] border border-dashed border-line px-3 py-3 text-[12.5px] text-ink-3">
       <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
       {source === 'posture'
-        ? 'Not available - the posture service did not answer.'
-        : 'Not available - inventory figures could not be loaded.'}
+        ? 'Not available: security scores could not be loaded. Use Retry at the top of the page.'
+        : 'Not available: inventory figures could not be loaded. Use Retry at the top of the page.'}
     </p>
   );
 }
@@ -261,20 +304,20 @@ function HeadlineTiles({ kpis, charts, activity, exposure, findingsQuery, findin
         sparkline={identitySpark}
         icon={Fingerprint}
         tone="brand"
-        caption={`Non-human identities across ${formatNumber(kpis.accountsScanned)} account${kpis.accountsScanned === 1 ? '' : 's'}`}
+        caption={`Workloads, services and automations in ${formatNumber(kpis.accountsScanned)} AWS account${kpis.accountsScanned === 1 ? '' : 's'}`}
       />
       <MetricTile
         data-stagger=""
         style={{ '--stagger': 1 }}
         className="animate-rise"
-        label="Without an owner"
+        label="Created outside your normal process"
         value={kpis.shadowIdentities}
         icon={Bot}
         tone="high"
         caption={
           activity
-            ? 'No owner tag, and no creator recorded in CloudTrail'
-            : 'No owner tag (CloudTrail unavailable to name a creator)'
+            ? 'Nobody is recorded as its owner or creator'
+            : 'No owner tag. The AWS activity log could not be read to name a creator'
         }
         meter={percentValue(kpis.shadowIdentities, kpis.totalIdentities)}
         meterLabel="Share of all identities"
@@ -292,8 +335,8 @@ function HeadlineTiles({ kpis, charts, activity, exposure, findingsQuery, findin
         tone="medium"
         caption={
           kpis.activeCredentials === null
-            ? 'Roles, keys, secrets and certificates held by identities'
-            : `${formatNumber(kpis.activeCredentials)} active, not stale · roles, keys, secrets and certificates`
+            ? 'What identities sign in with: roles, access keys, secrets and certificates'
+            : `${formatNumber(kpis.activeCredentials)} used or created in the last 90 days · roles, access keys, secrets and certificates`
         }
       />
       {exposure ? (
@@ -305,11 +348,11 @@ function HeadlineTiles({ kpis, charts, activity, exposure, findingsQuery, findin
           data-stagger=""
           style={{ '--stagger': 3 }}
           className="animate-rise"
-          label="Publicly accessible"
+          label="Reachable from the internet"
           value={kpis.publiclyAccessible}
           icon={Globe2}
           tone="critical"
-          caption="Identities reachable from the internet"
+          caption="Identities anyone on the internet could reach"
           meter={percentValue(kpis.publiclyAccessible, kpis.totalIdentities)}
           meterLabel="Share of all identities"
         />
@@ -334,7 +377,7 @@ function CodeExposureTile({ query, summary }) {
     const detail = describeExposureError(query.error);
     return (
       <div className="flex flex-col justify-between rounded-[var(--radius-panel)] border border-line bg-surface p-4">
-        <p className="text-[11px] font-semibold tracking-[0.09em] text-ink-3 uppercase">Secrets in code</p>
+        <p className="text-[11px] font-semibold tracking-[0.09em] text-ink-3 uppercase">Exposed secrets</p>
         <p className="mt-2 text-[12.5px] leading-snug text-ink-2">{detail.title}</p>
         <Button variant="ghost" size="sm" icon={RotateCw} onClick={query.refetch} className="mt-2 self-start">
           Retry
@@ -352,11 +395,11 @@ function CodeExposureTile({ query, summary }) {
       data-stagger=""
       style={{ '--stagger': 3 }}
       className="animate-rise"
-      label="Secrets in code"
+      label="Exposed secrets"
       value={summary.total}
       icon={FileWarning}
       tone={highish > 0 ? 'critical' : 'low'}
-      caption={`${formatNumber(highish)} high or critical · ${formatNumber(summary.repositoryCount)} repositories`}
+      caption={`Secrets found in code · ${formatNumber(highish)} high or critical · in ${formatNumber(summary.repositoryCount)} repositor${summary.repositoryCount === 1 ? 'y' : 'ies'}`}
       meter={percentValue(highish, summary.total)}
       meterLabel="Share at high or critical risk"
     />
@@ -371,8 +414,8 @@ function SignalsBody({ overview, loading }) {
   const rows = [
     {
       key: 'public',
-      label: 'Publicly accessible',
-      rationale: 'Reachable from the internet - a leaked credential here is usable from anywhere.',
+      label: 'Reachable from the internet',
+      rationale: 'Anyone on the internet can reach it, so a leaked credential here can be used from anywhere.',
       count: kpis.publiclyAccessible,
       denominator: kpis.totalIdentities,
       denominatorLabel: 'of identities',
@@ -381,10 +424,10 @@ function SignalsBody({ overview, loading }) {
     },
     {
       key: 'owner',
-      label: 'No owner',
+      label: 'Created outside your normal process',
       rationale: activity
-        ? 'No owner tag and no creator in CloudTrail - nobody to ask before changing it.'
-        : 'No owner tag. CloudTrail could not be read, so creators were not checked.',
+        ? 'Nobody is recorded as its owner or creator, so there is nobody to ask before changing it.'
+        : 'No owner tag. The AWS activity log (CloudTrail) could not be read, so creators were not checked.',
       count: kpis.shadowIdentities,
       denominator: kpis.totalIdentities,
       denominatorLabel: 'of identities',
@@ -392,8 +435,8 @@ function SignalsBody({ overview, loading }) {
     },
     {
       key: 'orphaned',
-      label: 'Unbound credentials',
-      rationale: 'Not bound to any identity - nobody is accountable for rotating it.',
+      label: 'Credentials not used by any identity',
+      rationale: 'No identity is set up to use them, so nobody is responsible for changing (rotating) or removing them.',
       count: kpis.orphanedCredentials,
       denominator: kpis.totalCredentials,
       denominatorLabel: 'of credentials',
@@ -402,10 +445,10 @@ function SignalsBody({ overview, loading }) {
     },
     {
       key: 'stale-identities',
-      label: 'Stale identities',
+      label: 'Identities unused for 90+ days',
       rationale: activity
-        ? 'No activity in over 90 days, or never used and created over 90 days ago - candidates for removal.'
-        : 'Created over 90 days ago. Activity could not be read, so use is not counted.',
+        ? 'No recorded activity in the last 90 days, or never used and created over 90 days ago. Candidates for removal.'
+        : 'Created over 90 days ago. The AWS activity log could not be read, so use is not counted.',
       count: kpis.staleIdentities,
       denominator: kpis.totalIdentities,
       denominatorLabel: 'of identities',
@@ -414,8 +457,8 @@ function SignalsBody({ overview, loading }) {
     },
     {
       key: 'stale-credentials',
-      label: 'Stale credentials',
-      rationale: 'Not used in over 90 days, or never used and over 90 days old - rotate or remove.',
+      label: 'Credentials unused for 90+ days',
+      rationale: 'No recorded use in the last 90 days, or never used and over 90 days old. Change (rotate) or remove them.',
       count: kpis.staleCredentials,
       denominator: kpis.totalCredentials,
       denominatorLabel: 'of credentials',
@@ -432,11 +475,12 @@ function SignalsBody({ overview, loading }) {
         {activity && utilisation !== null ? (
           <div className="flex items-center gap-4">
             <span className="min-w-0 flex-1">
-              <span className="block text-[12.5px] font-semibold text-ink">Permissions in use</span>
+              <span className="block text-[12.5px] font-semibold text-ink">Share of permissions actually used</span>
               <span className="mt-0.5 block text-[11.5px] text-ink-3">
-                Share of granted actions that CloudTrail saw credentials use. The rest is access nobody exercises.
+                Of all the actions your identities are allowed to take, the share the AWS activity log (CloudTrail) saw them
+                use. The rest is access nobody uses, which could be removed.
               </span>
-              <Meter value={Math.min(100, utilisation)} tone="info" height={4} className="mt-2" label="Permissions in use" />
+              <Meter value={Math.min(100, utilisation)} tone="info" height={4} className="mt-2" label="Share of permissions actually used" />
             </span>
             <span data-numeric="" className="w-24 shrink-0 text-right font-display text-[19px] leading-none font-extrabold text-ink">
               {utilisation.toFixed(1)}%
@@ -444,8 +488,8 @@ function SignalsBody({ overview, loading }) {
           </div>
         ) : (
           <p className="text-[11.5px] leading-relaxed text-ink-3">
-            CloudTrail activity could not be read for this scope, so permission use is not measured and stale
-            counts fall back to creation dates.
+            The AWS activity log (CloudTrail) could not be read for these accounts, so the share of permissions used is
+            not measured and the 90-day counts above go by creation date only.
           </p>
         )}
       </div>
@@ -456,13 +500,13 @@ function SignalsBody({ overview, loading }) {
 /* ── Identity mix ─────────────────────────────────────────────────────────── */
 
 const MIX_VIEWS = [
-  { value: 'class', label: 'By class' },
-  { value: 'type', label: 'By type' },
+  { value: 'class', label: 'By purpose' },
+  { value: 'type', label: 'By AWS type' },
   { value: 'environment', label: 'By environment' },
-  { value: 'account', label: 'By account' },
+  { value: 'account', label: 'By AWS account' },
   { value: 'region', label: 'By region' },
-  { value: 'status', label: 'By status' },
-  { value: 'activity', label: 'Active vs stale' },
+  { value: 'status', label: 'By lifecycle status' },
+  { value: 'activity', label: 'Active vs unused 90+ days' },
 ];
 
 const asIs = (value) => value;
@@ -501,7 +545,7 @@ function IdentityMix({ overview, loading, failed }) {
       /* Stale is the same 90-day measure as the risk signal, so it opens the same list. */
       return [
         { key: 'active', label: 'Active', value: charts.staleVsActive.active, color: SERIES_TOKENS[0] },
-        { key: 'stale', label: 'Stale 90+ days', value: charts.staleVsActive.stale, color: SERIES_TOKENS[1], to: '/identities?min_idle_days=90' },
+        { key: 'stale', label: 'Unused for 90+ days', value: charts.staleVsActive.stale, color: SERIES_TOKENS[1], to: '/identities?min_idle_days=90' },
       ].filter((item) => item.value > 0);
     }
     return charts.byClass
@@ -524,8 +568,12 @@ function IdentityMix({ overview, loading, failed }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Identity mix"
-        subtitle={typeCount > 0 ? `${formatNumber(typeCount)} identity type${typeCount === 1 ? '' : 's'}` : undefined}
+        title="What kinds of identities you have"
+        subtitle={
+          typeCount > 0
+            ? `${formatNumber(typeCount)} AWS type${typeCount === 1 ? '' : 's'} in all. Select a slice to list those identities.`
+            : undefined
+        }
         actions={
           <Select
             size="sm"
@@ -544,8 +592,8 @@ function IdentityMix({ overview, loading, failed }) {
         ) : slices.length === 0 ? (
           <EmptyState
             compact
-            title="Nothing to break down yet"
-            description="No identities have been discovered in the accounts and regions in your scope."
+            title="No identities yet"
+            description="Discovery has not found any identity in the accounts and regions these figures cover."
           />
         ) : (
           <CompositionDonut
@@ -577,10 +625,11 @@ function CredentialSurface({ overview, loading, failed }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Credential surface"
+        title="What identities sign in with"
+        subtitle="Credentials by kind. Select a bar to list them."
         actions={
           <Button as={Link} to="/credentials" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Inspect
+            All credentials
           </Button>
         }
       />
@@ -593,7 +642,7 @@ function CredentialSurface({ overview, loading, failed }) {
           <ClearState
             compact
             title="No credentials recorded"
-            description="No identity in your scope holds a role, key, secret or certificate."
+            description="No identity in these accounts and regions uses a role, access key, secret or certificate."
           />
         ) : (
           <>
@@ -603,7 +652,7 @@ function CredentialSurface({ overview, loading, failed }) {
             />
             <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-line pt-3">
               <Figure label="Total credentials" value={formatNumber(overview.kpis.totalCredentials)} />
-              <Figure label="Distinct types" value={formatNumber(items.length)} />
+              <Figure label="Kinds of credential" value={formatNumber(items.length)} />
             </dl>
           </>
         )}
@@ -663,8 +712,8 @@ function InventoryGrowth({ overview, loading, failed }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Inventory growth"
-        subtitle="Cumulative count by the month each item was first seen. Only what exists today is counted - removed items leave the curve."
+        title="Inventory over time"
+        subtitle="How many of today's identities and credentials had been discovered by each month. Removed items are not counted."
       />
       <div className="mt-4">
         {loading ? (
@@ -675,14 +724,14 @@ function InventoryGrowth({ overview, loading, failed }) {
           <EmptyState
             compact
             icon={LineChart}
-            title="No first-seen dates yet"
-            description="Nothing in your scope has been discovered, so there is no growth to plot."
+            title="Nothing to plot yet"
+            description="Nothing has been discovered in these accounts and regions, so there is no history to draw."
           />
         ) : data.length < 3 ? (
           /* One or two months is not a trend: a two-point line starting from an
              empty month draws growth that never happened. */
           <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-2">
-            Everything in scope was first seen in{' '}
+            Everything here was first discovered in{' '}
             <strong className="font-semibold text-ink">{data.map((point) => point.label).join(' and ')}</strong>, so there is
             no trend to draw yet. Today:{' '}
             <strong className="font-semibold text-ink" data-numeric="">
@@ -692,7 +741,7 @@ function InventoryGrowth({ overview, loading, failed }) {
             <strong className="font-semibold text-ink" data-numeric="">
               {formatNumber(data[data.length - 1].credentials)}
             </strong>{' '}
-            credentials. The chart appears once three months of discoveries are recorded.
+            credentials. The chart appears once discoveries span three months.
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -704,7 +753,8 @@ function InventoryGrowth({ overview, loading, failed }) {
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-[12px] font-semibold text-ink-2">{series.label}</p>
                   <p className="text-[11.5px] text-ink-3" data-numeric="">
-                    now {formatNumber(data[data.length - 1][series.key])}
+                    {formatNumber(data[data.length - 1][series.key])} today
+
                   </p>
                 </div>
                 <TrendChart
@@ -727,43 +777,19 @@ function InventoryGrowth({ overview, loading, failed }) {
 
 /* ── Trust, credential use, activity ──────────────────────────────────────── */
 
-/* Each panel shows only when the API serves its figures; older builds do not. */
-function ActivityRow({ overview, loading, failed }) {
-  if (loading || failed || !overview) return null;
-  const { kpis, charts } = overview;
-  const trust = charts.trustEdgesByType !== null || kpis.trustEdges !== null;
-  const use = charts.credentialUtilization !== null;
-  const events = charts.eventVolume !== null;
-  if (!trust && !use && !events) return null;
-  return (
-    <div className="grid gap-4 @min-[44rem]:grid-cols-2 @min-[60rem]:grid-cols-3">
-      {trust && (
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 7 }}>
-          <TrustEdges overview={overview} />
-        </Panel>
-      )}
-      {use && (
-        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
-          <CredentialUse overview={overview} />
-        </Panel>
-      )}
-      {events && (
-        <Panel
-          prominence="quiet"
-          className={cn('animate-rise', trust && use && '@min-[44rem]:col-span-2 @min-[60rem]:col-span-1')}
-          data-stagger=""
-          style={{ '--stagger': 9 }}
-        >
-          <EventVolume overview={overview} />
-        </Panel>
-      )}
-    </div>
-  );
-}
-
 /* Canonical order, so an edge type keeps its hue whatever else is present.
    Types outside it fold into the neutral "Other" slice. */
 const TRUST_EDGE_ORDER = ['service_trust', 'assume_role', 'cross_account', 'federated_saml', 'federated_oidc', 'pass_role', 'trusts'];
+
+/* The console's plain words for each kind of trust; anything else keeps the access graph's label. */
+const TRUST_EDGE_LABELS = {
+  service_trust: 'An AWS service may use it',
+  assume_role: 'Can switch to (assume) another role',
+  cross_account: 'Reaches another AWS account',
+  federated_saml: 'Signs in through company single sign-on',
+  federated_oidc: 'Signs in through web identity',
+  pass_role: 'Can hand a role to a service',
+};
 
 function TrustEdges({ overview }) {
   const { kpis, charts } = overview;
@@ -771,7 +797,9 @@ function TrustEdges({ overview }) {
     const items = (charts.trustEdgesByType ?? []).filter((item) => item.value > 0);
     const known = TRUST_EDGE_ORDER.flatMap((type, index) => {
       const item = items.find((entry) => entry.key === type);
-      return item ? [{ key: type, label: edgeKindMeta(type).label, value: item.value, color: SERIES_TOKENS[index] }] : [];
+      return item
+        ? [{ key: type, label: TRUST_EDGE_LABELS[type] ?? edgeKindMeta(type).label, value: item.value, color: SERIES_TOKENS[index] }]
+        : [];
     });
     const rest = items.filter((item) => !TRUST_EDGE_ORDER.includes(item.key)).reduce((sum, item) => sum + item.value, 0);
     if (rest > 0) known.push({ key: '__other', label: 'Other', value: rest, color: NEUTRAL_SERIES });
@@ -783,24 +811,25 @@ function TrustEdges({ overview }) {
       <PanelHeader
         prominence="quiet"
         title="Trust relationships"
+        subtitle="Who is allowed to use or become what, by kind."
         actions={
           <Button as={Link} to="/access-graph" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Access graph
+            Open access graph
           </Button>
         }
       />
       <div className="mt-4">
         {charts.trustEdgesByType !== null &&
           (slices.length === 0 ? (
-            <ClearState compact title="No trust edges" description="No role in your scope trusts another principal or service." />
+            <ClearState compact title="No trust relationships" description="No role in these accounts lets another identity or service use it." />
           ) : (
-            <CompositionDonut data={slices} total={kpis.trustEdges ?? undefined} centerLabel="Trust edges" size={164} />
+            <CompositionDonut data={slices} total={kpis.trustEdges ?? undefined} centerLabel="Relationships" size={164} />
           ))}
         {(kpis.trustEdges !== null || kpis.crossAccountTrustEdges !== null) && (
           <dl className={cn('grid grid-cols-2 gap-4', charts.trustEdgesByType !== null && 'mt-4 border-t border-line pt-3')}>
-            {kpis.trustEdges !== null && <Figure label="Trust edges" value={formatNumber(kpis.trustEdges)} />}
+            {kpis.trustEdges !== null && <Figure label="Trust relationships" value={formatNumber(kpis.trustEdges)} />}
             {kpis.crossAccountTrustEdges !== null && (
-              <Figure label="Cross-account" value={formatNumber(kpis.crossAccountTrustEdges)} />
+              <Figure label="Reach another AWS account" value={formatNumber(kpis.crossAccountTrustEdges)} />
             )}
           </dl>
         )}
@@ -829,14 +858,19 @@ function CredentialUse({ overview }) {
 
   return (
     <>
-      <PanelHeader prominence="quiet" title="Credential use" subtitle="Each credential by when CloudTrail last saw it used." />
+      <PanelHeader
+        prominence="quiet"
+        title="When credentials were last used"
+        subtitle="Each credential by when it was last used: the later of the AWS activity log (CloudTrail) and AWS's own last-used date."
+      />
       <div className="mt-3">
         {!activity ? (
           <p className="text-[11.5px] leading-relaxed text-ink-3">
-            CloudTrail activity could not be read for this scope, so when credentials were last used is unknown.
+            The AWS activity log (CloudTrail) could not be read for these accounts, so when credentials were last used is not
+            known.
           </p>
         ) : total === 0 ? (
-          <ClearState compact title="No credentials recorded" description="No identity in your scope holds a credential." />
+          <ClearState compact title="No credentials recorded" description="No identity in these accounts and regions uses a credential." />
         ) : (
           <BarList items={items} total={total} />
         )}
@@ -856,7 +890,7 @@ function EventVolume({ overview }) {
     () =>
       (charts.eventVolume ?? []).map((point) => ({
         label: dayLabel(point.date),
-        subtitle: 'CloudTrail events that day',
+        subtitle: 'Events in the AWS activity log that day',
         count: point.count,
       })),
     [charts.eventVolume],
@@ -867,13 +901,13 @@ function EventVolume({ overview }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Event volume"
-        subtitle={`CloudTrail events per day over the last 30 days, in the accounts in your scope${
-          activity && total > 0 ? ` - ${formatNumber(total)} in all` : ''
+        title="AWS activity per day"
+        subtitle={`Events recorded in the AWS activity log (CloudTrail) each day for the last 30 days${
+          activity && total > 0 ? `, ${formatNumber(total)} in all` : ''
         }.`}
         actions={
           <Button as={Link} to="/activity" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Activity
+            Open activity
           </Button>
         }
       />
@@ -882,11 +916,11 @@ function EventVolume({ overview }) {
           <EmptyState
             compact
             icon={LineChart}
-            title="No CloudTrail data"
-            description="CloudTrail could not be read for this scope, so daily event volume is not measured."
+            title="No activity log data"
+            description="The AWS activity log (CloudTrail) could not be read for these accounts, so daily activity is not measured."
           />
         ) : total === 0 ? (
-          <EmptyState compact icon={LineChart} title="No events in 30 days" description="CloudTrail recorded no events in your scope over the last 30 days." />
+          <EmptyState compact icon={LineChart} title="Nothing to show for this period" description="The AWS activity log recorded no events in these accounts over the last 30 days." />
         ) : (
           /* Bars, not a line: each day is its own count, and a line would
              invent values between days. */
@@ -899,12 +933,13 @@ function EventVolume({ overview }) {
 
 /* ── Behaviour (genome) ───────────────────────────────────────────────────── */
 
-function BehaviourPanel({ query, wide }) {
+function BehaviourPanel({ query }) {
   const data = query.data;
   const header = (
     <PanelHeader
       prominence="quiet"
-      title="Behaviour baselines"
+      title="Normal behaviour learned"
+      subtitle="Each workload first learns what it usually does, so unusual activity can be spotted."
       actions={
         <Button as={Link} to="/genome" variant="secondary" size="sm" iconRight={ArrowRight}>
           Open NHI Genome
@@ -928,7 +963,7 @@ function BehaviourPanel({ query, wide }) {
       <>
         {header}
         <div className="mt-4">
-          <InlineError error={query.error} onRetry={query.refetch} label="Behaviour data unavailable" />
+          <InlineError error={query.error} onRetry={query.refetch} label="Normal-behaviour figures could not be loaded" />
         </div>
       </>
     );
@@ -937,8 +972,8 @@ function BehaviourPanel({ query, wide }) {
   const { cards, recentlyBaselined } = data;
   const stats = [
     { label: 'Watched', value: cards.watched },
-    { label: 'Established', value: cards.established, tone: 'text-low' },
-    { label: 'No baseline yet', value: cards.learning },
+    { label: 'Learned', value: cards.established, tone: 'text-low' },
+    { label: 'Still learning', value: cards.learning },
   ];
   const coverage =
     cards.watched > 0 && cards.established !== null ? Math.round((cards.established / cards.watched) * 100) : null;
@@ -964,21 +999,21 @@ function BehaviourPanel({ query, wide }) {
       </dl>
       {coverage !== null && (
         <div className="mt-3 flex items-center gap-3">
-          <Meter value={coverage} tone="low" height={6} className="min-w-0 flex-1" label="Baseline coverage" />
+          <Meter value={coverage} tone="low" height={6} className="min-w-0 flex-1" label="Share of watched workloads with normal behaviour learned" />
           <span data-numeric="" className="shrink-0 text-[12px] text-ink-3">
-            {coverage}% baselined
+            {coverage}% of watched learned
           </span>
         </div>
       )}
 
-      <div className={cn('mt-4 min-w-0', wide && '@min-[52rem]:max-w-none')}>
-        <p className="text-[12px] font-semibold text-ink-2">Recently baselined</p>
+      <div className="mt-4 min-w-0">
+        <p className="text-[12px] font-semibold text-ink-2">Recently learned</p>
         {recentlyBaselined.length === 0 ? (
           <EmptyState
             compact
             icon={ScanEye}
-            title="No baseline established yet"
-            description="Each workload identity learns its normal behaviour first. Baselines appear here as learning completes."
+            title="Nothing learned yet"
+            description="Each workload learns its normal behaviour first. Workloads appear here as their learning completes."
           />
         ) : (
           <ul className="mt-1 flex flex-col divide-y divide-line">
@@ -994,9 +1029,11 @@ function BehaviourPanel({ query, wide }) {
                       {row.region ? ` · ${row.region}` : ''}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[11px] text-ink-3">{formatRelative(row.occurredAt)}</span>
+                  <span className="shrink-0 text-[11px] text-ink-3" title={formatDateTime(row.occurredAt)}>
+                    {formatRelative(row.occurredAt)}
+                  </span>
                   <Tag tone={row.version ? 'info' : 'low'} size="sm">
-                    {row.version ? `Version ${row.version}` : 'Established'}
+                    {row.version ? `Updated, version ${row.version}` : 'Learned'}
                   </Tag>
                 </Link>
               </li>
@@ -1024,8 +1061,8 @@ function FindingsMiniPanel({ query, summary }) {
     return (
       <ClearState
         compact
-        title="No live exposures"
-        description="Nothing is currently flagged across the connected repositories, or everything found has been reviewed and accepted."
+        title="No exposed secrets"
+        description="Nothing is flagged in the connected repositories right now, or everything found has been reviewed and marked safe."
       />
     );
   }
@@ -1060,13 +1097,13 @@ function FindingsMiniPanel({ query, summary }) {
 
       <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
         <div>
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">GitHub</p>
+          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">In GitHub</p>
           <p data-numeric="" className="mt-0.5 font-display text-[17px] font-bold text-ink">
             {formatNumber(summary.byPlatform.github)}
           </p>
         </div>
         <div>
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">CodeCommit</p>
+          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">In CodeCommit</p>
           <p data-numeric="" className="mt-0.5 font-display text-[17px] font-bold text-ink">
             {formatNumber(summary.byPlatform.codecommit)}
           </p>
@@ -1075,7 +1112,7 @@ function FindingsMiniPanel({ query, summary }) {
 
       {summary.detectors.length > 0 && (
         <div className="border-t border-line pt-3">
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">Most frequent detectors</p>
+          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">Most common kinds of secret</p>
           <ul className="mt-2 flex flex-col gap-1.5">
             {summary.detectors.slice(0, 4).map((entry) => (
               <li key={entry.key} className="flex items-baseline justify-between gap-3">
@@ -1100,10 +1137,11 @@ function WeakestIdentities({ query }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Lowest posture scores"
+        title="Lowest security scores"
+        subtitle="Start fixing here."
         actions={
           <Button as={Link} to="/posture" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Posture
+            All scores
           </Button>
         }
       />
@@ -1116,8 +1154,8 @@ function WeakestIdentities({ query }) {
           <EmptyState
             compact
             icon={Gauge}
-            title="No posture scores yet"
-            description="Identities appear here once the posture service has scored them."
+            title="No security scores yet"
+            description="Identities appear here once they have been scored, after a discovery scan."
           />
         ) : (
           <ul className="flex flex-col divide-y divide-line">
@@ -1128,7 +1166,7 @@ function WeakestIdentities({ query }) {
                   className="group flex items-center gap-3 py-2.5"
                 >
                   {row.score === null ? (
-                    <span className="grid size-9 place-items-center text-[12px] text-ink-3">-</span>
+                    <span className="grid size-9 place-items-center text-center text-[10px] leading-tight text-ink-3">Not scored</span>
                   ) : (
                     <ScoreRing score={Math.round(row.score)} size={36} />
                   )}
@@ -1143,7 +1181,7 @@ function WeakestIdentities({ query }) {
                     </span>
                   </span>
                   <span className="shrink-0 text-right text-[11.5px] text-ink-3" data-numeric="">
-                    {formatNumber(row.checksFailed)} failing
+                    {formatNumber(row.checksFailed)} failed {row.checksFailed === 1 ? 'check' : 'checks'}
                   </span>
                 </Link>
               </li>
@@ -1161,10 +1199,11 @@ function ExpiringCredentials({ overview, loading, failed }) {
     <>
       <PanelHeader
         prominence="quiet"
-        title="Expiring within 30 days"
+        title="Expiring in the next 30 days"
+        subtitle="Credentials to replace before they stop working."
         actions={
           <Button as={Link} to="/credentials?max_days_until_expiry=30" variant="secondary" size="sm" iconRight={ArrowRight}>
-            All
+            All expiring
           </Button>
         }
       />
@@ -1174,7 +1213,7 @@ function ExpiringCredentials({ overview, loading, failed }) {
         ) : failed ? (
           <Unavailable source="discovery" />
         ) : rows.length === 0 ? (
-          <ClearState compact title="Nothing expires soon" description="No credential in your scope expires in the next 30 days." />
+          <ClearState compact title="Nothing expires soon" description="No credential in these accounts and regions expires in the next 30 days." />
         ) : (
           <>
             <ul className="flex flex-col divide-y divide-line">
@@ -1203,7 +1242,7 @@ function ExpiringCredentials({ overview, loading, failed }) {
             </ul>
             {rows.length > 6 && (
               <p className="mt-2 text-[11.5px] text-ink-3">
-                {formatNumber(rows.length - 6)} more {rows.length >= 10 ? 'or later ' : ''}in the credential list.
+                {formatNumber(rows.length - 6)} more {rows.length >= 10 ? 'or later ' : ''}in All expiring.
               </p>
             )}
           </>
@@ -1219,14 +1258,14 @@ function TopOwners({ overview, loading, failed }) {
   const owned = items.reduce((sum, item) => sum + item.value, 0);
   return (
     <>
-      <PanelHeader prominence="quiet" title="Identities by owner" />
+      <PanelHeader prominence="quiet" title="Who owns them" subtitle="Identities by their owner tag. Select an owner to list them." />
       <div className="mt-3">
         {loading ? (
           <ChartSkeleton height={180} bars={5} />
         ) : failed ? (
           <Unavailable source="discovery" />
         ) : items.length === 0 ? (
-          <EmptyState compact icon={Users} title="No owner tags" description="No identity in your scope carries an owner tag yet." />
+          <EmptyState compact icon={Users} title="No owner recorded" description="No identity in these accounts and regions has an owner tag yet." />
         ) : (
           <>
             <BarList
@@ -1236,7 +1275,7 @@ function TopOwners({ overview, loading, failed }) {
             />
             <p className="mt-2 text-[11.5px] text-ink-3" data-numeric="">
               {formatNumber(Math.max(0, overview.kpis.totalIdentities - owned))} of {formatNumber(overview.kpis.totalIdentities)}{' '}
-              identities are not among the owners listed{items.length >= 10 ? ' (top 10 shown)' : ''}.
+              identities have no owner listed here{items.length >= 10 ? ' (top 10 owners shown)' : ''}.
             </p>
           </>
         )}
@@ -1255,7 +1294,7 @@ function TopOwners({ overview, loading, failed }) {
 function PostureBanner({ query }) {
   const data = query.data;
   if (query.isError && !data) {
-    return <InlineError error={query.error} onRetry={query.refetch} label="Posture score unavailable" />;
+    return <InlineError error={query.error} onRetry={query.refetch} label="Security score could not be loaded" />;
   }
   if (!data) {
     return (
@@ -1279,11 +1318,11 @@ function PostureBanner({ query }) {
             <Gauge aria-hidden="true" className="size-6" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Posture score</p>
+            <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Security score (0-100)</p>
             <p className="mt-1 text-[13px] font-semibold text-ink">No score yet</p>
             <p className="mt-0.5 text-[12.5px] text-ink-3">
-              The posture service has not scored this workspace's identities. The score appears after its next
-              evaluation.
+              This workspace's identities have not been scored yet. The score appears after the next discovery scan is
+              scored.
             </p>
           </div>
           <Button as={Link} to="/posture" variant="secondary" size="sm" iconRight={ArrowRight}>
@@ -1308,14 +1347,14 @@ function PostureBanner({ query }) {
         <div className="flex items-center gap-4">
           <ScoreRing score={score} size={76} grade={fleet.grade} />
           <div className="min-w-0">
-            <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Posture score</p>
+            <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Security score (0-100)</p>
             <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
               <BandTag score={score} />
               {fleet.grade && <span className="font-medium">Grade {fleet.grade}</span>}
             </p>
             <p className="mt-1.5 flex flex-wrap items-center gap-1 text-[12px] text-ink-3" data-numeric="">
               {delta === null ? (
-                <span>First score - no change to compare yet</span>
+                <span>First score, nothing to compare with yet</span>
               ) : (
                 <>
                   <Delta value={delta} />
@@ -1324,13 +1363,17 @@ function PostureBanner({ query }) {
               )}
             </p>
             <p className="mt-0.5 text-[11.5px] text-ink-3" data-numeric="">
-              {formatNumber(fleet.scored)} {fleet.scored === 1 ? 'identity' : 'identities'} scored
-              {data.computedAt ? ` · ${formatRelative(data.computedAt)}` : ''}
+              Average of {formatNumber(fleet.scored)} {fleet.scored === 1 ? 'identity' : 'identities'}
+              {data.computedAt ? (
+                <span title={formatDateTime(data.computedAt)}> · scored {formatRelative(data.computedAt)}</span>
+              ) : (
+                ''
+              )}
             </p>
           </div>
         </div>
 
-        <PostureFact label="Weakest area" className="@min-[60rem]:border-l @min-[60rem]:border-line @min-[60rem]:pl-8">
+        <PostureFact label="Weakest security area" className="@min-[60rem]:border-l @min-[60rem]:border-line @min-[60rem]:pl-8">
           {weakest ? (
             <>
               <span className="block truncate text-[14px] font-semibold text-ink">{weakest.name}</span>
@@ -1343,14 +1386,14 @@ function PostureBanner({ query }) {
           )}
         </PostureFact>
 
-        <PostureFact label="Biggest quick win" className="@min-[60rem]:border-l @min-[60rem]:border-line @min-[60rem]:pl-8">
+        <PostureFact label="Fix that helps most" className="@min-[60rem]:border-l @min-[60rem]:border-line @min-[60rem]:pl-8">
           {win ? (
             <>
               <span className="line-clamp-2 text-[13.5px] leading-snug font-semibold text-ink" title={win.title}>
                 {win.title}
               </span>
               <span className="mt-0.5 block text-[12px] text-ink-3" data-numeric="">
-                <span className="font-semibold text-low">+{gain}</span> to the score · {formatNumber(win.identities)}{' '}
+                <span className="font-semibold text-low">+{gain}</span> to the overall score · fixes {formatNumber(win.identities)}{' '}
                 {win.identities === 1 ? 'identity' : 'identities'}
               </span>
             </>
@@ -1361,8 +1404,9 @@ function PostureBanner({ query }) {
 
         <div className="@min-[44rem]:justify-self-start @min-[60rem]:justify-self-end">
           <Button as={Link} to="/posture" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Open Posture
+            See what to fix
           </Button>
+
         </div>
       </div>
     </Panel>

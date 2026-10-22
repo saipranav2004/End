@@ -1,3 +1,5 @@
+import { edgeKindMeta } from './graphModel';
+
 /**
  * The graph's visual language.
  *
@@ -91,10 +93,10 @@ export const KIND_LABEL = {
   credential: 'Credential',
   resource: 'Resource',
   account: 'Account',
-  federated: 'Federated',
+  federated: 'Company sign-in',
   service: 'AWS service',
-  other: 'Not inventoried',
-  more: 'Folded',
+  other: 'Not in your inventory',
+  more: 'Hidden',
 };
 
 /**
@@ -104,26 +106,35 @@ export const KIND_LABEL = {
  * inferred from a legend is a colour that gets ignored.
  */
 export function riskReason(node) {
-  if (node.isAdmin) return 'Administrator privilege';
+  if (node.isAdmin) return 'Full administrator access';
   if (node.publicPolicy) return 'Publicly accessible';
   if (node.kind === 'credential' && node.stale) return `Unused for ${node.lastUsedDays} days`;
   return null;
 }
 
 /**
- * Edge styling. Blue for every relationship - dashed where it is configured
- * (a trust policy, a binding), solid where CloudTrail saw it used - and red
- * dashed where it crosses into another AWS account. The service computes no
- * escalation paths, so no edge is drawn as one.
+ * Edge styling, one style per edge group (see EDGE_GROUPS in graphModel.js),
+ * so every edge kind has a legend entry:
+ *   uses          solid blue, heavier - the role an identity runs as
+ *   trust         dashed blue - configured in a trust policy
+ *   observed      solid grey - CloudTrail saw the call
+ *   crossAccount  dashed red - either end is in another AWS account
+ * Still two hues: grey is the neutral ink, so the validated pair above holds.
+ * The service computes no escalation paths, so no edge is drawn as one.
  */
 export const EDGE_STYLE = {
-  base: { stroke: 'var(--t-graph-flow)', strokeWidth: 1.7, dash: '8 6' },
-  observed: { stroke: 'var(--t-graph-flow)', strokeWidth: 1.7, dash: null },
+  uses: { stroke: 'var(--t-graph-flow)', strokeWidth: 2.2, dash: null },
+  trust: { stroke: 'var(--t-graph-flow)', strokeWidth: 1.7, dash: '8 6' },
+  observed: { stroke: 'var(--t-ink-3)', strokeWidth: 1.5, dash: null },
   crossAccount: { stroke: 'var(--t-graph-risk)', strokeWidth: 1.9, dash: '8 6' },
 };
 
+/** Which group an edge is drawn as: crossing accounts wins, then its heaviest kind. */
+export function edgeGroupFor(edge) {
+  if (edge.crossAccount) return 'crossAccount';
+  return edgeKindMeta(edge.kind).group ?? 'trust';
+}
+
 export function edgeStyleFor(edge) {
-  if (edge.crossAccount) return EDGE_STYLE.crossAccount;
-  if (edge.observed && !edge.configured) return EDGE_STYLE.observed;
-  return EDGE_STYLE.base;
+  return EDGE_STYLE[edgeGroupFor(edge)] ?? EDGE_STYLE.trust;
 }

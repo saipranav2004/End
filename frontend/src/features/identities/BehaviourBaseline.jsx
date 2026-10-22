@@ -37,20 +37,20 @@ export function BehaviourBaseline({ identity }) {
     return (
       <Strip>
         <Tag tone="low" size="sm" dot>
-          Baseline established
+          Normal behaviour learned
         </Tag>
         <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
-          NHI Genome has known this identity’s normal behaviour since{' '}
+          NHI Genome has known what this identity usually does since{' '}
           <span title={formatDateTime(established.occurred_at)}>{formatDate(established.occurred_at)}</span> and flags
-          departures from it.
+          anything unusual.
           {open ? (
-            <span className="font-medium text-high"> {formatNumber(open)} open {open === 1 ? 'anomaly' : 'anomalies'}.</span>
+            <span className="font-medium text-high"> {formatNumber(open)} unusual {open === 1 ? 'activity is' : 'activities are'} open.</span>
           ) : (
-            ' Nothing is open.'
+            ' Nothing unusual is open.'
           )}
         </span>
         <Button variant="secondary" size="sm" as={Link} to={open ? `${route}?tab=timeline` : route} icon={Dna}>
-          {open ? 'See the anomalies' : 'Open in NHI Genome'}
+          {open ? 'See the unusual activity' : 'Open in NHI Genome'}
         </Button>
       </Strip>
     );
@@ -59,17 +59,17 @@ export function BehaviourBaseline({ identity }) {
   return (
     <Strip>
       <Tag tone={learning ? 'medium' : 'neutral'} size="sm" dot>
-        {learning ? 'Learning its baseline' : 'Not learning yet'}
+        {learning ? 'Learning its normal behaviour' : 'Normal behaviour not learned yet'}
       </Tag>
       <span className="min-w-0 flex-1 text-[12.5px] text-ink-2">
         {learning ? (
           <>
-            NHI Genome started learning this identity’s normal behaviour{' '}
+            NHI Genome started learning what this identity usually does{' '}
             <span title={formatDateTime(learning.occurred_at)}>{formatRelative(learning.occurred_at)}</span>. Nothing is
-            flagged until the baseline is established.
+            flagged as unusual until it has learned (about 30 days).
           </>
         ) : (
-          'NHI Genome reads this identity’s calls; its baseline starts once the behaviour pipeline has learned from them. You can already see its fingerprint and calls.'
+          'NHI Genome learns what this identity usually does from its calls (about 30 days), then flags unusual activity. It has not started for this identity yet; you can already see its calls there.'
         )}
       </span>
       <Button variant="ghost" size="sm" as={Link} to={route} icon={Dna}>

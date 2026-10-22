@@ -33,21 +33,21 @@ export const SIGNALS = [
     param: 'is_publicly_accessible',
     value: 'true',
     label: 'Publicly accessible',
-    hint: 'Reachable from the internet',
+    hint: 'Can be reached from the internet',
   },
   {
     key: 'stale',
     param: 'min_idle_days',
     value: '90',
-    label: 'Stale 90+ days',
-    hint: 'Last recorded activity more than 90 days ago',
+    label: 'Unused for 90+ days',
+    hint: 'No recorded activity in the last 90 days',
   },
   {
     key: 'idle',
     param: 'min_idle_days',
     value: '30',
     label: 'Idle 30+ days',
-    hint: 'Last recorded activity more than 30 days ago',
+    hint: 'No recorded activity in the last 30 days',
   },
 ];
 
@@ -82,9 +82,9 @@ export const SORT_FIELDS = [
   { value: 'status', label: 'Status' },
   { value: 'created_at_aws', label: 'Created in AWS' },
   { value: 'age_days', label: 'Age' },
-  { value: 'idle_days', label: 'Idle days' },
-  { value: 'bound_credentials_count', label: 'Bound credentials' },
-  { value: 'permission_utilization_pct', label: 'Permissions used' },
+  { value: 'idle_days', label: 'Days idle' },
+  { value: 'bound_credentials_count', label: 'Number of credentials' },
+  { value: 'permission_utilization_pct', label: 'Share of permissions used' },
 ];
 
 export function readSort(searchParams) {
@@ -146,9 +146,9 @@ export function describeFilters(searchParams) {
   if (owner) chips.push({ key: 'owner', label: 'Owner', value: owner });
 
   if (searchParams.get('is_publicly_accessible') === 'true') {
-    chips.push({ key: 'is_publicly_accessible', label: 'Signal', value: 'Publicly accessible' });
+    chips.push({ key: 'is_publicly_accessible', label: 'Risk', value: 'Publicly accessible' });
   }
   const idle = searchParams.get('min_idle_days');
-  if (idle) chips.push({ key: 'min_idle_days', label: 'Signal', value: `Idle ${idle}+ days` });
+  if (idle) chips.push({ key: 'min_idle_days', label: 'Risk', value: Number(idle) >= 90 ? `Unused for ${idle}+ days` : `Idle ${idle}+ days` });
   return chips;
 }

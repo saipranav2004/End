@@ -15,11 +15,11 @@ import { useEventState } from './eventState';
 
 const SECTIONS = [
   { value: 'events', label: 'Events' },
-  { value: 'heatmap', label: 'Heatmap' },
-  { value: 'resources', label: 'Resources' },
+  { value: 'heatmap', label: 'Busiest hours' },
+  { value: 'resources', label: 'Resources used' },
   { value: 'ips', label: 'Source IPs' },
-  { value: 'errors', label: 'Errors' },
-  { value: 'cross', label: 'Cross-account' },
+  { value: 'errors', label: 'Failed calls' },
+  { value: 'cross', label: 'Other accounts' },
   { value: 'sessions', label: 'Sessions' },
   { value: 'credentials', label: 'Credentials used' },
 ];
@@ -54,7 +54,7 @@ export function IdentityActivity({ identityId }) {
             <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 sm:px-5">
               <RangePicker state={state} patch={patch} />
               {['resources', 'ips', 'credentials'].includes(section) && (
-                <span className="text-[12px] text-ink-3">Select a row to list its events.</span>
+                <span className="text-[12px] text-ink-3">Select a row to see its calls.</span>
               )}
             </div>
             <EventFilters identityId={identityId} state={state} patch={patch} clearFilters={clearFilters} />

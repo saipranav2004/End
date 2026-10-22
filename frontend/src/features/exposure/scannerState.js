@@ -32,25 +32,25 @@ export function describeExposureError(error) {
   if (error?.code === 'TENANT_NOT_PROVISIONED') {
     return {
       title: 'Your workspace is still being set up',
-      message: 'Findings show up here once the first credential scan of your repositories has finished.',
+      message: 'Secrets show up here once the first scan of your code repositories has finished.',
     };
   }
   if (status === 403) {
     return {
-      title: 'Exposed credentials are limited to administrators',
-      message: 'Your role cannot open credential exposure findings. Ask an administrator if you need them.',
+      title: 'Exposed secrets are limited to administrators',
+      message: 'Your role cannot see secrets found in code. Ask an administrator if you need them.',
     };
   }
   if (status === 404) {
     return {
-      title: 'Credential exposure is not available here',
-      message: 'This server does not serve credential exposure findings. It may not be enabled for this deployment.',
+      title: 'Exposed secrets are not available here',
+      message: 'Code scanning is not switched on for this installation. Ask your administrator or contact support.',
     };
   }
   if (status === 429) {
     return {
       title: 'Too many requests',
-      message: 'The API is rate limiting this session. Wait a moment and try again.',
+      message: 'The service is limiting how often this session can ask. Wait a moment and try again.',
     };
   }
   if (error?.code === 'NETWORK' || error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT') {
@@ -61,12 +61,12 @@ export function describeExposureError(error) {
   }
   if (status >= 500) {
     return {
-      title: 'Credential exposure data failed to load',
-      message: `${error?.message || 'The service failed while reading findings.'} Try again in a moment.`,
+      title: 'Exposed secrets could not be loaded',
+      message: `${error?.message || 'The service failed while reading them.'} Try again in a moment.`,
     };
   }
   return {
-    title: 'Credential exposure data failed to load',
+    title: 'Exposed secrets could not be loaded',
     message: error?.message || 'The service returned an unexpected error.',
   };
 }
@@ -146,22 +146,22 @@ export const DEEP_SCAN_STATES = {
   not_started: {
     label: 'Not started',
     tone: 'neutral',
-    description: 'No deep scan has ever been requested for this repository.',
+    description: 'Its full history has never been scanned.',
   },
   running: {
     label: 'Running',
     tone: 'info',
-    description: 'Walking every commit from the first one to HEAD.',
+    description: 'Reading every commit, from the first one to the latest.',
   },
   complete: {
-    label: 'Complete',
+    label: 'Finished',
     tone: 'low',
-    description: 'The whole history has been read. Any secret it found is in the live set.',
+    description: 'The whole history has been read. Any secret it found is on Exposed secrets.',
   },
   failed: {
     label: 'Failed',
     tone: 'critical',
-    description: 'The walk itself raised. Requesting it again starts a fresh attempt.',
+    description: 'The scan stopped before it finished. Starting it again makes a fresh attempt.',
   },
 };
 
@@ -171,7 +171,7 @@ export function deepScanStateMeta(value) {
     DEEP_SCAN_STATES[key] ?? {
       label: value ? String(value) : 'Unknown',
       tone: 'neutral',
-      description: 'The service reported a state this dashboard does not recognise.',
+      description: 'The service reported a state this console does not recognise.',
     }
   );
 }
@@ -189,21 +189,21 @@ export function describeDeepScanFailure(status) {
   const raw = String(status?.error || '');
   if (/AccessDenied|UnauthorizedOperation|not authorized/i.test(raw)) {
     return {
-      cause: 'The scanner is missing an IAM permission on this repository.',
-      fix: 'Re-check the read permissions granted to the scanner role, then request the scan again.',
+      cause: 'The scanner is not allowed to read this repository.',
+      fix: 'Check the read permissions given to the scanner role on the Integrations page, then start the scan again.',
       raw,
     };
   }
   if (/installation|revoked|404|Not Found|credentials/i.test(raw)) {
     return {
-      cause: 'The GitHub installation for this client looks revoked or removed.',
-      fix: 'Re-install the app for this organisation, then request the scan again.',
+      cause: 'GitHub access for this repository looks revoked or removed.',
+      fix: 'Give the scanner access to the GitHub organisation again, then start the scan again.',
       raw,
     };
   }
   return {
-    cause: 'The history walk raised before it finished.',
-    fix: 'Requesting it again starts a fresh attempt and clears this error.',
+    cause: 'The scan stopped before it finished.',
+    fix: 'Starting it again makes a fresh attempt and clears this error.',
     raw,
   };
 }
@@ -219,26 +219,27 @@ export function describeDeepScanRequestError(error) {
   const status = error?.status;
   const message = error?.message || '';
   if (status === 403) {
-    return { title: 'Administrators only', message: 'Your role cannot request deep scans.', retryable: false };
+    return { title: 'Administrators only', message: 'Your role cannot start full-history scans.', retryable: false };
   }
   if (status === 404) {
     return {
-      title: 'Unknown client',
-      message: message || 'The scanner has no repositories for this client id in your workspace.',
+      title: 'Client ID not found',
+      message: message || 'The scanner has no repositories for this client ID in your workspace. Check the ID and try again.',
       retryable: false,
     };
   }
   if (status === 400) {
     return {
-      title: 'This repository cannot be deep-scanned',
-      message: message || 'The repository was given in the wrong shape - a bare name for CodeCommit, owner/repo for GitHub.',
+      title: 'This repository cannot be scanned',
+      message: message || 'Check the repository name: just the name for CodeCommit, owner/name for GitHub.',
       retryable: false,
     };
   }
   if (error?.code === 'NETWORK') {
     return { title: 'Cannot reach the service', message, retryable: true };
   }
-  return { title: 'Could not request the deep scan', message: message || 'The service returned an unexpected error.', retryable: true };
+  return { title: 'Could not start the scan', message: message || 'The service returned an unexpected error. Try again.', retryable: true };
+
 }
 
 /* ── Verdicts ─────────────────────────────────────────────────────────────── */
@@ -265,10 +266,11 @@ export function modelVerdict(finding) {
   const decision = String(finding?.ml_decision || '').toUpperCase();
   const score = Number.isFinite(finding?.ml_score) ? finding.ml_score : null;
   if (!decision && score === null) return null;
-  const real = decision === 'TRUE_POSITIVE';
+  /* The service has sent both spellings for "real". */
+  const real = decision === 'TRUE_POSITIVE' || decision === 'REAL_SECRET';
   const flagged = decision === 'FALSE_POSITIVE';
   return {
-    label: real ? 'Likely a real secret' : flagged ? 'Likely a false positive' : 'No decision',
+    label: real ? 'Likely a real secret' : flagged ? 'Likely a false alarm' : 'No opinion',
     tone: real ? 'high' : 'neutral',
     score,
     version: finding?.ml_model_version || null,

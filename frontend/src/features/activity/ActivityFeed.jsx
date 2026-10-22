@@ -18,7 +18,7 @@ export function ActivityFeed({ events, loading, error, onRetry, limit, emptyHint
       <EmptyState
         compact
         icon={Eye}
-        title="No CloudTrail events in this window"
+        title="No calls in this period"
         description={emptyHint || 'Nothing was recorded for this identity in the selected time range.'}
       />
     );
@@ -61,7 +61,7 @@ export function ActivityFeed({ events, loading, error, onRetry, limit, emptyHint
             >
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                 <p className="min-w-0 truncate text-[13px] font-semibold text-ink" title={event.event_name}>
-                  {event.event_name || 'Unnamed event'}
+                  {event.event_name || 'Unnamed call'}
                   <span className="ml-2 font-mono text-[11.5px] font-normal text-ink-3">{event.event_source}</span>
                 </p>
                 <time
@@ -81,9 +81,9 @@ export function ActivityFeed({ events, loading, error, onRetry, limit, emptyHint
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
                 {event.source_ip && <span className="font-mono">{event.source_ip}</span>}
                 {event.aws_region && <span>{event.aws_region}</span>}
-                <span className={mutating ? 'font-medium text-high' : ''}>{mutating ? 'Mutating' : 'Read-only'}</span>
+                <span className={mutating ? 'font-medium text-high' : ''}>{mutating ? 'Made changes' : 'Read-only'}</span>
                 {failed && <span className="font-medium text-critical">{event.error_code || 'Failed'}</span>}
-                {event.is_cross_account && <span className="font-medium text-medium">Cross-account</span>}
+                {event.is_cross_account && <span className="font-medium text-medium">Another AWS account</span>}
               </p>
             </Wrapper>
           </li>

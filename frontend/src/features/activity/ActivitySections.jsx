@@ -33,8 +33,8 @@ function Unavailable() {
     <EmptyState
       compact
       icon={DatabaseZap}
-      title="Event store unavailable"
-      description="CloudTrail events cannot be read right now, so this is unknown - not empty. Try again shortly."
+      title="The activity log could not be read"
+      description="The AWS activity log (CloudTrail) cannot be read right now, so this is unknown, not empty. Try again in a few minutes."
     />
   );
 }
@@ -107,7 +107,7 @@ export function ActivitySummary({ identityId, state }) {
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
         <MetricTile
-          label="Events"
+          label="Calls"
           value={counts.total}
           tone="brand"
           icon={Activity}
@@ -115,10 +115,10 @@ export function ActivitySummary({ identityId, state }) {
           className="animate-rise"
         />
         <MetricTile
-          label="Mutating"
+          label="Made changes"
           value={writes}
           tone={writes > 0 ? 'high' : 'low'}
-          caption={`Of ${formatNumber(counts.total)} calls in the window`}
+          caption={`Of ${formatNumber(counts.total)} calls in this period`}
           meter={percentValue(writes, counts.total)}
           meterLabel="Share of calls that changed something"
           className="animate-rise"
@@ -132,7 +132,7 @@ export function ActivitySummary({ identityId, state }) {
           caption={
             [
               typeof analytics?.error_rate_pct === 'number' ? `${analytics.error_rate_pct}% of calls` : null,
-              typeof analytics?.access_denied_rate_pct === 'number' ? `${analytics.access_denied_rate_pct}% denied by policy` : null,
+              typeof analytics?.access_denied_rate_pct === 'number' ? `${analytics.access_denied_rate_pct}% refused by a policy` : null,
             ]
               .filter(Boolean)
               .join(' · ') || 'Calls answered with an error'
@@ -145,7 +145,7 @@ export function ActivitySummary({ identityId, state }) {
           label="Source IPs"
           value={counts.ips}
           tone={counts.publicIps > 0 ? 'medium' : 'neutral'}
-          caption={counts.publicIps > 0 ? `${formatNumber(counts.publicIps)} public` : 'All private or AWS-internal'}
+          caption={counts.publicIps > 0 ? `${formatNumber(counts.publicIps)} from the public internet` : 'All from private or AWS addresses'}
           className="animate-rise"
           data-stagger=""
           style={{ '--stagger': 3 }}
@@ -155,27 +155,27 @@ export function ActivitySummary({ identityId, state }) {
       <Panel prominence="quiet" className="animate-rise">
         <PanelHeader
           prominence="quiet"
-          title="Shape of the window"
-          subtitle={`${range.title}, from the identity's own CloudTrail aggregates.`}
+          title="How it was used"
+          subtitle={`${range.title}, counted from the AWS activity log (CloudTrail).`}
         />
         {counts.total === 0 ? (
-          <p className="mt-3 text-[12.5px] text-ink-3">No calls were recorded in this window.</p>
+          <p className="mt-3 text-[12.5px] text-ink-3">No calls were recorded in this period. Try a longer range.</p>
         ) : (
           <div className="mt-3.5 grid gap-6 @min-[46rem]:grid-cols-3">
             <div>
               <ProportionBar
                 height={12}
                 total={counts.total}
-                ariaLabel={`${writes} mutating and ${counts.reads} read-only calls`}
+                ariaLabel={`${writes} calls made changes and ${counts.reads} only read`}
                 segments={[
-                  { key: 'mutating', label: 'Mutating', value: writes, color: 'var(--t-high)' },
+                  { key: 'mutating', label: 'Made changes', value: writes, color: 'var(--t-high)' },
                   { key: 'read', label: 'Read-only', value: counts.reads, color: 'var(--t-info)' },
                 ]}
               />
               <dl className="mt-3 flex flex-wrap gap-x-7 gap-y-2">
                 <div className="flex items-center gap-2">
                   <span aria-hidden="true" className="size-2.5 rounded-[3px] bg-high" />
-                  <dt className="text-[12px] text-ink-3">Mutating</dt>
+                  <dt className="text-[12px] text-ink-3">Made changes</dt>
                   <dd data-numeric="" className="text-[12.5px] font-semibold text-ink">
                     {formatNumber(writes)}
                   </dd>
@@ -269,7 +269,7 @@ export function HeatmapSection({ identityId, state }) {
   return (
     <SectionState query={query}>
       {grid.rows.length === 0 ? (
-        <EmptyState compact icon={Activity} title="No calls in this window" description="Nothing to place on the clock." />
+        <EmptyState compact icon={Activity} title="No calls in this period" description="Nothing to place on the clock. Try a longer range." />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-separate border-spacing-[2px] text-left">
@@ -313,7 +313,7 @@ export function HeatmapSection({ identityId, state }) {
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[11.5px] text-ink-3">Hours are UTC. Darker cells mean more calls in that hour across the window.</p>
+          <p className="mt-2 text-[11.5px] text-ink-3">When each action is called, by hour of day (UTC). Darker cells mean more calls in that hour across the period.</p>
         </div>
       )}
     </SectionState>
@@ -332,11 +332,11 @@ export function ResourcesSection({ identityId, state, onFilter }) {
           <span data-numeric="" className="font-semibold text-ink">
             {formatNumber(query.data.total_resources)}
           </span>{' '}
-          {query.data.total_resources === 1 ? 'resource' : 'resources'} reached {eventRange(state).phrase}.
+          {query.data.total_resources === 1 ? 'resource' : 'resources'} used {eventRange(state).phrase}.
         </p>
       )}
       <DataGrid
-        caption="Resources this identity reached"
+        caption="Resources this identity used"
         rows={rows}
         rowKey={(row) => row.resource_arn}
         onRowClick={onFilter ? (row) => onFilter({ resource: row.resource_arn.slice(0, 256) }) : undefined}
@@ -360,10 +360,10 @@ export function ResourcesSection({ identityId, state, onFilter }) {
             width: '14%',
             cell: (row) => (
               <span className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[12px] text-ink-2">{row.account_id || '-'}</span>
+                <span className="font-mono text-[12px] text-ink-2">{row.account_id || 'Not recorded'}</span>
                 {row.is_cross_account && (
                   <Tag tone="medium" size="sm">
-                    Cross-account
+                    Another account
                   </Tag>
                 )}
               </span>
@@ -378,7 +378,7 @@ export function ResourcesSection({ identityId, state, onFilter }) {
           },
           {
             key: 'first',
-            header: 'First access',
+            header: 'First used',
             width: '10%',
             priority: 'wide',
             cell: (row) => (
@@ -388,11 +388,11 @@ export function ResourcesSection({ identityId, state, onFilter }) {
             ),
           },
           { key: 'reads', header: 'Reads', align: 'right', width: '8%', cell: (row) => <Num value={row.read_count} /> },
-          { key: 'writes', header: 'Writes', align: 'right', width: '8%', cell: (row) => <Num value={row.write_count} tone={row.write_count > 0 ? 'text-high' : undefined} /> },
-          { key: 'errors', header: 'Errors', align: 'right', width: '8%', cell: (row) => <Num value={row.error_count} tone={row.error_count > 0 ? 'text-critical' : undefined} /> },
+          { key: 'writes', header: 'Changes', align: 'right', width: '8%', cell: (row) => <Num value={row.write_count} tone={row.write_count > 0 ? 'text-high' : undefined} /> },
+          { key: 'errors', header: 'Failed', align: 'right', width: '8%', cell: (row) => <Num value={row.error_count} tone={row.error_count > 0 ? 'text-critical' : undefined} /> },
           {
             key: 'last',
-            header: 'Last access',
+            header: 'Last used',
             width: '10%',
             cell: (row) => (
               <span className="text-[12px] whitespace-nowrap text-ink-2" title={formatDateTime(row.last_access)}>
@@ -401,7 +401,7 @@ export function ResourcesSection({ identityId, state, onFilter }) {
             ),
           },
         ]}
-        emptyState={<EmptyState compact icon={Network} title="No resources reached" description="No call in this window named a resource." />}
+        emptyState={<EmptyState compact icon={Network} title="No resources used" description="No call in this period named a resource." />}
       />
     </SectionState>
   );
@@ -411,9 +411,9 @@ export function ResourcesSection({ identityId, state, onFilter }) {
 
 const IP_KIND = {
   private: { label: 'Private', tone: 'neutral' },
-  public: { label: 'Public', tone: 'medium' },
+  public: { label: 'Public internet', tone: 'medium' },
   aws_service: { label: 'AWS service', tone: 'info' },
-  unknown: { label: 'Not an IP', tone: 'neutral' },
+  unknown: { label: 'Not an IP address', tone: 'neutral' },
 };
 
 export function IpsSection({ identityId, state, onFilter }) {
@@ -444,11 +444,11 @@ export function IpsSection({ identityId, state, onFilter }) {
             ),
           },
           { key: 'events', header: 'Calls', align: 'right', width: '14%', cell: (row) => <Num value={row.event_count} /> },
-          { key: 'geo', header: 'Location', width: '18%', priority: 'wide', cell: (row) => <span className="text-[12px] text-ink-3">{row.geo_location || 'Not resolved'}</span> },
+          { key: 'geo', header: 'Location', width: '18%', priority: 'wide', cell: (row) => <span className="text-[12px] text-ink-3">{row.geo_location || 'Location unknown'}</span> },
           { key: 'first', header: 'First seen', width: '17%', cell: (row) => <When at={row.first_seen} /> },
           { key: 'last', header: 'Last seen', width: '17%', cell: (row) => <When at={row.last_seen} /> },
         ]}
-        emptyState={<EmptyState compact icon={Globe} title="No calls in this window" description="No source address was recorded." />}
+        emptyState={<EmptyState compact icon={Globe} title="No calls in this period" description="No source address was recorded." />}
       />
     </SectionState>
   );
@@ -473,7 +473,7 @@ export function ErrorsSection({ identityId, state, patch }) {
         <ClearState
           compact
           title="No failed calls"
-          description={activeEventFilters(state).length > 0 ? 'No failed call in this window matches the filters applied.' : 'Every call in this window succeeded.'}
+          description={activeEventFilters(state).length > 0 ? 'No failed call in this period matches the filters applied.' : 'Every call in this period succeeded.'}
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -494,19 +494,19 @@ export function ErrorsSection({ identityId, state, patch }) {
               </ul>
             </div>
             <div className="min-w-0">
-              <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Most denied action</p>
-              <p className="mt-1 truncate font-mono text-[13px] text-ink">{summary?.most_denied_action?.action || '-'}</p>
+              <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Most often refused action</p>
+              <p className="mt-1 truncate font-mono text-[13px] text-ink">{summary?.most_denied_action?.action || 'None'}</p>
               {summary?.most_denied_action && (
-                <p className="text-[11.5px] text-ink-3">{formatNumber(summary.most_denied_action.count)} denials</p>
+                <p className="text-[11.5px] text-ink-3">Refused {formatNumber(summary.most_denied_action.count)} times</p>
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Most denied resource</p>
+              <p className="text-[10.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">Most often refused resource</p>
               <p className="mt-1 truncate text-[13px] text-ink" title={summary?.most_denied_resource?.resource_arn}>
-                {summary?.most_denied_resource?.resource_name || summary?.most_denied_resource?.resource_arn || '-'}
+                {summary?.most_denied_resource?.resource_name || summary?.most_denied_resource?.resource_arn || 'None'}
               </p>
               {summary?.most_denied_resource && (
-                <p className="text-[11.5px] text-ink-3">{formatNumber(summary.most_denied_resource.count)} denials</p>
+                <p className="text-[11.5px] text-ink-3">Refused {formatNumber(summary.most_denied_resource.count)} times</p>
               )}
             </div>
           </div>
@@ -541,7 +541,7 @@ export function ErrorsSection({ identityId, state, patch }) {
                   cell: (row) => (
                     <span className="block min-w-0" title={row.error_message}>
                       <span className="block truncate text-[12.5px] font-medium text-critical">{row.error_code}</span>
-                      <span className="block truncate text-[11px] text-ink-3">{row.error_message || '-'}</span>
+                      <span className="block truncate text-[11px] text-ink-3">{row.error_message || 'No message'}</span>
                     </span>
                   ),
                 },
@@ -552,7 +552,7 @@ export function ErrorsSection({ identityId, state, patch }) {
                   priority: 'wide',
                   cell: (row) => (
                     <span className="block truncate text-[12px] text-ink-2" title={row.resource_arn}>
-                      {row.resource_name || row.resource_arn || '-'}
+                      {row.resource_name || row.resource_arn || 'No resource'}
                     </span>
                   ),
                 },
@@ -561,7 +561,7 @@ export function ErrorsSection({ identityId, state, patch }) {
                   header: 'Credential',
                   width: '13%',
                   priority: 'wide',
-                  cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{row.credential_name || '-'}</span>,
+                  cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{row.credential_name || 'Not matched'}</span>,
                 },
                 {
                   key: 'source',
@@ -570,8 +570,8 @@ export function ErrorsSection({ identityId, state, patch }) {
                   priority: 'wide',
                   cell: (row) => (
                     <span className="block min-w-0">
-                      <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || '-'}</span>
-                      <span className="block truncate text-[11px] text-ink-3">{row.aws_region || '-'}</span>
+                      <span className="block truncate font-mono text-[12px] text-ink-2">{row.source_ip || 'Not recorded'}</span>
+                      <span className="block truncate text-[11px] text-ink-3">{row.aws_region || ''}</span>
                     </span>
                   ),
                 },
@@ -606,14 +606,14 @@ export function CrossAccountSection({ identityId, state }) {
       {rows.length === 0 ? (
         <ClearState
           compact
-          title="No cross-account calls"
-          description={`Every call in this window stayed in account ${query.data?.identity_account || 'of the identity'}.`}
+          title="No calls into other AWS accounts"
+          description={`Every call in this period stayed in ${query.data?.identity_account ? `account ${query.data.identity_account}` : 'its own account'}.`}
         />
       ) : (
         <>
           <p className="mb-3 text-[12.5px] text-ink-3">
             {formatNumber(query.data.total_cross_account_events)} calls from account{' '}
-            <span className="font-mono text-ink-2">{query.data.identity_account}</span> reached resources in another account.
+            <span className="font-mono text-ink-2">{query.data.identity_account}</span> reached resources in another AWS account.
           </p>
           <DataGrid
             caption="Calls into other accounts"
@@ -663,8 +663,8 @@ export function SessionsSection({ identityId, state }) {
       )}
       {query.data?.truncated && (
         <p className="mb-3 rounded-[var(--radius-control)] border border-medium/25 bg-medium-soft px-3 py-2 text-[12px] text-ink-2">
-          The window held more events than are read to build sessions, so the oldest sessions may be incomplete. Narrow the time
-          range for a complete picture.
+          This period held more calls than are read to build sessions, so the oldest sessions may be incomplete. Choose a shorter
+          time range for a complete picture.
         </p>
       )}
       {rows.length > 0 && <SessionLanes sessions={rows} />}
@@ -681,7 +681,7 @@ export function SessionsSection({ identityId, state }) {
             width: '20%',
             cell: (row) => (
               <span className="block min-w-0">
-                <span className="block truncate font-mono text-[12.5px] text-ink">{row.session_name || '-'}</span>
+                <span className="block truncate font-mono text-[12.5px] text-ink">{row.session_name || 'Unnamed session'}</span>
                 {(row.credential_name || row.credential_arn) && (
                   <span className="block truncate text-[11px] text-ink-3" title={row.credential_arn}>
                     as {row.credential_name || row.credential_arn}
@@ -711,10 +711,10 @@ export function SessionsSection({ identityId, state }) {
             header: 'From',
             width: '14%',
             priority: 'wide',
-            cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{(row.source_ips ?? []).join(', ') || '-'}</span>,
+            cell: (row) => <span className="block truncate font-mono text-[12px] text-ink-2">{(row.source_ips ?? []).join(', ') || 'Not recorded'}</span>,
           },
         ]}
-        emptyState={<EmptyState compact icon={Activity} title="No sessions in this window" description="No call was recorded." />}
+        emptyState={<EmptyState compact icon={Activity} title="No sessions in this period" description="No call was recorded. Try a longer range." />}
       />
     </SectionState>
   );
@@ -825,7 +825,7 @@ export function CredentialsUsedSection({ identityId, state, onFilter }) {
           { key: 'first', header: 'First used', width: '13%', cell: (row) => <When at={row.first_used} /> },
           { key: 'last', header: 'Last used', width: '13%', cell: (row) => <When at={row.last_used} /> },
         ]}
-        emptyState={<EmptyState compact title="No credential used in this window" description="No call was recorded." />}
+        emptyState={<EmptyState compact title="No credential used in this period" description="No call was recorded. Try a longer range." />}
       />
     </SectionState>
   );
@@ -851,7 +851,7 @@ function When({ at }) {
 
 function ServiceChips({ services }) {
   const list = services ?? [];
-  if (list.length === 0) return <span className="text-[12px] text-ink-3">-</span>;
+  if (list.length === 0) return <span className="text-[12px] text-ink-3">None recorded</span>;
   return (
     <span className="flex min-w-0 flex-wrap gap-1" title={list.join(', ')}>
       {list.slice(0, 3).map((service) => (
@@ -866,7 +866,7 @@ function ServiceChips({ services }) {
 
 function ActionList({ actions }) {
   const list = actions ?? [];
-  if (list.length === 0) return <span className="text-[12px] text-ink-3">-</span>;
+  if (list.length === 0) return <span className="text-[12px] text-ink-3">None recorded</span>;
   return (
     <span className="flex min-w-0 flex-wrap gap-1" title={list.join(', ')}>
       {list.slice(0, 2).map((action) => (

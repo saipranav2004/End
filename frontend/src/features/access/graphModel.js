@@ -28,104 +28,160 @@ export const NODE_KINDS = {
   identity: {
     label: 'Identity',
     plural: 'Identities',
-    description: 'A workload that acts: a function, a task, an instance, a pipeline, an IAM user.',
+    description: 'A workload, service or automation that acts in your AWS accounts: a function, a task, an instance, a pipeline, an IAM user.',
   },
   credential: {
     label: 'Credential',
     plural: 'Credentials',
-    description: 'What an identity authenticates with: an IAM role, an access key, a secret.',
+    description: 'What an identity signs in with: an IAM role, an access key, a secret.',
   },
   resource: {
     label: 'Resource',
     plural: 'Resources',
-    description: 'Something an identity called, as recorded by CloudTrail.',
+    description: 'Something an identity used, as recorded in the AWS activity log (CloudTrail).',
   },
   account: {
     label: 'Account',
     plural: 'Accounts',
-    description: 'A whole AWS account, named as a principal in a trust policy.',
+    description: 'A whole AWS account, allowed to use a role by its trust policy.',
   },
   federated: {
-    label: 'Federated',
-    plural: 'Federated principals',
-    description: 'An OIDC or SAML provider that can be trusted to assume a role.',
+    label: 'Company sign-in',
+    plural: 'Company sign-ins',
+    description: 'A company single sign-on (SAML) or web identity (OIDC) provider that people or pipelines sign in through.',
   },
   service: {
     label: 'AWS service',
     plural: 'AWS services',
-    description: 'An AWS service principal trusted to assume a role.',
+    description: 'An AWS service, such as EC2 or Lambda, that may use a role on its own behalf.',
   },
   other: {
-    label: 'Not inventoried',
-    plural: 'Other principals',
-    description: 'An ARN the inventory has no record of in the current scope.',
+    label: 'Not in your inventory',
+    plural: 'Others',
+    description: 'Something named by an AWS address (ARN) that discovery has no record of in your current scope.',
   },
+};
+
+/**
+ * Edge groups: how an edge is drawn and listed in the legend. Every edge kind
+ * belongs to exactly one, so the legend names every line the canvas can draw.
+ */
+export const EDGE_GROUPS = {
+  uses: { label: 'Uses', description: 'The credential an identity runs as (instance profile, execution role, task role).' },
+  trust: { label: 'Allowed to use or switch to', description: "Set up in a role's trust policy: who may take on (assume) the role." },
+  observed: { label: 'Seen in the activity log', description: 'Calls recorded by the AWS activity log (CloudTrail) in the last 90 days.' },
+  crossAccount: { label: 'Reaches another AWS account', description: 'Either end is in a different AWS account.' },
 };
 
 /**
  * MAIN edge types, as the console names them.
  *
- * `weight` picks the edge a pair of nodes is drawn as when several connect
- * them. `observed` marks edges that come from CloudTrail calls rather than
- * from configuration. No edge type is an escalation: the service does not
- * compute escalation paths, so the graph does not claim any. A cross-account
- * edge is the one real risk signal an edge carries, and it is drawn as such.
+ * `label` reads from the source's side ("A <label> B"), `inbound` from the
+ * target's ("B <inbound> A"). `weight` picks the edge a pair of nodes is drawn
+ * as when several connect them. `observed` marks edges that come from
+ * CloudTrail calls rather than from configuration. No edge type is an
+ * escalation: the service does not compute escalation paths, so the graph
+ * does not claim any. A cross-account edge is the one real risk signal an
+ * edge carries, and it is drawn as such.
  */
 export const EDGE_KINDS = {
   cross_account: {
-    label: 'Crosses accounts',
+    label: 'Can switch to a role in another account',
+    inbound: 'Can be used from another account by',
+    group: 'trust',
     tone: 'high',
     weight: 7,
-    description: 'Can assume a role in a different AWS account.',
+    description: 'Can take on (assume) a role in a different AWS account.',
   },
   assume_role: {
-    label: 'Can assume',
+    label: 'Can switch to (assume)',
+    inbound: 'Can be assumed by',
+    group: 'trust',
     tone: 'high',
     weight: 6,
-    description: "The role's trust policy lets this principal call sts:AssumeRole on it.",
+    description: "The role's trust policy lets this principal take on the role's permissions.",
   },
-  federated_oidc: { label: 'OIDC federation', tone: 'high', weight: 6, description: 'Trusted through an OIDC provider.' },
-  federated_saml: { label: 'SAML federation', tone: 'high', weight: 6, description: 'Trusted through a SAML provider.' },
+  federated_oidc: {
+    label: 'Lets pipelines sign in through web identity (OIDC)',
+    inbound: 'Signed in through web identity (OIDC) by',
+    group: 'trust',
+    tone: 'high',
+    weight: 6,
+    description: 'People or pipelines signed in through an OIDC provider may use this role.',
+  },
+  federated_saml: {
+    label: 'Lets people sign in through company single sign-on (SAML)',
+    inbound: 'Signed in through company single sign-on (SAML) by',
+    group: 'trust',
+    tone: 'high',
+    weight: 6,
+    description: 'People signed in through company single sign-on may use this role.',
+  },
+  pass_role: {
+    label: 'Can hand a role to a service',
+    inbound: 'Can be handed to a service by',
+    group: 'trust',
+    tone: 'medium',
+    weight: 5,
+    description: 'Can give this role to an AWS service (iam:PassRole), which then acts with its permissions.',
+  },
   trusts: {
-    label: 'Named in trust policy',
+    label: 'Named in the trust policy of',
+    inbound: 'Trust policy names',
+    group: 'trust',
     tone: 'medium',
     weight: 5,
     description: "The role's trust policy names this principal.",
   },
   service_trust: {
-    label: 'Service trust',
+    label: 'AWS service may use',
+    inbound: 'May be used by the AWS service',
+    group: 'trust',
     tone: 'neutral',
     weight: 4,
-    description: 'An AWS service may assume the role on its own behalf.',
+    description: 'An AWS service, such as EC2, may use the role on its own behalf.',
   },
   bound_to: {
-    label: 'Runs as',
+    label: 'Uses',
+    inbound: 'Used by',
+    group: 'uses',
     tone: 'info',
     weight: 4,
-    description: 'The workload is bound to this credential (instance profile, execution role, task role).',
+    description: 'The credential this identity runs as (instance profile, execution role, task role).',
   },
-  uses: { label: 'Uses', tone: 'info', weight: 3, description: 'Uses this credential.' },
-  attached_to: { label: 'Attached to', tone: 'neutral', weight: 3, description: 'Attached to this principal.' },
-  manages: { label: 'Manages', tone: 'neutral', weight: 3, description: 'Manages this resource.' },
-  contains: { label: 'Contains', tone: 'neutral', weight: 2, description: 'Contains this resource.' },
+  uses: { label: 'Uses', inbound: 'Used by', group: 'uses', tone: 'info', weight: 3, description: 'Uses this credential.' },
+  attached_to: { label: 'Attached to', inbound: 'Has attached', group: 'uses', tone: 'neutral', weight: 3, description: 'Attached to this principal.' },
+  manages: { label: 'Manages', inbound: 'Managed by', group: 'uses', tone: 'neutral', weight: 3, description: 'Manages this resource.' },
+  contains: { label: 'Contains', inbound: 'Inside', group: 'uses', tone: 'neutral', weight: 2, description: 'Contains this resource.' },
   accesses: {
     label: 'Called',
+    inbound: 'Called by',
+    group: 'observed',
     tone: 'info',
     weight: 2,
     observed: true,
-    description: 'Successful API calls against this resource, recorded by CloudTrail.',
+    description: 'Successful calls against this resource, recorded by the AWS activity log (CloudTrail).',
   },
   created_by: {
     label: 'Created by',
+    inbound: 'Created',
+    group: 'observed',
     tone: 'neutral',
     weight: 1,
     observed: true,
-    description: 'The principal CloudTrail records as having created it.',
+    description: 'Who the AWS activity log (CloudTrail) records as having created it.',
   },
 };
 
 export function edgeKindMeta(type) {
-  return EDGE_KINDS[type] ?? { label: humanizeToken(type || 'related'), tone: 'neutral', weight: 0, description: '' };
+  const label = humanizeToken(type || 'related');
+  return EDGE_KINDS[type] ?? { label, inbound: `${label} (from)`, group: 'trust', tone: 'neutral', weight: 0, description: '' };
+}
+
+/** An edge's plain label from one end's side: 'out' reads source -> target. */
+export function edgeLabel(type, direction = 'out') {
+  const meta = edgeKindMeta(type);
+  return direction === 'in' ? meta.inbound : meta.label;
 }
 
 /** How many neighbours a hop shows before folding, and how many a click on the fold adds. */
