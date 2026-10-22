@@ -36,7 +36,7 @@ import { Button } from '../../ui/Button';
 import { Meter } from '../../ui/Meter';
 import { Panel, PanelHeader } from '../../ui/Panel';
 import { MetricTile } from '../../ui/Stat';
-import { SegmentedControl } from '../../ui/Tabs';
+import { Select } from '../../ui/Field';
 import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 import { ChartSkeleton, DonutSkeleton, ListSkeleton, LoadingAnnouncement, Skeleton, StatStripSkeleton } from '../../ui/Skeleton';
@@ -44,7 +44,8 @@ import { ClearState, EmptyState, ErrorState, InlineError } from '../../ui/States
 import { postureRoute, windowPhrase } from '../../lib/api/posture';
 import { RecentChangesCard } from '../changes/RecentChangesCard';
 import { BandTag, Delta, ScoreRing } from '../posture/parts';
-import { credentialTypeMeta, environmentLabel, functionalClassMeta, identityTypeLabel } from '../identities/meta';
+import { credentialTypeMeta, environmentLabel, functionalClassMeta, identityTypeLabel, lifecycleMeta } from '../identities/meta';
+import { edgeKindMeta } from '../access/graphModel';
 import { describeExposureError, summariseFindings } from '../exposure/scannerState';
 import { sourceTypeLabel } from '../genome/meta';
 import { ScopeStrip } from './ScopeStrip';
@@ -120,6 +121,7 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
           <ScopeStrip
             scope={scopeQuery}
             kpis={kpis}
+            lastScanAt={overview?.lastScanAt}
             onScopeSaved={() => {
               scopeQuery.refetch();
               overviewQuery.refetch();
@@ -172,6 +174,9 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
           <InventoryGrowth overview={overview} loading={loadingOverview} failed={overviewFailed} />
         </Panel>
       </div>
+
+      {/* ── Trust, credential use, activity ─────────────────────────────── */}
+      <ActivityRow overview={overview} loading={loadingOverview} failed={overviewFailed} />
 
       {/* ── Behaviour + credential exposure ─────────────────────────────── */}
       <div className={cn('grid gap-4', exposure && '@min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]')}>
@@ -285,7 +290,11 @@ function HeadlineTiles({ kpis, charts, activity, exposure, findingsQuery, findin
         sparkline={credentialSpark}
         icon={KeyRound}
         tone="medium"
-        caption="Roles, keys, secrets and certificates held by identities"
+        caption={
+          kpis.activeCredentials === null
+            ? 'Roles, keys, secrets and certificates held by identities'
+            : `${formatNumber(kpis.activeCredentials)} active, not stale · roles, keys, secrets and certificates`
+        }
       />
       {exposure ? (
         <CodeExposureTile query={findingsQuery} summary={findingSummary} />
@@ -447,13 +456,21 @@ function SignalsBody({ overview, loading }) {
 /* ── Identity mix ─────────────────────────────────────────────────────────── */
 
 const MIX_VIEWS = [
-  { value: 'class', label: 'Class' },
-  { value: 'type', label: 'Type' },
-  { value: 'environment', label: 'Environment' },
+  { value: 'class', label: 'By class' },
+  { value: 'type', label: 'By type' },
+  { value: 'environment', label: 'By environment' },
+  { value: 'account', label: 'By account' },
+  { value: 'region', label: 'By region' },
+  { value: 'status', label: 'By status' },
+  { value: 'activity', label: 'Active vs stale' },
 ];
 
-/* Type and environment have no canonical order, so hues follow rank and the
-   tail folds into one neutral slice rather than inventing an eighth hue. */
+const asIs = (value) => value;
+
+/* Type, environment, account, region and status have no canonical order, so
+   hues follow rank and the tail folds into one neutral slice rather than
+   inventing an eighth hue. A slice links to the list only where the list API
+   has a filter for it (`param`); it has none for account or region. */
 function rankedSlices(items, labelOf, param) {
   const sorted = [...items].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
   const head = sorted.slice(0, 6).map((item, index) => ({
@@ -461,7 +478,7 @@ function rankedSlices(items, labelOf, param) {
     label: labelOf(item.key),
     value: item.value,
     color: SERIES_TOKENS[index],
-    to: `/identities?${param}=${encodeURIComponent(item.key)}`,
+    to: param ? `/identities?${param}=${encodeURIComponent(item.key)}` : undefined,
   }));
   const rest = sorted.slice(6).reduce((sum, item) => sum + item.value, 0);
   if (rest > 0) head.push({ key: '__other', label: 'Other', value: rest, color: NEUTRAL_SERIES });
@@ -477,6 +494,16 @@ function IdentityMix({ overview, loading, failed }) {
     const { charts } = overview;
     if (view === 'type') return rankedSlices(charts.byType, identityTypeLabel, 'identity_type');
     if (view === 'environment') return rankedSlices(charts.byEnvironment, environmentLabel, 'environment');
+    if (view === 'account') return rankedSlices(charts.byAccount, asIs, null);
+    if (view === 'region') return rankedSlices(charts.byRegion, asIs, null);
+    if (view === 'status') return rankedSlices(charts.byStatus, (value) => lifecycleMeta(value).label, 'status');
+    if (view === 'activity') {
+      /* Stale is the same 90-day measure as the risk signal, so it opens the same list. */
+      return [
+        { key: 'active', label: 'Active', value: charts.staleVsActive.active, color: SERIES_TOKENS[0] },
+        { key: 'stale', label: 'Stale 90+ days', value: charts.staleVsActive.stale, color: SERIES_TOKENS[1], to: '/identities?min_idle_days=90' },
+      ].filter((item) => item.value > 0);
+    }
     return charts.byClass
       .filter((item) => item.value > 0)
       .map((item) => {
@@ -491,12 +518,23 @@ function IdentityMix({ overview, loading, failed }) {
       });
   }, [overview, view]);
 
+  const typeCount = overview?.charts.byType.filter((item) => item.value > 0).length ?? 0;
+
   return (
     <>
       <PanelHeader
         prominence="quiet"
         title="Identity mix"
-        actions={<SegmentedControl label="Break down by" options={MIX_VIEWS} value={view} onChange={setView} />}
+        subtitle={typeCount > 0 ? `${formatNumber(typeCount)} identity type${typeCount === 1 ? '' : 's'}` : undefined}
+        actions={
+          <Select
+            size="sm"
+            aria-label="Break down by"
+            options={MIX_VIEWS}
+            value={view}
+            onChange={(event) => setView(event.target.value)}
+          />
+        }
       />
       <div className="mt-4">
         {loading ? (
@@ -681,6 +719,178 @@ function InventoryGrowth({ overview, loading, failed }) {
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ── Trust, credential use, activity ──────────────────────────────────────── */
+
+/* Each panel shows only when the API serves its figures; older builds do not. */
+function ActivityRow({ overview, loading, failed }) {
+  if (loading || failed || !overview) return null;
+  const { kpis, charts } = overview;
+  const trust = charts.trustEdgesByType !== null || kpis.trustEdges !== null;
+  const use = charts.credentialUtilization !== null;
+  const events = charts.eventVolume !== null;
+  if (!trust && !use && !events) return null;
+  return (
+    <div className="grid gap-4 @min-[44rem]:grid-cols-2 @min-[60rem]:grid-cols-3">
+      {trust && (
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 7 }}>
+          <TrustEdges overview={overview} />
+        </Panel>
+      )}
+      {use && (
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
+          <CredentialUse overview={overview} />
+        </Panel>
+      )}
+      {events && (
+        <Panel
+          prominence="quiet"
+          className={cn('animate-rise', trust && use && '@min-[44rem]:col-span-2 @min-[60rem]:col-span-1')}
+          data-stagger=""
+          style={{ '--stagger': 9 }}
+        >
+          <EventVolume overview={overview} />
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+/* Canonical order, so an edge type keeps its hue whatever else is present.
+   Types outside it fold into the neutral "Other" slice. */
+const TRUST_EDGE_ORDER = ['service_trust', 'assume_role', 'cross_account', 'federated_saml', 'federated_oidc', 'pass_role', 'trusts'];
+
+function TrustEdges({ overview }) {
+  const { kpis, charts } = overview;
+  const slices = useMemo(() => {
+    const items = (charts.trustEdgesByType ?? []).filter((item) => item.value > 0);
+    const known = TRUST_EDGE_ORDER.flatMap((type, index) => {
+      const item = items.find((entry) => entry.key === type);
+      return item ? [{ key: type, label: edgeKindMeta(type).label, value: item.value, color: SERIES_TOKENS[index] }] : [];
+    });
+    const rest = items.filter((item) => !TRUST_EDGE_ORDER.includes(item.key)).reduce((sum, item) => sum + item.value, 0);
+    if (rest > 0) known.push({ key: '__other', label: 'Other', value: rest, color: NEUTRAL_SERIES });
+    return known;
+  }, [charts.trustEdgesByType]);
+
+  return (
+    <>
+      <PanelHeader
+        prominence="quiet"
+        title="Trust relationships"
+        actions={
+          <Button as={Link} to="/access-graph" variant="secondary" size="sm" iconRight={ArrowRight}>
+            Access graph
+          </Button>
+        }
+      />
+      <div className="mt-4">
+        {charts.trustEdgesByType !== null &&
+          (slices.length === 0 ? (
+            <ClearState compact title="No trust edges" description="No role in your scope trusts another principal or service." />
+          ) : (
+            <CompositionDonut data={slices} total={kpis.trustEdges ?? undefined} centerLabel="Trust edges" size={164} />
+          ))}
+        {(kpis.trustEdges !== null || kpis.crossAccountTrustEdges !== null) && (
+          <dl className={cn('grid grid-cols-2 gap-4', charts.trustEdgesByType !== null && 'mt-4 border-t border-line pt-3')}>
+            {kpis.trustEdges !== null && <Figure label="Trust edges" value={formatNumber(kpis.trustEdges)} />}
+            {kpis.crossAccountTrustEdges !== null && (
+              <Figure label="Cross-account" value={formatNumber(kpis.crossAccountTrustEdges)} />
+            )}
+          </dl>
+        )}
+      </div>
+    </>
+  );
+}
+
+const USE_BUCKETS = {
+  used_7d: 'Used in the last 7 days',
+  used_30d: 'Last used 8-30 days ago',
+  used_90d: 'Last used 31-90 days ago',
+  idle_90d: 'Last used over 90 days ago',
+  never_used: 'Never used',
+};
+
+function CredentialUse({ overview }) {
+  const { charts, activityDataAvailable: activity } = overview;
+  /* Ordinal buckets keep the API's order (recent to never), not value order. */
+  const items = (charts.credentialUtilization ?? []).map((item) => ({
+    key: item.key,
+    label: USE_BUCKETS[item.key] ?? humanizeToken(item.key),
+    value: item.value,
+  }));
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+
+  return (
+    <>
+      <PanelHeader prominence="quiet" title="Credential use" subtitle="Each credential by when CloudTrail last saw it used." />
+      <div className="mt-3">
+        {!activity ? (
+          <p className="text-[11.5px] leading-relaxed text-ink-3">
+            CloudTrail activity could not be read for this scope, so when credentials were last used is unknown.
+          </p>
+        ) : total === 0 ? (
+          <ClearState compact title="No credentials recorded" description="No identity in your scope holds a credential." />
+        ) : (
+          <BarList items={items} total={total} />
+        )}
+      </div>
+    </>
+  );
+}
+
+const dayLabel = (value) => {
+  const date = parseDate(`${value}T00:00:00Z`) ?? parseDate(value);
+  return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : String(value);
+};
+
+function EventVolume({ overview }) {
+  const { charts, activityDataAvailable: activity } = overview;
+  const data = useMemo(
+    () =>
+      (charts.eventVolume ?? []).map((point) => ({
+        label: dayLabel(point.date),
+        subtitle: 'CloudTrail events that day',
+        count: point.count,
+      })),
+    [charts.eventVolume],
+  );
+  const total = data.reduce((sum, point) => sum + point.count, 0);
+
+  return (
+    <>
+      <PanelHeader
+        prominence="quiet"
+        title="Event volume"
+        subtitle={`CloudTrail events per day over the last 30 days, in the accounts in your scope${
+          activity && total > 0 ? ` - ${formatNumber(total)} in all` : ''
+        }.`}
+        actions={
+          <Button as={Link} to="/activity" variant="secondary" size="sm" iconRight={ArrowRight}>
+            Activity
+          </Button>
+        }
+      />
+      <div className="mt-4">
+        {!activity || data.length === 0 ? (
+          <EmptyState
+            compact
+            icon={LineChart}
+            title="No CloudTrail data"
+            description="CloudTrail could not be read for this scope, so daily event volume is not measured."
+          />
+        ) : total === 0 ? (
+          <EmptyState compact icon={LineChart} title="No events in 30 days" description="CloudTrail recorded no events in your scope over the last 30 days." />
+        ) : (
+          /* Bars, not a line: each day is its own count, and a line would
+             invent values between days. */
+          <TrendChart data={data} dataKey="count" label="Events" variant="bar" height={180} />
         )}
       </div>
     </>
@@ -972,7 +1182,10 @@ function ExpiringCredentials({ overview, loading, failed }) {
                 const tone = row.daysRemaining <= 7 ? 'critical' : row.daysRemaining <= 14 ? 'high' : 'medium';
                 return (
                   <li key={`${row.name}-${row.expiresAt}`}>
-                    <Link to={`/credentials?search=${encodeURIComponent(row.name)}`} className="group flex items-center gap-3 py-2.5">
+                    <Link
+                      to={`/credentials?search=${encodeURIComponent(row.name)}${row.credentialId ? `&credential=${encodeURIComponent(row.credentialId)}` : ''}`}
+                      className="group flex items-center gap-3 py-2.5"
+                    >
                       <CalendarClock aria-hidden="true" className="size-4 shrink-0 text-ink-3" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-mono text-[12px] text-ink group-hover:text-brand" title={row.name}>

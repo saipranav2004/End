@@ -22,7 +22,7 @@ import { cn } from '../../ui/cn';
  * the scope in force, with the control to change it. A stale snapshot or a
  * narrowed scope is never mistaken for the whole estate.
  */
-export function ScopeStrip({ scope, kpis, onScopeSaved }) {
+export function ScopeStrip({ scope, kpis, lastScanAt, onScopeSaved }) {
   const { integration } = useWorkspace();
   const [editing, setEditing] = useState(false);
 
@@ -40,8 +40,8 @@ export function ScopeStrip({ scope, kpis, onScopeSaved }) {
       if (account.sync?.status === 'running') running += 1;
       if (account.sync?.status === 'queued') queued += 1;
     }
-    return { last: kpis?.lastScanTime || last, running, queued, known: accounts.length > 0 };
-  }, [integration, kpis]);
+    return { last: lastScanAt || last, running, queued, known: accounts.length > 0 };
+  }, [integration, lastScanAt]);
 
   if (scope.isLoading && !scope.data) {
     return (
@@ -236,6 +236,7 @@ function ScopeEditor({ open, current, onClose, onSaved }) {
             onToggle={toggle(setAccounts)}
             onAll={() => setAccounts(new Set(accountOptions.map((o) => o.id)))}
             mono
+            wide
           />
           <ChoiceGroup
             label="Regions"
@@ -266,7 +267,8 @@ function withSelected(list = [], selected = []) {
   return out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 }
 
-function ChoiceGroup({ label, options, selected, onToggle, onAll, mono }) {
+/* `wide`: one option per line, for options that carry more than one count. */
+function ChoiceGroup({ label, options, selected, onToggle, onAll, mono, wide }) {
   const allOn = options.length > 0 && options.every((option) => selected.has(option.id));
   return (
     <fieldset>
@@ -283,7 +285,7 @@ function ChoiceGroup({ label, options, selected, onToggle, onAll, mono }) {
       {options.length === 0 ? (
         <p className="mt-1.5 text-[12px] text-ink-3">Nothing has been discovered yet.</p>
       ) : (
-        <div className="mt-1.5 grid gap-0.5 sm:grid-cols-2">
+        <div className={cn('mt-1.5 grid gap-0.5', !wide && 'sm:grid-cols-2')}>
           {options.map((option) => (
             <label
               key={option.id}
@@ -298,9 +300,26 @@ function ChoiceGroup({ label, options, selected, onToggle, onAll, mono }) {
                 onChange={() => onToggle(option.id)}
                 className="size-3.5 shrink-0 accent-[var(--t-brand)]"
               />
-              <span className={cn('min-w-0 flex-1 truncate', mono && 'font-mono text-[12px]')}>{option.id}</span>
-              <span data-numeric="" className="shrink-0 text-[11.5px] text-ink-3">
-                {option.identities === null ? 'no data' : `${formatNumber(option.identities)} identities`}
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <span className={cn('min-w-0 truncate', mono && 'font-mono text-[12px]')}>{option.id}</span>
+                {option.isDefault && (
+                  <span title="In the default scope, used until you save your own">
+                    <Tag tone="neutral" size="sm">
+                      Default
+                    </Tag>
+                  </span>
+                )}
+              </span>
+              <span data-numeric="" className="shrink-0 text-right text-[11.5px] text-ink-3">
+                {option.identities === null
+                  ? 'no data'
+                  : [
+                      `${formatNumber(option.identities)} identit${option.identities === 1 ? 'y' : 'ies'}`,
+                      option.credentials !== undefined &&
+                        `${formatNumber(option.credentials)} credential${option.credentials === 1 ? '' : 's'}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
               </span>
             </label>
           ))}

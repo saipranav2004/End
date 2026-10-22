@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { KeyRound, SearchX } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, KeyRound, SearchX } from 'lucide-react';
 import { countCredentials, fetchCredentials, fetchFilters } from '../../lib/api/inventory';
 import { useDebouncedValue, useQuery } from '../../lib/hooks';
 import { useAccess } from '../../app/useAccess';
 import { formatDateTime, formatNumber, formatRelative, percentValue } from '../../lib/format';
 import { exportRowsToCsv, timestampedName } from '../../lib/csv';
 import { PageHeader } from '../../shell/PageHeader';
-import { Button } from '../../ui/Button';
+import { Button, IconButton } from '../../ui/Button';
 import { Panel, PanelHeader } from '../../ui/Panel';
-import { SearchInput } from '../../ui/Field';
+import { SearchInput, Select } from '../../ui/Field';
 import { AppliedFilters, FacetRail, useFacetRail } from '../../ui/FacetRail';
 import { RecordBar, ResultCount, ShowFiltersButton, WorkArea } from '../../ui/WorkArea';
 import { OverflowMenu, RefreshButton, TableSettings, TableToolbar } from '../../ui/TableTools';
@@ -42,6 +42,7 @@ const FLAGS = [
   { key: 'expired', label: 'Already expired', param: 'max_days_until_expiry', value: '0', tone: 'critical', query: { maxDaysUntilExpiry: 0 } },
   { key: 'expiring', label: 'Expires within 30 days', param: 'max_days_until_expiry', value: '30', tone: 'high', query: { maxDaysUntilExpiry: 30 }, note: 'includes expired' },
   { key: 'overdue', label: 'Rotation overdue', param: 'rotation_overdue', value: 'true', tone: 'high', query: { rotationOverdue: 'true' } },
+  { key: 'noRotation', label: 'Rotation disabled', param: 'rotation_enabled', value: 'false', tone: 'medium', query: { rotationEnabled: 'false' } },
   { key: 'stale', label: 'Unused 90+ days', param: 'min_idle_days', value: '90', tone: 'medium', query: { minIdleDays: 90 } },
   { key: 'orphaned', label: 'No owner identity', param: 'is_orphaned', value: 'true', tone: 'medium', query: { isOrphaned: 'true' } },
   { key: 'external', label: 'External trust', param: 'has_external_trust', value: 'true', tone: 'medium', query: { hasExternalTrust: 'true' } },
@@ -49,6 +50,7 @@ const FLAGS = [
 
 const FILTER_PARAMS = ['search', 'credential_type', 'status', ...new Set(FLAGS.map((flag) => flag.param))];
 
+/* Grid column -> API sort field. */
 const SORTABLE = {
   credential: 'name',
   status: 'status',
@@ -58,13 +60,31 @@ const SORTABLE = {
   lastUsed: 'last_used_at',
 };
 
+/* Every `sort_by` the sort menu offers, columns or not. */
+const SORT_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'credential_type', label: 'Type' },
+  { value: 'status', label: 'Status' },
+  { value: 'account_id', label: 'Account' },
+  { value: 'region', label: 'Region' },
+  { value: 'bound_identities_count', label: 'Bound identities' },
+  { value: 'age_days', label: 'Age' },
+  { value: 'last_rotated_at', label: 'Last rotated' },
+  { value: 'expires_at', label: 'Expiry date' },
+  { value: 'days_until_expiry', label: 'Days until expiry' },
+  { value: 'last_used_at', label: 'Last used' },
+  { value: 'idle_days', label: 'Idle days' },
+];
+
 const DENSITY_KEY = 'dna.grid.density';
 
 function readQuery(searchParams) {
   const raw = searchParams.get('sort') || '';
   const desc = raw.startsWith('-');
   const column = desc ? raw.slice(1) : raw;
-  const sortKey = Object.keys(SORTABLE).find((key) => SORTABLE[key] === column);
+  const sortField = SORT_FIELDS.some((field) => field.value === column) ? column : null;
+  /* A field with no column of its own keeps its name as the key, so no header reads as sorted. */
+  const sortKey = sortField && (Object.keys(SORTABLE).find((key) => SORTABLE[key] === column) ?? column);
   const pageSize = Number(searchParams.get('page_size'));
   const intParam = (name) => (/^-?\d+$/.test(searchParams.get(name) || '') ? Number(searchParams.get(name)) : undefined);
   const boolParam = (name) => (['true', 'false'].includes(searchParams.get(name)) ? searchParams.get(name) : undefined);
@@ -74,6 +94,7 @@ function readQuery(searchParams) {
       search: searchParams.get('search') || '',
       credentialType: splitList(searchParams.get('credential_type'), API_CREDENTIAL_TYPES),
       status: splitList(searchParams.get('status'), new Set(API_CREDENTIAL_STATUSES)),
+      rotationEnabled: boolParam('rotation_enabled'),
       rotationOverdue: boolParam('rotation_overdue'),
       isOrphaned: boolParam('is_orphaned'),
       hasExternalTrust: boolParam('has_external_trust'),
@@ -250,13 +271,17 @@ export default function CredentialsPage() {
     },
   ];
 
-  const setSort = (next) => {
-    const column = SORTABLE[next.key];
-    if (!column) return;
+  /* An empty column returns the list to the API's default order. */
+  const writeSort = (column, direction) => {
     const params = new URLSearchParams(searchParams);
-    params.set('sort', next.direction === 'desc' ? `-${column}` : column);
+    if (column) params.set('sort', direction === 'desc' ? `-${column}` : column);
+    else params.delete('sort');
     params.delete('page');
     setSearchParams(params, { replace: true });
+  };
+  const setSort = (next) => {
+    const column = SORTABLE[next.key];
+    if (column) writeSort(column, next.direction);
   };
 
   const rows = query.data?.rows ?? [];
@@ -304,7 +329,7 @@ export default function CredentialsPage() {
       header: 'Credential',
       primary: true,
       sortable: true,
-      width: '25%',
+      width: '22%',
       cell: (row) => (
         <CellStack
           icon={KeyRound}
@@ -319,24 +344,23 @@ export default function CredentialsPage() {
       key: 'bound',
       header: 'Bound to',
       sortable: true,
-      width: '15%',
+      width: '18%',
       cell: (row) =>
         row.is_orphaned || row.bound_identities_count === 0 ? (
-          <span className="block min-w-0">
+          <span className="block min-w-0" title="No identity bound">
             <Tag tone="high" size="sm">
               Orphaned
             </Tag>
-            <span className="mt-0.5 block truncate text-[11px] text-ink-3">No identity bound</span>
+            <PlaceLine row={row} className="mt-0.5" />
+            {row.owner_principal_arn && <OwnerLine arn={row.owner_principal_arn} />}
           </span>
         ) : (
           <span className="block min-w-0">
             <span className="block text-[12.5px] text-ink-2">
               {formatNumber(row.bound_identities_count)} identit{row.bound_identities_count === 1 ? 'y' : 'ies'}
             </span>
-            <span className="block truncate font-mono text-[11px] text-ink-3" title={`Account ${row.account_id}`}>
-              {row.account_id}
-              {row.has_external_trust ? ' · external trust' : ''}
-            </span>
+            <PlaceLine row={row} />
+            {row.owner_principal_arn && <OwnerLine arn={row.owner_principal_arn} />}
           </span>
         ),
     },
@@ -383,7 +407,7 @@ export default function CredentialsPage() {
       key: 'rotation',
       header: 'Rotation & expiry',
       sortable: true,
-      width: '18%',
+      width: '17%',
       priority: 'wide',
       cell: (row) => <RotationCell row={row} />,
     },
@@ -531,6 +555,25 @@ export default function CredentialsPage() {
           >
             <SearchInput size="sm" value={searchDraft} onChange={setSearchDraft} placeholder="Search name or ARN…" className="w-full min-w-0 sm:max-w-sm" />
             <ResultCount shown={formatNumber(rows.length)} total={formatNumber(total)} unit="credentials" filtered={chips.length > 0} paged loading={query.isLoading && !query.data} />
+            {/* Every field the API sorts by, including those without a column. */}
+            <span className="flex items-center gap-1">
+              <Select
+                size="sm"
+                aria-label="Sort by"
+                value={filters.sortBy ?? ''}
+                onChange={(event) => writeSort(event.target.value, sort?.direction ?? 'desc')}
+                placeholder="Sort: Default order"
+                options={SORT_FIELDS.map((field) => ({ value: field.value, label: `Sort: ${field.label}` }))}
+              />
+              {sort && (
+                <IconButton
+                  size="sm"
+                  icon={sort.direction === 'desc' ? ArrowDownWideNarrow : ArrowUpNarrowWide}
+                  label={sort.direction === 'desc' ? 'Sorted descending - switch to ascending' : 'Sorted ascending - switch to descending'}
+                  onClick={() => writeSort(filters.sortBy, sort.direction === 'desc' ? 'asc' : 'desc')}
+                />
+              )}
+            </span>
           </RecordBar>
 
           <AppliedFilters filters={chips} onRemove={removeChip} onClearAll={clearAll} />
@@ -606,6 +649,26 @@ export default function CredentialsPage() {
         onClose={closeCredential}
       />
     </div>
+  );
+}
+
+/* Account and region, quiet, under what the credential is bound to. */
+function PlaceLine({ row, className }) {
+  return (
+    <span className={cn('block truncate text-[11px] text-ink-3', className)} title={`Account ${row.account_id}${row.region ? `, ${row.region}` : ''}`}>
+      <span className="font-mono">{row.account_id}</span>
+      {row.region ? ` · ${row.region}` : ''}
+      {row.has_external_trust ? ' · external trust' : ''}
+    </span>
+  );
+}
+
+/* The principal that owns the credential, by its last ARN segment. */
+function OwnerLine({ arn }) {
+  return (
+    <span className="block truncate text-[11px] text-ink-3" title={arn}>
+      Owner {arn.split('/').pop()}
+    </span>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Copy, Fingerprint, SearchX } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Copy, Fingerprint, SearchX } from 'lucide-react';
 import { countIdentities, fetchFilters, fetchIdentities, fetchTopOwners } from '../../lib/api/inventory';
 import { fetchPostureScoreIndex } from '../../lib/api/posture';
 import { ScoreRing } from '../posture/parts';
@@ -8,12 +8,12 @@ import { LatestChangesNotice, RecentChangeMarker } from '../changes/parts';
 import { bandMeta } from '../../lib/posture';
 import { useDebouncedValue, useQuery } from '../../lib/hooks';
 import { useAccess } from '../../app/useAccess';
-import { formatNumber } from '../../lib/format';
+import { formatDate, formatNumber } from '../../lib/format';
 import { exportRowsToCsv, timestampedName } from '../../lib/csv';
 import { PageHeader } from '../../shell/PageHeader';
 import { Button, IconButton } from '../../ui/Button';
 import { Panel } from '../../ui/Panel';
-import { SearchInput } from '../../ui/Field';
+import { SearchInput, Select } from '../../ui/Field';
 import { AppliedFilters, FacetRail, useFacetRail } from '../../ui/FacetRail';
 import { RecordBar, ResultCount, ShowFiltersButton, WorkArea } from '../../ui/WorkArea';
 import { Tabs } from '../../ui/Tabs';
@@ -21,6 +21,7 @@ import { OverflowMenu, RefreshButton, TableSettings, TableToolbar } from '../../
 import { DataGrid } from '../../ui/DataGrid';
 import { Pagination } from '../../ui/Pagination';
 import { EmptyState, ErrorState } from '../../ui/States';
+import { Tag } from '../../ui/Tag';
 import { useToast } from '../../ui/Toast';
 import { IdentityDrawer } from './IdentityDrawer';
 import { ActivityCell, UtilisationCell } from './status';
@@ -34,7 +35,7 @@ import {
   identityTypeLabel,
   lifecycleMeta,
 } from './meta';
-import { FILTER_PARAMS, SIGNALS, SORTABLE, describeFilters, readFilters, readSort, splitList } from './filters';
+import { FILTER_PARAMS, SIGNALS, SORTABLE, SORT_FIELDS, describeFilters, readFilters, readSort, splitList } from './filters';
 
 /**
  * Identity explorer - the workbench every inventory signal leads into.
@@ -198,16 +199,22 @@ export default function IdentitiesPage() {
     return match?.key ?? null;
   }, [searchParams]);
 
-  const setSort = useCallback(
-    (next) => {
-      const column = SORTABLE[next.key];
-      if (!column) return;
+  const writeSort = useCallback(
+    (column, direction) => {
       const params = new URLSearchParams(searchParams);
-      params.set('sort', next.direction === 'desc' ? `-${column}` : column);
+      params.set('sort', direction === 'desc' ? `-${column}` : column);
       params.delete('page');
       setSearchParams(params, { replace: true });
     },
     [searchParams, setSearchParams],
+  );
+
+  const setSort = useCallback(
+    (next) => {
+      const column = SORTABLE[next.key];
+      if (column) writeSort(column, next.direction);
+    },
+    [writeSort],
   );
 
   const facetGroups = useMemo(() => {
@@ -340,6 +347,13 @@ export default function IdentitiesPage() {
                 <span className="truncate text-[11px] text-ink-3">
                   {identityTypeLabel(row.identity_type)} · {meta.label}
                 </span>
+                {row.is_publicly_accessible && (
+                  <span className="shrink-0" title="Reachable from the internet">
+                    <Tag tone="critical" size="sm">
+                      Public
+                    </Tag>
+                  </span>
+                )}
               </span>
             </span>
           </span>
@@ -365,9 +379,19 @@ export default function IdentitiesPage() {
           >
             {row.owner || 'Unassigned'}
           </span>
-          {row.created_by && (
-            <span className="block truncate text-[11px] text-ink-3" title={row.created_by}>
-              Created by {row.created_by.split('/').pop()}
+          {/* Who created it and how long ago, on one line: age reads best beside its creator. */}
+          {(row.created_by || Number.isFinite(row.age_days)) && (
+            <span
+              className="block truncate text-[11px] text-ink-3"
+              title={[row.created_by, row.created_at_aws && `Created ${formatDate(row.created_at_aws)}`].filter(Boolean).join(' · ')}
+            >
+              {[
+                row.created_by && `Created by ${row.created_by.split('/').pop()}`,
+                Number.isFinite(row.age_days) &&
+                  `${row.created_by ? '' : 'Age '}${formatNumber(row.age_days)} day${row.age_days === 1 ? '' : 's'}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           )}
         </span>
@@ -491,6 +515,22 @@ export default function IdentitiesPage() {
               paged
               loading={query.isLoading && !query.data}
             />
+            {/* Every field the API sorts by, including those without a column. */}
+            <span className="flex items-center gap-1">
+              <Select
+                size="sm"
+                aria-label="Sort by"
+                value={sort.sortBy}
+                onChange={(event) => writeSort(event.target.value, sort.direction)}
+                options={SORT_FIELDS.map((field) => ({ value: field.value, label: `Sort: ${field.label}` }))}
+              />
+              <IconButton
+                size="sm"
+                icon={sort.direction === 'desc' ? ArrowDownWideNarrow : ArrowUpNarrowWide}
+                label={sort.direction === 'desc' ? 'Sorted descending - switch to ascending' : 'Sorted ascending - switch to descending'}
+                onClick={() => writeSort(sort.sortBy, sort.direction === 'desc' ? 'asc' : 'desc')}
+              />
+            </span>
           </RecordBar>
 
           <AppliedFilters filters={chips} onRemove={removeChip} onClearAll={clearAll} />

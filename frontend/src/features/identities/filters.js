@@ -59,7 +59,7 @@ export const FILTER_PARAMS = [
   ...LIST_PARAMS.map((entry) => entry.param),
 ];
 
-/** `sort` in the URL is `<column>` or `-<column>` (descending). */
+/** `sort` in the URL is `<column>` or `-<column>` (descending). Grid column -> API sort field. */
 export const SORTABLE = {
   identity: 'name',
   class: 'functional_class',
@@ -69,13 +69,33 @@ export const SORTABLE = {
   activity: 'last_activity_at',
 };
 
+/** Every `sort_by` the list API accepts that the sort menu offers, columns or not. */
+export const SORT_FIELDS = [
+  { value: 'last_activity_at', label: 'Last activity' },
+  { value: 'name', label: 'Name' },
+  { value: 'identity_type', label: 'Identity type' },
+  { value: 'functional_class', label: 'Category' },
+  { value: 'owner', label: 'Owner' },
+  { value: 'account_id', label: 'Account' },
+  { value: 'region', label: 'Region' },
+  { value: 'environment', label: 'Environment' },
+  { value: 'status', label: 'Status' },
+  { value: 'created_at_aws', label: 'Created in AWS' },
+  { value: 'age_days', label: 'Age' },
+  { value: 'idle_days', label: 'Idle days' },
+  { value: 'bound_credentials_count', label: 'Bound credentials' },
+  { value: 'permission_utilization_pct', label: 'Permissions used' },
+];
+
 export function readSort(searchParams) {
   const raw = searchParams.get('sort') || '';
-  if (!raw) return { key: 'activity', direction: 'desc', sortBy: 'last_activity_at', sortOrder: 'desc', explicit: false };
   const desc = raw.startsWith('-');
   const column = desc ? raw.slice(1) : raw;
-  const key = Object.keys(SORTABLE).find((entry) => SORTABLE[entry] === column);
-  if (!key) return { key: 'activity', direction: 'desc', sortBy: 'last_activity_at', sortOrder: 'desc', explicit: false };
+  if (!SORT_FIELDS.some((field) => field.value === column)) {
+    return { key: 'activity', direction: 'desc', sortBy: 'last_activity_at', sortOrder: 'desc', explicit: false };
+  }
+  /* A field with no column of its own keeps its name as the key, so no header reads as sorted. */
+  const key = Object.keys(SORTABLE).find((entry) => SORTABLE[entry] === column) ?? column;
   return { key, direction: desc ? 'desc' : 'asc', sortBy: column, sortOrder: desc ? 'desc' : 'asc', explicit: true };
 }
 

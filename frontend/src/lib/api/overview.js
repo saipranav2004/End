@@ -18,6 +18,8 @@ import { ApiError, unwrapGenome, unwrapMain, unwrapPosture } from './http';
 const list = (value) => (Array.isArray(value) ? value : []);
 const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 const numOrNull = (value) => (value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value));
+/* A chart the API build does not serve stays null, so its panel is hidden rather than drawn empty. */
+const listOrNull = (value, shape) => (Array.isArray(value) ? value.map(shape) : null);
 
 function shapeOverview(d) {
   if (!d || typeof d !== 'object' || !d.kpis || !d.charts) {
@@ -36,8 +38,10 @@ function shapeOverview(d) {
       shadowIdentities: num(k.shadow_identities),
       accountsScanned: num(k.accounts_scanned),
       permissionUtilizationPct: numOrNull(k.permission_utilization_pct),
-      /* Not served by every build of the API; shown only when present. */
-      lastScanTime: k.last_scan_time ?? null,
+      /* Not served by every build of the API; null hides the figure. */
+      activeCredentials: numOrNull(k.active_credentials),
+      trustEdges: numOrNull(k.trust_edges),
+      crossAccountTrustEdges: numOrNull(k.cross_account_trust_edges),
     },
     charts: {
       byType: list(c.identities_by_type).map((r) => ({ key: r.type, value: num(r.count) })),
@@ -55,10 +59,19 @@ function shapeOverview(d) {
         name: r.credential_name,
         expiresAt: r.expires_at,
         daysRemaining: num(r.days_remaining),
+        credentialId: r.credential_id ?? null,
       })),
+      trustEdgesByType: listOrNull(c.trust_edges_by_type, (r) => ({ key: r.edge_type, value: num(r.count) })),
+      /* Daily CloudTrail events, last 30 days; empty when CloudTrail is unavailable. */
+      eventVolume: listOrNull(c.event_volume, (r) => ({ date: r.date, count: num(r.count) })),
+      /* Exclusive buckets by last use, in the API's order. */
+      credentialUtilization: listOrNull(c.credential_utilization, (r) => ({ key: r.bucket, value: num(r.count) })),
     },
     activityDataAvailable: Boolean(d.activity_data_available),
     recentChanges: shapeRecentChanges(d.recent_changes),
+    /* When the latest scan landed. Read here, not from recentChanges, which is
+       null until a scan has an id to compare against. */
+    lastScanAt: d.recent_changes?.last_scan_at ?? d.recent_changes?.last_scan_time ?? null,
   };
 }
 
@@ -87,6 +100,7 @@ export async function fetchScopeOptions(signal) {
       id: a.account_id,
       identities: num(a.identity_count),
       credentials: num(a.credential_count),
+      isDefault: Boolean(a.is_default),
     })),
     regions: list(d?.regions).map((r) => ({ id: r.region, identities: num(r.count) })),
   };
