@@ -27,6 +27,7 @@ type Client struct {
 	table   string
 	timeout time.Duration
 	up      atomic.Bool
+	bad     atomic.Bool // the events table lacks columns the queries need
 	stop    chan struct{}
 }
 
@@ -77,6 +78,46 @@ func New(ctx context.Context, cfg config.ClickHouseConfig) (*Client, error) {
 	return c, nil
 }
 
+// RequireColumns checks that the configured table has the columns the
+// CloudTrail queries select. A table with another shape (typically the genome
+// pipeline's log_events set as NHI_CLICKHOUSE_TABLE) would otherwise fail on
+// every request with "Unknown identifier"; here it is reported once, by name,
+// and activity data stays off (Postgres data is still served).
+func (c *Client) RequireColumns(ctx context.Context, columns ...string) error {
+	if c == nil || !c.Up() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	rows, err := c.conn.Query(ctx, "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = {t:String}", ch.Named("t", c.table))
+	if err != nil {
+		return nil // cannot inspect (permissions): leave it to the queries
+	}
+	defer rows.Close()
+	have := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if rows.Scan(&name) == nil {
+			have[name] = true
+		}
+	}
+	if len(have) == 0 {
+		c.bad.Store(true)
+		return fmt.Errorf("table %q was not found in the configured database (check NHI_CLICKHOUSE_DATABASE and NHI_CLICKHOUSE_TABLE)", c.table)
+	}
+	var missing []string
+	for _, name := range columns {
+		if !have[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		c.bad.Store(true)
+		return fmt.Errorf("table %q has no column(s) %v: NHI_CLICKHOUSE_TABLE must be the CloudTrail events table (default cloudtrail_events), not the genome log_events table", c.table, missing)
+	}
+	return nil
+}
+
 // watch re-pings the server and records whether it answers.
 func (c *Client) watch(host string) {
 	t := time.NewTicker(15 * time.Second)
@@ -101,7 +142,7 @@ func (c *Client) watch(host string) {
 }
 
 // Up reports whether the last ping succeeded. False on a nil client.
-func (c *Client) Up() bool { return c != nil && c.up.Load() }
+func (c *Client) Up() bool { return c != nil && c.up.Load() && !c.bad.Load() }
 
 // Ping checks that the server answers.
 func (c *Client) Ping(ctx context.Context) error {

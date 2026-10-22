@@ -74,7 +74,12 @@ func main() {
 	case chClient == nil:
 		log.Printf("clickhouse not configured; activity data disabled")
 	default:
-		log.Printf("clickhouse connected (%s:%d/%s)", cfg.ClickHouse.Host, cfg.ClickHouse.Port, cfg.ClickHouse.Database)
+		log.Printf("clickhouse connected (%s:%d/%s.%s)", cfg.ClickHouse.Host, cfg.ClickHouse.Port, cfg.ClickHouse.Database, cfg.ClickHouse.Table)
+		colCtx, colCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := chClient.RequireColumns(colCtx, "event_time", "event_name", "event_source", "caller_arn", "session_issuer_arn", "access_key_id", "account_id", "resource_arn", "source_ip", "error_code"); err != nil {
+			log.Printf("ERROR: clickhouse CloudTrail table unusable, activity data disabled: %v", err)
+		}
+		colCancel()
 	}
 	defer func() {
 		if err := chClient.Close(); err != nil {

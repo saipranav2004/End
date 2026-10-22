@@ -467,6 +467,13 @@ databases are joined **by ARN only** (never by UUID):
   `effect`, `resource_arn`, `matched_action`; wildcards such as `ec2:Describe*`
   match, an exact Allow beats a wildcard or a Deny). Nothing matched gives
   `matched: false` and "Policy may have changed since this event".
+- **Wrong table:** `NHI_CLICKHOUSE_TABLE` must be the CloudTrail events table
+  (`cloudtrail_events`, with `caller_arn`, `session_issuer_arn`, `access_key_id`,
+  `resource_arn`...), not the genome `log_events` table (that one is
+  `NHI_MONITORING_CLICKHOUSE_TABLE`). At startup the table's columns are checked;
+  a mismatch logs one `ERROR: clickhouse CloudTrail table unusable ...` naming the
+  missing columns and turns activity data off, instead of failing every request
+  with `Unknown expression ... caller_arn`.
 - **Config:** `NHI_CLICKHOUSE_*` (see `.env.example`); `NHI_CLICKHOUSE_PROTOCOL`
   is `native` (TCP 9000/9440) or `http` (8123/8443).
 - **Checking a deployment:** at start-up the server logs `clickhouse connected
