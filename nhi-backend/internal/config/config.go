@@ -27,10 +27,13 @@ type Config struct {
 	// Database is the single PostgreSQL database (nhi_db). The global schema
 	// holds authentication/tenant registry tables; every tenant's data lives in
 	// its own schema of this same database.
-	Database   DatabaseConfig   `yaml:"database"`
-	JWT        JWTConfig        `yaml:"jwt"`
-	CORS       CORSConfig       `yaml:"cors"`
-	Logging    LoggingConfig    `yaml:"logging"`
+	Database DatabaseConfig `yaml:"database"`
+	JWT      JWTConfig      `yaml:"jwt"`
+	CORS     CORSConfig     `yaml:"cors"`
+	Logging  LoggingConfig  `yaml:"logging"`
+	// Worker is the separately deployed ISPM rule engine (ispm-worker) that runs
+	// posture scans; this backend only starts a scan there and relays its status.
+	Worker     WorkerConfig     `yaml:"worker"`
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	// AWSIntegration: "Connect AWS Account" (see aws_integration.go).
 	AWSIntegration AWSIntegrationConfig `yaml:"aws_integration"`
@@ -120,6 +123,18 @@ type JWTConfig struct {
 	SessionMaxHours int `yaml:"session_max_hours"`
 }
 
+// WorkerConfig locates the ispm-worker (env: WORKER_URL, WORKER_SCAN_TOKEN,
+// NHI_WORKER_TIMEOUT_SECONDS; NHI_WORKER_URL / NHI_WORKER_SCAN_TOKEN also work).
+type WorkerConfig struct {
+	// BaseURL is the worker's scan API, e.g. http://ispm-worker:8090 (its
+	// ENGINE_HEALTH_PORT). Empty: the scan endpoints answer 503.
+	BaseURL string `yaml:"url"`
+	// ScanToken is the worker's SCAN_API_TOKEN, used only by the console's Sync
+	// route (POST /ispm/scans); the public /scans routes use the caller's key.
+	ScanToken      string `yaml:"scan_token"`
+	TimeoutSeconds int    `yaml:"timeout_seconds"` // 1-120, default 10
+}
+
 // LoggingConfig controls the structured logger (env: NHI_LOG_LEVEL,
 // NHI_LOG_FORMAT, NHI_SLOW_QUERY_MS).
 type LoggingConfig struct {
@@ -198,6 +213,13 @@ func (c *Config) applyEnvironment() error {
 	if err := setInt(&c.JWT.SessionMaxHours, "NHI_JWT_SESSION_MAX_HOURS"); err != nil {
 		return err
 	}
+	setString(&c.Worker.BaseURL, "NHI_WORKER_URL")
+	setString(&c.Worker.BaseURL, "WORKER_URL")
+	setString(&c.Worker.ScanToken, "NHI_WORKER_SCAN_TOKEN")
+	setString(&c.Worker.ScanToken, "WORKER_SCAN_TOKEN")
+	if err := setInt(&c.Worker.TimeoutSeconds, "NHI_WORKER_TIMEOUT_SECONDS"); err != nil {
+		return err
+	}
 	setString(&c.Logging.Level, "NHI_LOG_LEVEL")
 	setString(&c.Logging.Format, "NHI_LOG_FORMAT")
 	if err := setInt(&c.Logging.SlowQueryMS, "NHI_SLOW_QUERY_MS"); err != nil {
@@ -251,6 +273,10 @@ func (c *Config) applyDefaults() {
 	if c.ClickHouse.Port == 0 {
 		c.ClickHouse.Port = 9000
 	}
+	c.Worker.BaseURL = strings.TrimRight(strings.TrimSpace(c.Worker.BaseURL), "/")
+	if c.Worker.TimeoutSeconds == 0 {
+		c.Worker.TimeoutSeconds = 10
+	}
 	c.ClickHouse.Protocol = strings.ToLower(strings.TrimSpace(c.ClickHouse.Protocol))
 	if c.ClickHouse.Protocol == "" {
 		c.ClickHouse.Protocol = "native"
@@ -300,6 +326,9 @@ func (c *Config) validate() error {
 	if !schemaNameRE.MatchString(c.Database.Schema) {
 		return fmt.Errorf("config: database.schema (global schema) must be a valid identifier")
 	}
+	if err := c.validateWorker(); err != nil {
+		return err
+	}
 	if c.ClickHouse.Enabled() {
 		ch := c.ClickHouse
 		if ch.Port < 1 || ch.Port > 65535 {
@@ -320,6 +349,33 @@ func (c *Config) validate() error {
 		}
 		if ch.TimeoutSeconds < 1 || ch.TimeoutSeconds > 60 {
 			return fmt.Errorf("config: clickhouse.timeout_seconds must be between 1 and 60")
+		}
+	}
+	return nil
+}
+
+// validateWorker checks the worker address: a valid http(s) URL that is not
+// this server itself (a scan request would loop back into the API).
+func (c *Config) validateWorker() error {
+	w := c.Worker
+	if w.TimeoutSeconds < 0 || w.TimeoutSeconds > 120 { // 0 = default (applied before validation)
+		return fmt.Errorf("config: worker.timeout_seconds must be between 1 and 120")
+	}
+	if w.BaseURL == "" {
+		return nil
+	}
+	u, err := url.Parse(w.BaseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return fmt.Errorf("config: WORKER_URL must be an http(s) URL such as http://ispm-worker:8090")
+	}
+	port := u.Port()
+	if port == "" && u.Scheme == "http" {
+		port = "80"
+	}
+	if port == strconv.Itoa(c.Server.Port) {
+		switch strings.ToLower(u.Hostname()) {
+		case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+			return fmt.Errorf("config: WORKER_URL points at this server (port %d); it must be the ispm-worker", c.Server.Port)
 		}
 	}
 	return nil

@@ -27,6 +27,13 @@ logging:
   format: json         # json | text (text is easier to read locally)
   slow_query_ms: 1000  # ClickHouse queries slower than this are logged as warnings
 
+# The separately deployed ISPM rule engine (ispm-worker). Env: WORKER_URL,
+# WORKER_SCAN_TOKEN (its SCAN_API_TOKEN), NHI_WORKER_TIMEOUT_SECONDS.
+worker:
+  url: ""              # e.g. http://ispm-worker:8090 - never this server's own port
+  scan_token: ""       # only for the console's Sync button; set it by env, not here
+  timeout_seconds: 10
+
 cors:
   allowed_origins:
     - http://localhost:3000

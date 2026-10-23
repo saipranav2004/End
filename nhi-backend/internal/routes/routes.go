@@ -11,6 +11,7 @@ import (
 	"nhi-backend-api/internal/handlers/genome"
 	posturehandlers "nhi-backend-api/internal/handlers/postures"
 	handlerv1 "nhi-backend-api/internal/handlers/v1"
+	"nhi-backend-api/internal/ispmworker"
 	"nhi-backend-api/internal/middleware"
 )
 
@@ -22,14 +23,16 @@ type HandlerContainer struct {
 	NewAPISettingsHandler          *handlerv1.SettingsHandler
 	NewAPIDashboardOverviewHandler *handlerv1.DashboardOverviewHandler
 	DashboardTrendsHandler         *handlerv1.DashboardTrendsHandler
-	ScanChangesHandler             *handlerv1.ScanChangesHandler
-	NewAPIIdentitiesListHandler    *handlerv1.IdentitiesListHandler
-	NewAPIIdentityDetailHandler    *handlerv1.IdentityDetailHandler
-	NewAPIIdentityEventsHandler    *handlerv1.IdentityEventsHandler
-	NewAPICredentialsHandler       *handlerv1.CredentialsHandler
-	NewAPICredentialDetailHandler  *handlerv1.CredentialDetailHandler
-	NewAPIPermissionSourceHandler  *handlerv1.PermissionSourceHandler
-	AWSIntegrationHandler          *handlerv1.AWSIntegrationHandler
+	// Scan API of the ISPM rule engine: public (API key) and console (login) routes.
+	Scans                         *ispmworker.Handler
+	ScanChangesHandler            *handlerv1.ScanChangesHandler
+	NewAPIIdentitiesListHandler   *handlerv1.IdentitiesListHandler
+	NewAPIIdentityDetailHandler   *handlerv1.IdentityDetailHandler
+	NewAPIIdentityEventsHandler   *handlerv1.IdentityEventsHandler
+	NewAPICredentialsHandler      *handlerv1.CredentialsHandler
+	NewAPICredentialDetailHandler *handlerv1.CredentialDetailHandler
+	NewAPIPermissionSourceHandler *handlerv1.PermissionSourceHandler
+	AWSIntegrationHandler         *handlerv1.AWSIntegrationHandler
 
 	// ISPM posture dashboard API (16 endpoints), mounted under PostureBasePath.
 	PostureHandlers *posturehandlers.Handlers
@@ -75,6 +78,10 @@ func SetupRoutes(h HandlerContainer) *mux.Router {
 		r.HandleFunc("/api/v1/logout", h.AuthHandler.Logout).Methods(http.MethodPost)
 		r.HandleFunc("/api/auth/logout", h.AuthHandler.Logout).Methods(http.MethodPost)
 	}
+	if h.Scans != nil { // no login: the worker validates the caller's key
+		r.HandleFunc("/api/v1/scans", h.Scans.PublicStart).Methods(http.MethodPost)
+		r.HandleFunc("/api/v1/scans/{job_id}", h.Scans.PublicJob).Methods(http.MethodGet)
+	}
 	if h.AuthMiddleware == nil {
 		return r
 	}
@@ -105,6 +112,10 @@ func registerProtected(router *mux.Router, h HandlerContainer, versioned bool) {
 	}
 	if h.NewAPIDashboardOverviewHandler != nil {
 		router.HandleFunc("/dashboard/overview", h.NewAPIDashboardOverviewHandler.Get).Methods(http.MethodGet)
+	}
+	if h.Scans != nil && versioned {
+		router.HandleFunc("/ispm/scans", h.Scans.Start).Methods(http.MethodPost)
+		router.HandleFunc("/ispm/scans/{job_id}", h.Scans.Job).Methods(http.MethodGet)
 	}
 	if h.DashboardTrendsHandler != nil {
 		router.HandleFunc("/dashboard/trends", h.DashboardTrendsHandler.Get).Methods(http.MethodGet)

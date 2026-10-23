@@ -23,6 +23,7 @@ import (
 	handlergenome "nhi-backend-api/internal/handlers/genome"
 	posturehandlers "nhi-backend-api/internal/handlers/postures"
 	handlerv1 "nhi-backend-api/internal/handlers/v1"
+	"nhi-backend-api/internal/ispmworker"
 	"nhi-backend-api/internal/logging"
 	"nhi-backend-api/internal/middleware"
 	"nhi-backend-api/internal/repository"
@@ -245,6 +246,7 @@ func main() {
 		NewAPIFilterHandler:            filterHandler,
 		NewAPISettingsHandler:          settingsHandler,
 		NewAPIDashboardOverviewHandler: dashboardHandler,
+		Scans:                          ispmworker.NewHandler(ispmworker.WorkerConfig{BaseURL: cfg.Worker.BaseURL, Token: cfg.Worker.ScanToken, Timeout: time.Duration(cfg.Worker.TimeoutSeconds) * time.Second}),
 		DashboardTrendsHandler:         handlerv1.NewDashboardTrendsHandler(svcv1.NewDashboardTrendsService(repov1.NewDashboardTrendsRepository(), resolver)),
 		ScanChangesHandler:             scanChangesHandler,
 		NewAPIIdentitiesListHandler:    identitiesHandler,
