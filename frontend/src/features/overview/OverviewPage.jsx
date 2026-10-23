@@ -20,6 +20,7 @@ import { useWorkspace } from '../../app/WorkspaceContext';
 import { fetchFindings } from '../../lib/api/exposure';
 import {
   fetchDashboardOverview,
+  fetchScanTrends,
   fetchGenomeSummary,
   fetchPostureSummary,
   fetchScopeSettings,
@@ -76,6 +77,7 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
   const postureQuery = useQuery((signal) => fetchPostureSummary({ window: '30d' }, signal), []);
   const genomeQuery = useQuery((signal) => fetchGenomeSummary(signal), []);
   const findingsQuery = useQuery((signal) => fetchFindings(signal), [], { enabled: exposure });
+  const trendsQuery = useQuery((signal) => fetchScanTrends(signal), []);
 
   const overview = overviewQuery.data;
   const kpis = overview?.kpis;
@@ -90,6 +92,7 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
     scopeQuery.refetch();
     postureQuery.refetch();
     genomeQuery.refetch();
+    trendsQuery.refetch();
     if (exposure) findingsQuery.refetch();
   };
 
@@ -209,7 +212,7 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
       <DashboardSection title="Trends and activity">
         <div className="grid gap-4 @min-[52rem]:grid-cols-2">
           <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
-            <InventoryGrowth overview={overview} loading={loadingOverview} failed={overviewFailed} />
+            <InventoryGrowth overview={overview} trends={trendsQuery.data} loading={loadingOverview} failed={overviewFailed} />
           </Panel>
           {showsEvents(overview) && (
             <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 9 }}>
@@ -702,18 +705,35 @@ function mergeGrowth(identities, credentials) {
   }));
 }
 
-function InventoryGrowth({ overview, loading, failed }) {
-  const data = useMemo(
-    () => (overview ? mergeGrowth(overview.charts.identityGrowth, overview.charts.credentialGrowth) : []),
-    [overview],
-  );
+/* Each scan hour as a point: what the scans found, not when things were first seen. */
+function scanPoints(trends) {
+  return trends.map((point) => ({
+    label: formatDate(point.date),
+    subtitle: `Scan finished ${formatDateTime(point.date)}`,
+    identities: point.identities,
+    credentials: point.credentials,
+  }));
+}
+
+function InventoryGrowth({ overview, trends, loading, failed }) {
+  /* Real scan totals once there are enough scans to draw a line; the
+     discovery-date history otherwise. */
+  const fromScans = (trends?.length ?? 0) >= 3;
+  const data = useMemo(() => {
+    if (fromScans) return scanPoints(trends);
+    return overview ? mergeGrowth(overview.charts.identityGrowth, overview.charts.credentialGrowth) : [];
+  }, [overview, trends, fromScans]);
 
   return (
     <>
       <PanelHeader
         prominence="quiet"
         title="Inventory over time"
-        subtitle="How many of today's identities and credentials had been discovered by each month. Removed items are not counted."
+        subtitle={
+          fromScans
+            ? 'How many identities and credentials each discovery scan found, across the accounts you selected.'
+            : "How many of today's identities and credentials had been discovered by each month. Removed items are not counted."
+        }
       />
       <div className="mt-4">
         {loading ? (

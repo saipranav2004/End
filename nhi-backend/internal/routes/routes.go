@@ -21,6 +21,7 @@ type HandlerContainer struct {
 	NewAPIFilterHandler            *handlerv1.FilterHandler
 	NewAPISettingsHandler          *handlerv1.SettingsHandler
 	NewAPIDashboardOverviewHandler *handlerv1.DashboardOverviewHandler
+	DashboardTrendsHandler         *handlerv1.DashboardTrendsHandler
 	ScanChangesHandler             *handlerv1.ScanChangesHandler
 	NewAPIIdentitiesListHandler    *handlerv1.IdentitiesListHandler
 	NewAPIIdentityDetailHandler    *handlerv1.IdentityDetailHandler
@@ -104,6 +105,9 @@ func registerProtected(router *mux.Router, h HandlerContainer, versioned bool) {
 	}
 	if h.NewAPIDashboardOverviewHandler != nil {
 		router.HandleFunc("/dashboard/overview", h.NewAPIDashboardOverviewHandler.Get).Methods(http.MethodGet)
+	}
+	if h.DashboardTrendsHandler != nil {
+		router.HandleFunc("/dashboard/trends", h.DashboardTrendsHandler.Get).Methods(http.MethodGet)
 	}
 	// Scan change tracking: scans and what each changed.
 	if h.ScanChangesHandler != nil {

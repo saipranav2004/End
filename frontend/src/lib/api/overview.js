@@ -75,6 +75,20 @@ function shapeOverview(d) {
   };
 }
 
+/**
+ * Identity and credential totals per scan hour (GET /api/v1/dashboard/trends),
+ * oldest first: [{ date, identities, credentials, accounts }].
+ */
+export async function fetchScanTrends(signal, { limit = 30 } = {}) {
+  const d = unwrapMain(await client.get('/api/v1/dashboard/trends', { params: { limit }, signal }));
+  return list(d?.trends).map((p) => ({
+    date: p.scan_date,
+    identities: num(p.total_identities),
+    credentials: num(p.total_credentials),
+    accounts: num(p.accounts),
+  }));
+}
+
 export async function fetchDashboardOverview(signal) {
   return shapeOverview(unwrapMain(await client.get('/api/v1/dashboard/overview', { signal })));
 }

@@ -95,3 +95,18 @@ type ExpiringCredentialItem struct {
 	ExpiresAt      time.Time `json:"expires_at"`
 	DaysRemaining  int       `json:"days_remaining"`
 }
+
+// DashboardTrendPoint is one point of GET /dashboard/trends. Aggregated points
+// (the default) carry no scan_id/account_id and say how many accounts they sum.
+type DashboardTrendPoint struct {
+	ScanID           string `json:"scan_id,omitempty"`
+	AccountID        string `json:"account_id,omitempty"`
+	ScanDate         string `json:"scan_date"`
+	TotalIdentities  int    `json:"total_identities"`
+	TotalCredentials int    `json:"total_credentials"`
+	Accounts         int    `json:"accounts"`
+}
+
+type DashboardTrendsResponse struct {
+	Trends []DashboardTrendPoint `json:"trends"`
+}

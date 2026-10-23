@@ -22,8 +22,8 @@ type fakeExposureAWS struct {
 	repos      map[string][]string // region -> repository names
 	denied     map[string]bool     // region -> AccessDenied
 	unknown    map[string]bool     // region -> CodeCommit not offered
-	denyAction map[string]bool // "GetBlob" -> AccessDenied
-	pages      int // ListRepositories calls
+	denyAction map[string]bool     // "GetBlob" -> AccessDenied
+	pages      int                 // ListRepositories calls
 	secret     string
 	secretCode string // error __type for GetSecretValue
 	signedWith []string

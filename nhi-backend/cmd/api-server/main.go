@@ -245,6 +245,7 @@ func main() {
 		NewAPIFilterHandler:            filterHandler,
 		NewAPISettingsHandler:          settingsHandler,
 		NewAPIDashboardOverviewHandler: dashboardHandler,
+		DashboardTrendsHandler:         handlerv1.NewDashboardTrendsHandler(svcv1.NewDashboardTrendsService(repov1.NewDashboardTrendsRepository(), resolver)),
 		ScanChangesHandler:             scanChangesHandler,
 		NewAPIIdentitiesListHandler:    identitiesHandler,
 		NewAPIIdentityDetailHandler:    identityDetailHandler,
