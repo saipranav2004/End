@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Download, Gauge, Loader2, SearchX, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
+import { ArrowRight, Download, Gauge, Loader2, RefreshCw, SearchX, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
 import { useAccess } from '../../app/useAccess';
 import {
   exportPostureCsv,
+  fetchPostureScanJob,
+  startPostureScan,
   fetchPostureFacets,
   fetchPostureIdentities,
   fetchPostureOverview,
@@ -208,6 +210,39 @@ export default function PosturePage() {
       });
     } finally {
       setExporting(false);
+    }
+  };
+
+  /* Run the posture checks again: starts a scan on the rule engine, then polls
+     the job every few seconds (it usually takes under a minute) and reloads
+     the page's figures when it finishes. */
+  const [scanning, setScanning] = useState(false);
+  const onScan = async () => {
+    setScanning(true);
+    try {
+      const { jobId, alreadyRunning } = await startPostureScan();
+      notify({ variant: 'info', title: alreadyRunning ? 'A scan is already running' : 'Posture scan started', description: 'The figures refresh when it finishes.' });
+      let status = 'RUNNING';
+      for (let attempt = 0; attempt < 60 && ['QUEUED', 'RUNNING', ''].includes(status); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        ({ status } = await fetchPostureScanJob(jobId));
+      }
+      if (status === 'COMPLETED' || status === 'PARTIAL') {
+        notify({ variant: 'success', title: status === 'PARTIAL' ? 'Scan finished, with some gaps' : 'Posture scan finished', description: 'Showing the new results.' });
+        refresh();
+      } else if (status === 'FAILED' || status === 'SKIPPED') {
+        notify({ variant: 'error', title: 'The scan did not finish', description: 'Try again in a few minutes.' });
+      } else {
+        notify({ variant: 'info', title: 'Still scanning', description: 'It is taking longer than usual. Refresh this page in a few minutes.' });
+      }
+    } catch (error) {
+      notify({
+        variant: 'error',
+        title: 'Could not start the scan',
+        description: error?.status === 503 ? 'Scanning is not set up on this server yet.' : error?.status === 403 ? 'Your role may not start a scan.' : error?.message,
+      });
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -446,6 +481,16 @@ export default function PosturePage() {
               value={window}
               onChange={(value) => setParams({ window: value === DEFAULT_WINDOW ? '' : value })}
             />
+            <Button
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={onScan}
+              loading={scanning}
+              locked={lock('posture.findings')}
+              title="Run the posture checks again on every identity"
+            >
+              Run checks again
+            </Button>
             <Button
               variant="secondary"
               icon={Download}

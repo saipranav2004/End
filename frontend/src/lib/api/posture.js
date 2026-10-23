@@ -50,6 +50,24 @@ const wait = (ms, signal) =>
     });
   });
 
+/**
+ * Start a posture scan of the signed-in tenant on the ISPM rule engine
+ * (POST /ispm/scans). 202 = started, 200 = one is already running.
+ * Returns { jobId, alreadyRunning }.
+ */
+export async function startPostureScan() {
+  const res = await client.post(`${BASE}/scans`, {});
+  const d = res?.data?.data ?? {};
+  return { jobId: d.job_id, alreadyRunning: Boolean(d.already_running) };
+}
+
+/** The scan job's state: QUEUED | RUNNING | COMPLETED | PARTIAL | FAILED | SKIPPED. */
+export async function fetchPostureScanJob(jobId, signal) {
+  const res = await client.get(`${BASE}/scans/${encodeURIComponent(jobId)}`, { signal });
+  const d = res?.data?.data ?? {};
+  return { status: String(d.status || '').toUpperCase(), tenants: Array.isArray(d.tenants) ? d.tenants : [] };
+}
+
 /** GET with one retry on a short 429, unwrapped to { data, page, meta }. */
 async function get(path, query, signal) {
   const request = () => client.get(`${BASE}${path}`, { params: params(query), signal });
