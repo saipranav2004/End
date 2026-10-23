@@ -538,7 +538,7 @@ never change it once used), `collector_event_bridge_arn` (our central bus) and
 connection (one row per AWS account, keyed by the unique `account_id`). The
 scanner's columns are used as they are: `tenant_id`, `account_id`,
 `regions text[]`, `is_default`, `client_aws_account_id`, `client_role_arn`,
-`external_id`, `is_connected`, `account_status` (`pending` / `connected` /
+`external_id`, `is_connected`, `account_status` (`pending` / `active` (the API shows it as `connected`) /
 `action_needed`), `github_enabled`, `codecommit_enabled`. Migration 003 adds
 only what the page needs on top: check results (`checks`, `last_verified_at`,
 `last_verified_by`, `connected_at`), the GitHub secret ARN and per-platform

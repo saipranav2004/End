@@ -156,6 +156,9 @@ func decodeChecks(raw []byte) ([]modelsv1.AWSCheck, error) {
 	return out, nil
 }
 
+// dbStatusActive is accounts.account_status of an account whose latest check passed.
+const dbStatusActive = "active"
+
 func scanAccount(row rowScanner) (*modelsv1.AWSAccountRecord, error) {
 	var rec modelsv1.AWSAccountRecord
 	var regions pq.StringArray
@@ -169,6 +172,11 @@ func scanAccount(row rowScanner) (*modelsv1.AWSAccountRecord, error) {
 		return nil, err
 	}
 	rec.Regions = withoutGlobal(regions)
+	// The table stores a connected account as 'active'; the API keeps its
+	// own word for it (rows written before the change still say 'connected').
+	if rec.Status == dbStatusActive {
+		rec.Status = modelsv1.AWSStatusConnected
+	}
 	var err error
 	if rec.Checks, err = decodeChecks(checks); err != nil {
 		return nil, err
@@ -386,14 +394,14 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 		prevSync != modelsv1.AWSSyncQueued && prevSync != modelsv1.AWSSyncRunning
 
 	// $5 is the outcome of this check (connected / not). account_status:
-	// connected when it passed; action_needed when it failed after having
+	// active when it passed (the API reports it as "connected"); action_needed when it failed after having
 	// connected before; pending otherwise.
 	q := `INSERT INTO ` + table + ` AS a
 			(tenant_id, account_id, is_default, client_aws_account_id, client_role_arn, regions, external_id,
 			 is_connected, account_status, checks,
 			 last_verified_at, last_verified_by, connected_at,
 			 sync_status, sync_requested_at, sync_requested_by, updated_at)
-		VALUES ($10::uuid, $1::text, true, $1::text, $2::text, $3::text[], $4::text, $5, CASE WHEN $5 THEN 'connected' ELSE 'pending' END, $6::jsonb, $7, $8,
+		VALUES ($10::uuid, $1::text, true, $1::text, $2::text, $3::text[], $4::text, $5, CASE WHEN $5 THEN 'active' ELSE 'pending' END, $6::jsonb, $7, $8,
 			CASE WHEN $5 THEN $7::timestamptz END,
 			CASE WHEN $9 THEN 'queued' ELSE 'idle' END,
 			CASE WHEN $9 THEN $7::timestamptz END,
@@ -405,7 +413,7 @@ func (r *AWSIntegrationRepository) SaveVerification(ctx context.Context, tenantI
 			regions = EXCLUDED.regions,
 			external_id = EXCLUDED.external_id,
 			is_connected = EXCLUDED.is_connected,
-			account_status = CASE WHEN EXCLUDED.is_connected THEN 'connected'
+			account_status = CASE WHEN EXCLUDED.is_connected THEN 'active'
 			                      WHEN a.connected_at IS NOT NULL THEN 'action_needed'
 			                      ELSE 'pending' END,
 			checks = EXCLUDED.checks,

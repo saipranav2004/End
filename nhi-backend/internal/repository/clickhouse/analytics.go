@@ -32,7 +32,7 @@ func (c *Repository) AnalyticsRows(ctx context.Context, sub Subject, sc Scope) (
 			toHour(event_time) AS hour, count() AS call_count
 		FROM %s WHERE %s
 		GROUP BY source_ip, aws_region, event_source, event_name, error_code, hour
-		ORDER BY call_count DESC LIMIT %d`, c.table, where, maxAnalyticsRows)
+		ORDER BY call_count DESC LIMIT %d`, c.tbl(ctx), where, maxAnalyticsRows)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()

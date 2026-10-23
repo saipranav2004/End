@@ -23,7 +23,7 @@ func (c *Repository) AccountHasEventsSince(ctx context.Context, accountID string
 	defer cancel()
 	q := fmt.Sprintf(`SELECT 1 FROM %s
 		WHERE account_id = {account:String} AND event_time >= {since:DateTime64(3)}
-		LIMIT 1`, c.table)
+		LIMIT 1`, c.tbl(ctx))
 	rows, err := c.conn.Query(ctx, q, ch.Named("account", accountID), ch.Named("since", since.UTC()))
 	if err != nil {
 		return false, fmt.Errorf("query account events: %w", err)

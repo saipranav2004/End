@@ -3,6 +3,7 @@
 package clickhouse
 
 import (
+	"context"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -29,6 +30,14 @@ func New(client *chclient.Client, opts ...Option) *Repository {
 		opt(r)
 	}
 	return r
+}
+
+// tbl is the events table for this request's tenant (see clickhouse.Client.TableFor).
+func (c *Repository) tbl(ctx context.Context) string {
+	if c.client != nil {
+		return c.client.TableFor(ctx)
+	}
+	return c.table
 }
 
 // Enabled reports whether ClickHouse queries can run: configured and

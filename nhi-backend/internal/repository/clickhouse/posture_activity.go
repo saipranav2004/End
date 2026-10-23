@@ -47,7 +47,7 @@ func (c *Repository) ActivityPage(ctx context.Context, sub Subject, sc Scope, pf
 	}
 	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s
 		ORDER BY event_time DESC, event_id
-		LIMIT %d`, eventColumns, c.table, where, limit)
+		LIMIT %d`, eventColumns, c.tbl(ctx), where, limit)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()

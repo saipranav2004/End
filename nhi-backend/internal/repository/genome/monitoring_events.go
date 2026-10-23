@@ -56,6 +56,15 @@ func NewMonitoringEvents(client *chclient.Client, database string) *MonitoringEv
 // server answering pings. Safe on nil.
 func (e *MonitoringEvents) Enabled() bool { return e != nil && e.client.Up() }
 
+// tbl is the table for this request's tenant: `<tenant>_clickhouse`.`log_events`
+// in per-tenant mode, else the configured one.
+func (e *MonitoringEvents) tbl(ctx context.Context) string {
+	if e.client != nil && e.client.PerTenant() {
+		return e.client.TableFor(ctx)
+	}
+	return e.table
+}
+
 // Table is the schema-qualified table the readers query (for logs/tests).
 func (e *MonitoringEvents) Table() string {
 	if e == nil {
@@ -96,7 +105,7 @@ func (e *MonitoringEvents) TotalCalls(ctx context.Context, accounts []string, so
 	if !e.Enabled() {
 		return 0, ErrMonitoringEventsNotConfigured
 	}
-	q := `SELECT uniqExact(event_id) FROM ` + e.table + ` WHERE` + identityWindowSQL
+	q := `SELECT uniqExact(event_id) FROM ` + e.tbl(ctx) + ` WHERE` + identityWindowSQL
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	var total uint64

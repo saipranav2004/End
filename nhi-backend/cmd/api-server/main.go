@@ -78,7 +78,10 @@ func main() {
 	default:
 		slog.Info("clickhouse connected", "host", cfg.ClickHouse.Host, "port", cfg.ClickHouse.Port, "database", cfg.ClickHouse.Database, "table", cfg.ClickHouse.Table)
 		colCtx, colCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if err := chClient.RequireColumns(colCtx, "event_time", "event_name", "event_source", "caller_arn", "session_issuer_arn", "access_key_id", "account_id", "resource_arn", "source_ip", "error_code"); err != nil {
+		// In per-tenant mode there is no single table to check at startup.
+		if chClient.PerTenant() {
+			slog.Info("clickhouse: one database per tenant", "pattern", "<tenant db_name>"+cfg.ClickHouse.DatabaseSuffix, "table", cfg.ClickHouse.Table)
+		} else if err := chClient.RequireColumns(colCtx, "event_time", "event_name", "event_source", "caller_arn", "session_issuer_arn", "access_key_id", "account_id", "resource_arn", "source_ip", "error_code"); err != nil {
 			slog.Error("clickhouse CloudTrail table unusable, activity data disabled", "err", err)
 		}
 		colCancel()

@@ -12,7 +12,7 @@
 --   external_id            the tenant's collector_external_id the role was verified with
 --   regions                regions a sync may read, plus the synthetic 'global'
 --   is_connected           true while the latest check passed every step
---   account_status         pending | connected | action_needed
+--   account_status         pending | active | action_needed (active was 'connected' before 006)
 --   github_enabled         exposed-credential scanning of GitHub is on and verified
 --   codecommit_enabled     exposed-credential scanning of CodeCommit is on and verified
 --

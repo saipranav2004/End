@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	chclient "nhi-backend-api/internal/clickhouse"
 	"nhi-backend-api/internal/config"
 	"nhi-backend-api/internal/logging"
 	"nhi-backend-api/internal/models"
@@ -75,7 +76,8 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 			respondUnauthorized(w, r, "Session has ended or account is no longer active")
 			return
 		}
-		claims.Role = role // the database's current role, not the token's
+		claims.Role = role                                                 // the database's current role, not the token's
+		r = r.WithContext(chclient.WithTenant(r.Context(), claims.DBName)) // per-tenant ClickHouse database
 		logging.RequestFrom(r.Context()).SetActor(claims.TenantID, claims.UserID)
 		ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))

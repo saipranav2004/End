@@ -70,7 +70,7 @@ func (c *Repository) queryEvents(ctx context.Context, sub Subject, sc Scope, err
 	// directly (native-protocol typed parameters reject numeric LIMIT values).
 	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s
 		ORDER BY event_time DESC, event_id
-		LIMIT %d OFFSET %d`, eventColumns, c.table, where, limit, offset)
+		LIMIT %d OFFSET %d`, eventColumns, c.tbl(ctx), where, limit, offset)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -114,7 +114,7 @@ func (c *Repository) CountEvents(ctx context.Context, sub Subject, sc Scope) (ui
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	var n uint64
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.table, where), args...).Scan(&n); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("clickhouse count: %w", err)
 	}
 	return n, nil
@@ -127,7 +127,7 @@ func (c *Repository) VolumeChart(ctx context.Context, sub Subject, sc Scope) ([]
 		return nil, nil
 	}
 	q := fmt.Sprintf(`SELECT toDate(event_time) AS date, count() AS count
-		FROM %s WHERE %s GROUP BY date ORDER BY date`, c.table, where)
+		FROM %s WHERE %s GROUP BY date ORDER BY date`, c.tbl(ctx), where)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -157,7 +157,7 @@ func (c *Repository) AccountVolume(ctx context.Context, sc Scope) ([]VolumePoint
 	}
 	tc, ta := timeFilter(sc)
 	q := fmt.Sprintf(`SELECT toDate(event_time) AS date, count() AS count
-		FROM %s WHERE account_id IN {accounts:Array(String)}%s GROUP BY date ORDER BY date`, c.table, tc)
+		FROM %s WHERE account_id IN {accounts:Array(String)}%s GROUP BY date ORDER BY date`, c.tbl(ctx), tc)
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, append([]any{ch.Named("accounts", sc.Accounts)}, ta...)...)
@@ -189,7 +189,7 @@ func (c *Repository) IdentitiesUsingCredential(ctx context.Context, credentialAR
 			argMax(event_name, event_time) AS last_action,
 			max(event_time) AS last_action_time
 		FROM %s WHERE %s
-		GROUP BY caller_arn ORDER BY last_action_time DESC LIMIT 100`, c.table, where)
+		GROUP BY caller_arn ORDER BY last_action_time DESC LIMIT 100`, c.tbl(ctx), where)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()

@@ -48,7 +48,7 @@ func (c *Repository) UsedPermissions(ctx context.Context, sub Subject, sc Scope)
 			groupUniqArray(source_ip), groupUniqArray(aws_region)
 		FROM %s WHERE %s AND error_code = ''
 		GROUP BY event_source, event_name, resource_arn
-		ORDER BY count() DESC LIMIT %d`, c.table, where, maxUsedPermissions)
+		ORDER BY count() DESC LIMIT %d`, c.tbl(ctx), where, maxUsedPermissions)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -83,7 +83,7 @@ func (c *Repository) LastSeenAt(ctx context.Context, sub Subject, sc Scope) (*ti
 	defer cancel()
 	var last time.Time
 	var n uint64
-	q := fmt.Sprintf("SELECT max(event_time), count() FROM %s WHERE %s", c.table, where)
+	q := fmt.Sprintf("SELECT max(event_time), count() FROM %s WHERE %s", c.tbl(ctx), where)
 	if err := c.conn.QueryRow(ctx, q, args...).Scan(&last, &n); err != nil {
 		return nil, fmt.Errorf("clickhouse last seen: %w", err)
 	}
@@ -113,7 +113,7 @@ func (c *Repository) LastSeenByKeys(ctx context.Context, keys []string, sc Scope
 			WHERE account_id IN {accounts:Array(String)}%s
 			  AND (caller_arn IN {keys:Array(String)} OR session_issuer_arn IN {keys:Array(String)}
 			       OR access_key_id IN {keys:Array(String)})
-		) WHERE k IN {keys:Array(String)} GROUP BY k`, c.table, tc)
+		) WHERE k IN {keys:Array(String)} GROUP BY k`, c.tbl(ctx), tc)
 
 	for start := 0; start < len(keys); start += bulkChunk {
 		end := min(start+bulkChunk, len(keys))
@@ -172,7 +172,7 @@ func (c *Repository) CreatorARN(ctx context.Context, identityARN string, account
 	q := fmt.Sprintf(`SELECT caller_arn FROM %s
 		WHERE resource_arn = {arn:String} AND event_name IN {events:Array(String)}
 		  AND caller_arn != '' AND error_code = '' AND account_id IN {accounts:Array(String)}
-		ORDER BY event_time ASC LIMIT 1`, c.table)
+		ORDER BY event_time ASC LIMIT 1`, c.tbl(ctx))
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -203,7 +203,7 @@ func (c *Repository) AccessEdges(ctx context.Context, sub Subject, sc Scope) ([]
 			max(event_time), groupUniqArray(event_source)
 		FROM %s WHERE %s AND resource_arn != '' AND error_code = ''
 		GROUP BY resource_arn, resource_type
-		ORDER BY call_count DESC LIMIT %d`, c.table, where, maxAccessEdges)
+		ORDER BY call_count DESC LIMIT %d`, c.tbl(ctx), where, maxAccessEdges)
 
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -236,7 +236,7 @@ func (c *Repository) CreatorsByARNs(ctx context.Context, arns []string, accounts
 	q := fmt.Sprintf(`SELECT resource_arn, argMin(caller_arn, event_time) FROM %s
 		WHERE resource_arn IN {arns:Array(String)} AND event_name IN {events:Array(String)}
 		  AND caller_arn != '' AND error_code = '' AND account_id IN {accounts:Array(String)}
-		GROUP BY resource_arn`, c.table)
+		GROUP BY resource_arn`, c.tbl(ctx))
 
 	for start := 0; start < len(arns); start += bulkChunk {
 		end := min(start+bulkChunk, len(arns))
@@ -289,7 +289,7 @@ func (c *Repository) UsedActionsByKeys(ctx context.Context, keys []string, accou
 			WHERE account_id IN {accounts:Array(String)} AND error_code = ''%s
 			  AND (caller_arn IN {keys:Array(String)} OR session_issuer_arn IN {keys:Array(String)}
 			       OR access_key_id IN {keys:Array(String)})
-		) WHERE k IN {keys:Array(String)} GROUP BY k, event_source, event_name`, c.table, timeClause)
+		) WHERE k IN {keys:Array(String)} GROUP BY k, event_source, event_name`, c.tbl(ctx), timeClause)
 
 	for start := 0; start < len(keys); start += bulkChunk {
 		end := min(start+bulkChunk, len(keys))
@@ -353,7 +353,7 @@ func (c *Repository) ChangeEvidenceByARNs(ctx context.Context, arns, events, acc
 		WHERE resource_arn IN {arns:Array(String)} AND event_name IN {events:Array(String)}
 		  AND account_id IN {accounts:Array(String)} AND error_code = ''
 		  AND event_time >= {from:DateTime64(3)} AND event_time <= {to:DateTime64(3)}
-		GROUP BY resource_arn`, c.table)
+		GROUP BY resource_arn`, c.tbl(ctx))
 	for start := 0; start < len(arns); start += bulkChunk {
 		end := min(start+bulkChunk, len(arns))
 		if err := func() error {

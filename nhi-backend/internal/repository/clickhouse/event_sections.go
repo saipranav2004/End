@@ -95,7 +95,7 @@ func (c *Repository) EventsPage(ctx context.Context, sub Subject, sc Scope, f Ev
 	}
 	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s
 		ORDER BY event_time DESC, event_id
-		LIMIT %d OFFSET %d`, eventColumns, c.table, where, limit, offset)
+		LIMIT %d OFFSET %d`, eventColumns, c.tbl(ctx), where, limit, offset)
 	return c.scanEvents(ctx, q, args)
 }
 
@@ -108,7 +108,7 @@ func (c *Repository) EventByID(ctx context.Context, sub Subject, sc Scope, event
 	}
 	where += " AND event_id = {f_event_id:String}"
 	args = append(args, ch.Named("f_event_id", eventID))
-	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY event_time DESC LIMIT 1`, eventColumns, c.table, where)
+	q := fmt.Sprintf(`SELECT %s FROM %s WHERE %s ORDER BY event_time DESC LIMIT 1`, eventColumns, c.tbl(ctx), where)
 	rows, err := c.scanEvents(ctx, q, args)
 	if err != nil || len(rows) == 0 {
 		return nil, err
@@ -148,7 +148,7 @@ func (c *Repository) CountFiltered(ctx context.Context, sub Subject, sc Scope, f
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	var n uint64
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.table, where), args...).Scan(&n); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("clickhouse events count: %w", err)
 	}
 	return n, nil
@@ -180,7 +180,7 @@ func (c *Repository) CredentialUsage(ctx context.Context, sub Subject, sc Scope,
 		FROM %s WHERE %s
 		GROUP BY ckey, kind
 		ORDER BY n DESC
-		LIMIT 200`, c.table, where)
+		LIMIT 200`, c.tbl(ctx), where)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, args...)
@@ -224,7 +224,7 @@ func (c *Repository) ResourceAccess(ctx context.Context, sub Subject, sc Scope, 
 		FROM %s WHERE %s
 		GROUP BY resource_arn
 		ORDER BY count() DESC, resource_arn
-		LIMIT %d`, c.table, where, maxResourceRows)
+		LIMIT %d`, c.tbl(ctx), where, maxResourceRows)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, args...)
@@ -247,7 +247,7 @@ func (c *Repository) ResourceAccess(ctx context.Context, sub Subject, sc Scope, 
 	rows.Close()
 
 	var total uint64
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(resource_arn) FROM %s WHERE %s", c.table, where), args...).Scan(&total); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(resource_arn) FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("clickhouse resources total: %w", err)
 	}
 	return out, total, nil
@@ -272,7 +272,7 @@ func (c *Repository) Heatmap(ctx context.Context, sub Subject, sc Scope, f Event
 			SELECT event_name FROM %[1]s WHERE %[2]s
 			GROUP BY event_name ORDER BY count() DESC, event_name LIMIT %[3]d)
 		GROUP BY event_name, h
-		ORDER BY event_name, h`, c.table, where, heatmapActions)
+		ORDER BY event_name, h`, c.tbl(ctx), where, heatmapActions)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, args...)
@@ -313,7 +313,7 @@ func (c *Repository) SessionEvents(ctx context.Context, sub Subject, sc Scope, f
 	q := fmt.Sprintf(`SELECT caller_arn, session_issuer_arn, access_key_id, event_time, event_name, event_source, source_ip
 		FROM %s WHERE %s
 		ORDER BY caller_arn, event_time, event_id
-		LIMIT %d`, c.table, where, MaxSessionEvents+1)
+		LIMIT %d`, c.tbl(ctx), where, MaxSessionEvents+1)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	res, err := c.conn.Query(ctx, q, args...)
@@ -377,7 +377,7 @@ func (c *Repository) ErrorSummary(ctx context.Context, sub Subject, sc Scope, f 
 	out := &ErrorSummaryResult{}
 
 	rows, err := c.conn.Query(ctx, fmt.Sprintf(`SELECT error_code, count() AS n FROM %s WHERE %s
-		GROUP BY error_code ORDER BY n DESC, error_code LIMIT 50`, c.table, where), args...)
+		GROUP BY error_code ORDER BY n DESC, error_code LIMIT 50`, c.tbl(ctx), where), args...)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse error codes: %w", err)
 	}
@@ -399,13 +399,13 @@ func (c *Repository) ErrorSummary(ctx context.Context, sub Subject, sc Scope, f 
 		return out, nil
 	}
 	// The listed codes are capped at 50; take the exact total separately.
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.table, where), args...).Scan(&out.TotalErrors); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&out.TotalErrors); err != nil {
 		return nil, fmt.Errorf("clickhouse error total: %w", err)
 	}
 
 	var a DeniedAction
 	err = c.conn.QueryRow(ctx, fmt.Sprintf(`SELECT event_source, event_name, count() AS n FROM %s WHERE %s AND %s
-		GROUP BY event_source, event_name ORDER BY n DESC, event_name LIMIT 1`, c.table, where, deniedClause), args...).
+		GROUP BY event_source, event_name ORDER BY n DESC, event_name LIMIT 1`, c.tbl(ctx), where, deniedClause), args...).
 		Scan(&a.EventSource, &a.EventName, &a.Count)
 	if err == nil {
 		out.MostDeniedAct = &a
@@ -415,7 +415,7 @@ func (c *Repository) ErrorSummary(ctx context.Context, sub Subject, sc Scope, f 
 
 	var r DeniedResource
 	err = c.conn.QueryRow(ctx, fmt.Sprintf(`SELECT resource_arn, count() AS n FROM %s WHERE %s AND %s AND resource_arn != ''
-		GROUP BY resource_arn ORDER BY n DESC, resource_arn LIMIT 1`, c.table, where, deniedClause), args...).
+		GROUP BY resource_arn ORDER BY n DESC, resource_arn LIMIT 1`, c.tbl(ctx), where, deniedClause), args...).
 		Scan(&r.ARN, &r.Count)
 	if err == nil {
 		out.MostDeniedRes = &r
@@ -449,7 +449,7 @@ func (c *Repository) CrossAccount(ctx context.Context, sub Subject, sc Scope, f 
 		FROM %s WHERE %s
 		GROUP BY acct, resource_arn
 		ORDER BY n DESC, resource_arn
-		LIMIT %d`, c.table, where, maxResourceRows)
+		LIMIT %d`, c.tbl(ctx), where, maxResourceRows)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, args...)
@@ -471,7 +471,7 @@ func (c *Repository) CrossAccount(ctx context.Context, sub Subject, sc Scope, f 
 	}
 	rows.Close()
 	var total uint64
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.table, where), args...).Scan(&total); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT count() FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("clickhouse cross account total: %w", err)
 	}
 	return out, total, nil
@@ -496,7 +496,7 @@ func (c *Repository) IPStats(ctx context.Context, sub Subject, sc Scope, f Event
 		FROM %s WHERE %s
 		GROUP BY source_ip
 		ORDER BY n DESC, source_ip
-		LIMIT %d`, c.table, where, maxIPRows)
+		LIMIT %d`, c.tbl(ctx), where, maxIPRows)
 	ctx, cancel := c.eventsCtx(ctx)
 	defer cancel()
 	rows, err := c.conn.Query(ctx, q, args...)
@@ -518,7 +518,7 @@ func (c *Repository) IPStats(ctx context.Context, sub Subject, sc Scope, f Event
 	}
 	rows.Close()
 	var total uint64
-	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(source_ip) FROM %s WHERE %s", c.table, where), args...).Scan(&total); err != nil {
+	if err := c.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(source_ip) FROM %s WHERE %s", c.tbl(ctx), where), args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("clickhouse ips total: %w", err)
 	}
 	return out, total, nil

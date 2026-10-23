@@ -36,13 +36,23 @@ type Config struct {
 	AWSIntegration AWSIntegrationConfig `yaml:"aws_integration"`
 }
 
+// DefaultClickHouseSuffix is appended to a tenant's schema name to name its
+// ClickHouse database when no fixed database is configured.
+const DefaultClickHouseSuffix = "_clickhouse"
+
+var clickHouseSuffixRE = regexp.MustCompile(`^[A-Za-z0-9_]{0,32}$`)
+
 // ClickHouseConfig holds the read-only connection to the CloudTrail event
 // store. It is optional: when Host is empty ClickHouse is disabled and the API
 // serves Postgres data only.
 type ClickHouseConfig struct {
-	Host           string `yaml:"host"`
-	Port           int    `yaml:"port"`
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+	// Database is one fixed database. Leave it empty to use one database per
+	// tenant: the tenant's schema name (nhi_global.tenants.db_name) plus
+	// DatabaseSuffix, e.g. bimasugam -> bimasugam_clickhouse.
 	Database       string `yaml:"database"`
+	DatabaseSuffix string `yaml:"database_suffix"` // per-tenant mode only; default _clickhouse
 	User           string `yaml:"user"`
 	Password       string `yaml:"password"`
 	Table          string `yaml:"table"`
@@ -57,6 +67,10 @@ type ClickHouseConfig struct {
 func (c ClickHouseConfig) Enabled() bool {
 	return strings.TrimSpace(c.Host) != ""
 }
+
+// PerTenant reports whether each tenant has its own database
+// (<db_name><suffix>) instead of one fixed Database.
+func (c ClickHouseConfig) PerTenant() bool { return strings.TrimSpace(c.Database) == "" }
 
 type ServerConfig struct {
 	Port int    `yaml:"port"`
@@ -194,6 +208,7 @@ func (c *Config) applyEnvironment() error {
 		return err
 	}
 	setString(&c.ClickHouse.Database, "NHI_CLICKHOUSE_DATABASE")
+	setString(&c.ClickHouse.DatabaseSuffix, "NHI_CLICKHOUSE_DATABASE_SUFFIX")
 	setString(&c.ClickHouse.User, "NHI_CLICKHOUSE_USER")
 	setString(&c.ClickHouse.Password, "NHI_CLICKHOUSE_PASSWORD")
 	setString(&c.ClickHouse.Table, "NHI_CLICKHOUSE_TABLE")
@@ -243,6 +258,9 @@ func (c *Config) applyDefaults() {
 	if c.ClickHouse.Table == "" {
 		c.ClickHouse.Table = "cloudtrail_events"
 	}
+	if c.ClickHouse.DatabaseSuffix == "" {
+		c.ClickHouse.DatabaseSuffix = DefaultClickHouseSuffix
+	}
 	if c.ClickHouse.TimeoutSeconds == 0 {
 		c.ClickHouse.TimeoutSeconds = 5
 	}
@@ -287,8 +305,11 @@ func (c *Config) validate() error {
 		if ch.Port < 1 || ch.Port > 65535 {
 			return fmt.Errorf("config: clickhouse.port must be between 1 and 65535")
 		}
-		if strings.TrimSpace(ch.Database) == "" || !databaseNameRE.MatchString(ch.Database) {
+		if !ch.PerTenant() && !databaseNameRE.MatchString(ch.Database) {
 			return fmt.Errorf("config: clickhouse.database must be a valid identifier")
+		}
+		if ch.PerTenant() && !clickHouseSuffixRE.MatchString(ch.DatabaseSuffix) {
+			return fmt.Errorf("config: clickhouse.database_suffix must be letters, digits and underscores")
 		}
 		// The table name is interpolated into SQL, so it must be a plain identifier.
 		if !databaseNameRE.MatchString(ch.Table) {

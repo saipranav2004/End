@@ -15,7 +15,8 @@ import (
 //	NHI_MONITORING_CLICKHOUSE_HOST              required to enable; empty = disabled
 //	NHI_MONITORING_CLICKHOUSE_PORT              default 8123 (http) / 9000 (native)
 //	NHI_MONITORING_CLICKHOUSE_PROTOCOL          http (default) | native
-//	NHI_MONITORING_CLICKHOUSE_DATABASE          required, e.g. Bimasugam_ClickHouse
+//	NHI_MONITORING_CLICKHOUSE_DATABASE          one fixed database; empty = one per tenant (<db_name>_clickhouse)
+//	NHI_MONITORING_CLICKHOUSE_DATABASE_SUFFIX   per-tenant mode only, default _clickhouse
 //	NHI_MONITORING_CLICKHOUSE_TABLE             default log_events (the pipeline's CLICKHOUSE_EVENTS_TABLE)
 //	NHI_MONITORING_CLICKHOUSE_USER / _PASSWORD
 //	NHI_MONITORING_CLICKHOUSE_SECURE            true | false (TLS), default false
@@ -50,6 +51,7 @@ func MonitoringClickHouse() (ClickHouseConfig, error) {
 		return c, err
 	}
 	setString(&c.Database, prefix+"DATABASE")
+	setString(&c.DatabaseSuffix, prefix+"DATABASE_SUFFIX")
 	setString(&c.User, prefix+"USER")
 	setString(&c.Password, prefix+"PASSWORD")
 	setString(&c.Table, prefix+"TABLE")
@@ -82,12 +84,17 @@ func MonitoringClickHouse() (ClickHouseConfig, error) {
 	if c.TimeoutSeconds == 0 {
 		c.TimeoutSeconds = 5
 	}
+	if c.DatabaseSuffix == "" {
+		c.DatabaseSuffix = DefaultClickHouseSuffix
+	}
 
 	switch {
 	case c.Port < 1 || c.Port > 65535:
 		return c, fmt.Errorf("config: %sPORT must be between 1 and 65535", prefix)
-	case strings.TrimSpace(c.Database) == "" || !databaseNameRE.MatchString(c.Database):
+	case !c.PerTenant() && !databaseNameRE.MatchString(c.Database):
 		return c, fmt.Errorf("config: %sDATABASE must be a valid identifier", prefix)
+	case c.PerTenant() && !clickHouseSuffixRE.MatchString(c.DatabaseSuffix):
+		return c, fmt.Errorf("config: %sDATABASE_SUFFIX must be letters, digits and underscores", prefix)
 	case !databaseNameRE.MatchString(c.Table): // interpolated into SQL, so it must be a plain identifier
 		return c, fmt.Errorf("config: %sTABLE must be a valid identifier", prefix)
 	case c.Protocol != "native" && c.Protocol != "http":

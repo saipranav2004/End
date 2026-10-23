@@ -25,6 +25,7 @@ import (
 type Client struct {
 	conn    driver.Conn
 	table   string
+	suffix  string // per-tenant mode: the tenant schema + suffix is the database
 	timeout time.Duration
 	up      atomic.Bool
 	bad     atomic.Bool // the events table lacks columns the queries need
@@ -66,6 +67,9 @@ func New(ctx context.Context, cfg config.ClickHouseConfig) (*Client, error) {
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	c := &Client{conn: conn, table: cfg.Table, timeout: timeout, stop: make(chan struct{})}
+	if cfg.PerTenant() {
+		c.suffix = cfg.DatabaseSuffix
+	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, timeout)
 	err = c.Ping(pingCtx)
@@ -163,6 +167,39 @@ func (c *Client) Close() error {
 
 // Conn exposes the pool for query code.
 func (c *Client) Conn() driver.Conn { return c.conn }
+
+type tenantKey struct{}
+
+// WithTenant records the tenant's schema name (already validated) on the
+// request context, so that a per-tenant client reads that tenant's database.
+func WithTenant(ctx context.Context, schema string) context.Context {
+	return context.WithValue(ctx, tenantKey{}, schema)
+}
+
+// PerTenant reports whether queries go to a database per tenant.
+func (c *Client) PerTenant() bool { return c != nil && c.suffix != "" }
+
+// Database is the database a request of ctx's tenant reads in per-tenant
+// mode ("" otherwise, and when the context carries no tenant).
+func (c *Client) Database(ctx context.Context) string {
+	if c == nil || c.suffix == "" {
+		return ""
+	}
+	if t, _ := ctx.Value(tenantKey{}).(string); t != "" {
+		return t + c.suffix
+	}
+	return ""
+}
+
+// TableFor is the table to query for this request: `<tenant>_clickhouse`.`table`
+// in per-tenant mode, else the configured (connection-default) database's table.
+// Both parts are validated identifiers.
+func (c *Client) TableFor(ctx context.Context) string {
+	if db := c.Database(ctx); db != "" {
+		return "`" + db + "`.`" + c.table + "`"
+	}
+	return c.table
+}
 
 // Table is the validated events table name; safe to interpolate into SQL.
 func (c *Client) Table() string { return c.table }
