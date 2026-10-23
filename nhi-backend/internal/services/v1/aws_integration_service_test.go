@@ -201,8 +201,12 @@ func (v *fakeVerifier) ListCodeCommit(_ context.Context, _ *awsconnect.Session, 
 	v.ccRegions = regions
 	return v.ccList, v.ccListErr
 }
-func (v *fakeVerifier) ReadCodeCommit(context.Context, *awsconnect.Session, string, string) error {
-	return v.ccReadErr
+func (v *fakeVerifier) ProbeCodeCommit(_ context.Context, _ *awsconnect.Session, region, repo string) awsconnect.RepoProbe {
+	p := awsconnect.RepoProbe{Region: region, Repository: repo, Branch: "main", Files: 2}
+	if v.ccReadErr != nil {
+		p.Denied = []string{"codecommit:GetBlob"}
+	}
+	return p
 }
 func (v *fakeVerifier) ReadSecretToken(context.Context, *awsconnect.Session, awsconnect.SecretARN) (string, error) {
 	return v.secretToken, v.secretErr
@@ -410,7 +414,7 @@ func TestGetFlagsAndSetup(t *testing.T) {
 	if !res.HasConnectedAccount || res.ExposureEnabled || res.Status != models.AWSStatusConnected || res.Workspace.Domain != "acme.com" {
 		t.Fatalf("got %+v", res)
 	}
-	if res.Setup == nil || len(res.Setup.Regions) != 2 || res.Setup.Exposure.CodeCommit.ManagedPolicy != "AWSCodeCommitReadOnly" || res.Setup.Exposure.GitHub.SecretPrefix != "nhi/github" {
+	if res.Setup == nil || len(res.Setup.Regions) != 2 || len(res.Setup.Exposure.CodeCommit.Actions) != 4 || res.Setup.Exposure.GitHub.SecretPrefix != "nhi/github" {
 		t.Fatalf("setup %+v", res.Setup)
 	}
 	rec := store.accounts["222222222222"]
@@ -432,10 +436,10 @@ func TestExposureCodeCommit(t *testing.T) {
 		want      string
 		fix       string
 	}{
-		{"enabled", &fakeVerifier{ccList: awsconnect.CodeCommitResult{Repositories: 3, Regions: []string{"us-east-1"}, SampleRepository: "api", SampleRegion: "us-east-1"}}, true, "pass,pass", ""},
+		{"enabled", &fakeVerifier{ccList: awsconnect.CodeCommitResult{Repositories: 3, Regions: []string{"us-east-1"}, SampleRepository: "api", SampleRegion: "us-east-1", Repos: []awsconnect.RepoRef{{Region: "us-east-1", Name: "api"}}}}, true, "pass,pass", ""},
 		{"no repositories yet", &fakeVerifier{ccList: awsconnect.CodeCommitResult{Regions: []string{"us-east-1"}}}, true, "pass,skipped", ""},
-		{"cannot list", &fakeVerifier{ccListErr: awsconnect.ErrAccessDenied}, false, "fail,skipped", "Attach AWSCodeCommitReadOnly to the role"},
-		{"list only", &fakeVerifier{ccList: awsconnect.CodeCommitResult{Repositories: 1, Regions: []string{"us-east-1"}, SampleRepository: "api", SampleRegion: "us-east-1"}, ccReadErr: awsconnect.ErrAccessDenied}, false, "pass,fail", "Attach AWSCodeCommitReadOnly to the role"},
+		{"cannot list", &fakeVerifier{ccListErr: awsconnect.ErrAccessDenied}, false, "fail,skipped", "Keep ViewOnlyAccess attached to the role: it allows codecommit:ListRepositories"},
+		{"list only", &fakeVerifier{ccList: awsconnect.CodeCommitResult{Repositories: 1, Regions: []string{"us-east-1"}, SampleRepository: "api", SampleRegion: "us-east-1", Repos: []awsconnect.RepoRef{{Region: "us-east-1", Name: "api"}}}, ccReadErr: awsconnect.ErrAccessDenied}, false, "pass,fail", "Add codecommit:GetBlob for those repositories (the policy is on the setup page)"},
 		{"role gone", &fakeVerifier{assumeErr: awsconnect.ErrAccessDenied}, false, "fail,skipped", "Re-check the account connection"},
 		{"aws error", &fakeVerifier{ccListErr: errors.New("timeout")}, false, "error,skipped", ""},
 	}

@@ -217,17 +217,22 @@ export function secretArnProblem(value, accountId, prefix) {
 /** The secret name the setup suggests. */
 export const suggestedSecretName = (prefix) => `${prefix || 'nhi/github'}/token`;
 
-/** Inline policy granting the CodeCommit reads, for teams that avoid managed policies. */
-export function codeCommitPolicyJson(setup) {
+/**
+ * Inline policy with the four CodeCommit reads the secret scanner uses. The
+ * resources are the repositories of the regions the account reads (one ARN
+ * pattern per region); narrow them to named repositories to grant less.
+ */
+export function codeCommitPolicyJson(setup, accountId, regions = []) {
+  const list = regions.length > 0 ? regions : [setup.region || '<region>'];
   return JSON.stringify(
     {
       Version: '2012-10-17',
       Statement: [
         {
-          Sid: 'NHIExposedCredentialsCodeCommitRead',
+          Sid: 'SecretScannerReadCode',
           Effect: 'Allow',
           Action: setup.exposure.codecommit.actions,
-          Resource: '*',
+          Resource: list.map((region) => `arn:aws:codecommit:${region}:${accountId}:*`),
         },
       ],
     },
@@ -279,10 +284,12 @@ export function kmsDecryptPolicyJson(accountId) {
   );
 }
 
-export function codeCommitCli(setup, roleName) {
-  return `aws iam attach-role-policy \\
+/** Save the policy above as codecommit-read.json, then add it to the role. */
+export function codeCommitCli(roleName) {
+  return `aws iam put-role-policy \\
   --role-name ${roleName} \\
-  --policy-arn arn:aws:iam::aws:policy/${setup.exposure.codecommit.managedPolicy}`;
+  --policy-name SecretScannerReadCode \\
+  --policy-document file://codecommit-read.json`;
 }
 
 /**

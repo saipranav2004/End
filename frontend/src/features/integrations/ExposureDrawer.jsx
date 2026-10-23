@@ -34,8 +34,8 @@ import { CodeBlock, CodeCommitMark, CopyChip, Disclosure, GitHubMark, Instructio
  * Each platform needs one grant on the account's role, the same way the
  * read-only connection did:
  *
- *   CodeCommit  the AWS-managed AWSCodeCommitReadOnly policy (or the same
- *               reads as an inline policy).
+ *   CodeCommit  an inline policy with the four reads the scanner uses
+ *               (GetBranch, GetCommit, GetDifferences, GetBlob).
  *   GitHub      a read-only fine-grained token kept in the client's own
  *               Secrets Manager, and a policy letting the role read only that
  *               secret. The token never passes through this console.
@@ -251,20 +251,22 @@ function ExposureForm({ account, accounts, onSelectAccount, setup, onClose, onSa
                   <b>Roles</b> → <CopyChip value={roleName} label="role name" />.
                 </>,
                 <>
-                  <b>Add permissions</b> → <b>Attach policies</b>, tick{' '}
-                  <CopyChip value={setup.exposure.codecommit.managedPolicy} label="policy name" /> and choose <b>Add permissions</b>.
+                  <b>Add permissions</b> → <b>Create inline policy</b> → <b>JSON</b>, paste the policy below and save it. It allows only
+                  the four reads the scanner uses: <span className="font-mono text-[12px]">GetBranch</span>,{' '}
+                  <span className="font-mono text-[12px]">GetCommit</span>, <span className="font-mono text-[12px]">GetDifferences</span> and{' '}
+                  <span className="font-mono text-[12px]">GetBlob</span>.
                 </>,
               ]}
             />
+            <CodeBlock code={codeCommitPolicyJson(setup, current.accountId, current.regions)} copyLabel="Copy the policy" />
+            <p className="mt-2 text-[12px] text-ink-3">
+              To read only some repositories, replace the <span className="font-mono">*</span> at the end of each Resource with the repository name.
+              Keep <b className="font-semibold text-ink-2">ViewOnlyAccess</b> attached: it is what lets us list your repositories.
+            </p>
             <ConsoleLink href={AWS_CONSOLE.iamRoles}>Open IAM roles</ConsoleLink>
             <Disclosure label="Prefer the AWS CLI?">
-              <CodeBlock code={codeCommitCli(setup, roleName)} copyLabel="Copy the command" />
-            </Disclosure>
-            <Disclosure label="Only the exact reads? Use this inline policy instead">
-              <p className="mt-2 text-[12px] text-ink-3">
-                Role → <b className="font-semibold text-ink-2">Add permissions</b> → <b className="font-semibold text-ink-2">Create inline policy</b> → JSON.
-              </p>
-              <CodeBlock code={codeCommitPolicyJson(setup)} copyLabel="Copy the inline policy" />
+              <p className="mt-2 text-[12px] text-ink-3">Save the policy above as codecommit-read.json, then run:</p>
+              <CodeBlock code={codeCommitCli(roleName)} copyLabel="Copy the command" />
             </Disclosure>
             {current.regions.length > 0 && (
               <p className="mt-3.5 flex items-start gap-2 rounded-[var(--radius-control)] bg-info-soft px-3 py-2 text-[12px] leading-relaxed text-ink-2">

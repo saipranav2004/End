@@ -35,20 +35,8 @@ const SETUP = {
   regions: AWS_REGION_CATALOGUE,
   exposure: {
     codecommit: {
-      managed_policy: 'AWSCodeCommitReadOnly',
-      actions: [
-        'codecommit:ListRepositories',
-        'codecommit:BatchGetRepositories',
-        'codecommit:GetRepository',
-        'codecommit:ListBranches',
-        'codecommit:GetBranch',
-        'codecommit:GetCommit',
-        'codecommit:GetDifferences',
-        'codecommit:GetBlob',
-        'codecommit:GetFile',
-        'codecommit:GetFolder',
-        'codecommit:GitPull',
-      ],
+      managed_policy: '',
+      actions: ['codecommit:GetBranch', 'codecommit:GetCommit', 'codecommit:GetDifferences', 'codecommit:GetBlob'],
     },
     github: {
       secret_prefix: 'nhi/github',

@@ -22,7 +22,7 @@ type fakeExposureAWS struct {
 	repos      map[string][]string // region -> repository names
 	denied     map[string]bool     // region -> AccessDenied
 	unknown    map[string]bool     // region -> CodeCommit not offered
-	folderDeny bool
+	denyAction map[string]bool // "GetBlob" -> AccessDenied
 	pages      int // ListRepositories calls
 	secret     string
 	secretCode string // error __type for GetSecretValue
@@ -82,16 +82,34 @@ func (f *fakeExposureAWS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "CodeCommit_20150413.GetRepository":
 		_, _ = io.WriteString(w, `{"repositoryMetadata":{"repositoryName":"`+in["repositoryName"].(string)+`","defaultBranch":"main"}}`)
-	case "CodeCommit_20150413.GetFolder":
-		if f.folderDeny {
+	case "CodeCommit_20150413.GetBranch":
+		if f.denyAction["GetBranch"] {
 			writeErr(w, "AccessDeniedException")
 			return
 		}
-		if in["commitSpecifier"] != "main" || in["folderPath"] != "/" {
-			writeErr(w, "InvalidParameter")
+		if in["branchName"] != "main" {
+			writeErr(w, "BranchDoesNotExistException")
 			return
 		}
-		_, _ = io.WriteString(w, `{"commitId":"c","folderPath":"/"}`)
+		_, _ = io.WriteString(w, `{"branch":{"branchName":"main","commitId":"c1"}}`)
+	case "CodeCommit_20150413.GetCommit":
+		if f.denyAction["GetCommit"] {
+			writeErr(w, "AccessDeniedException")
+			return
+		}
+		_, _ = io.WriteString(w, `{"commit":{"commitId":"c1","parents":["c0"]}}`)
+	case "CodeCommit_20150413.GetDifferences":
+		if f.denyAction["GetDifferences"] {
+			writeErr(w, "AccessDeniedException")
+			return
+		}
+		_, _ = io.WriteString(w, `{"differences":[{"afterBlob":{"blobId":"b1","path":"a.env"}}]}`)
+	case "CodeCommit_20150413.GetBlob":
+		if f.denyAction["GetBlob"] {
+			writeErr(w, "AccessDeniedException")
+			return
+		}
+		_, _ = io.WriteString(w, `{"content":"ZGF0YQ=="}`)
 	case "secretsmanager.GetSecretValue":
 		if f.secretCode != "" {
 			writeErr(w, f.secretCode)
@@ -148,15 +166,21 @@ func TestListCodeCommit(t *testing.T) {
 	}
 }
 
-func TestReadCodeCommit(t *testing.T) {
+func TestProbeCodeCommit(t *testing.T) {
 	f := &fakeExposureAWS{}
 	c, s := newExposureSession(t, f)
-	if err := c.ReadCodeCommit(context.Background(), s, "us-east-1", "api"); err != nil {
-		t.Fatal(err)
+	p := c.ProbeCodeCommit(context.Background(), s, "us-east-1", "api")
+	if !p.OK() || p.Files != 1 || p.Branch != "main" {
+		t.Fatalf("all four allowed: %+v", p)
 	}
-	f.folderDeny = true
-	if err := c.ReadCodeCommit(context.Background(), s, "us-east-1", "api"); !errors.Is(err, ErrAccessDenied) {
-		t.Fatalf("denied: %v", err)
+	f.denyAction = map[string]bool{"GetBlob": true, "GetDifferences": true}
+	p = c.ProbeCodeCommit(context.Background(), s, "us-east-1", "api")
+	if p.OK() || strings.Join(p.Denied, ",") != "codecommit:GetDifferences,codecommit:GetBlob" && strings.Join(p.Denied, ",") != "codecommit:GetDifferences" {
+		t.Fatalf("denied: %+v", p)
+	}
+	f.denyAction = map[string]bool{"GetBranch": true}
+	if p = c.ProbeCodeCommit(context.Background(), s, "us-east-1", "api"); len(p.Denied) != 1 || p.Denied[0] != "codecommit:GetBranch" {
+		t.Fatalf("GetBranch denied: %+v", p)
 	}
 }
 

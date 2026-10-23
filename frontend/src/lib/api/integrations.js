@@ -93,7 +93,7 @@ export async function fetchAwsIntegration(signal) {
           regions: (s.regions ?? []).map((r) => ({ code: r.code, name: r.name, group: r.group, optIn: Boolean(r.opt_in) })),
           exposure: {
             codecommit: {
-              managedPolicy: s.exposure?.codecommit?.managed_policy ?? 'AWSCodeCommitReadOnly',
+              managedPolicy: s.exposure?.codecommit?.managed_policy ?? '',
               actions: s.exposure?.codecommit?.actions ?? [],
             },
             github: {

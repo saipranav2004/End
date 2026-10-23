@@ -38,7 +38,15 @@ type CodeCommitResult struct {
 	// A repository to test reading, when any exist.
 	SampleRepository string
 	SampleRegion     string
+	// Repos are the repositories found, in region order (at most
+	// maxReposPerRegion per region): what the read check samples from.
+	Repos []RepoRef
 }
+
+// RepoRef names one repository.
+type RepoRef struct{ Region, Name string }
+
+const maxReposPerRegion = 50
 
 // codeCommitConcurrency bounds parallel region calls.
 const codeCommitConcurrency = 8
@@ -54,6 +62,7 @@ func (c *Client) ListCodeCommit(ctx context.Context, s *Session, regions []strin
 		region string
 		count  int
 		first  string
+		names  []string
 		err    error
 	}
 	outcomes := make([]outcome, len(regions))
@@ -77,8 +86,14 @@ func (c *Client) ListCodeCommit(ctx context.Context, s *Session, regions []strin
 					break
 				}
 				for _, r := range out.Repositories {
-					if o.first == "" && r.RepositoryName != nil {
+					if r.RepositoryName == nil {
+						continue
+					}
+					if o.first == "" {
 						o.first = *r.RepositoryName
+					}
+					if len(o.names) < maxReposPerRegion {
+						o.names = append(o.names, *r.RepositoryName)
 					}
 				}
 				o.count += len(out.Repositories)
@@ -96,6 +111,9 @@ func (c *Client) ListCodeCommit(ctx context.Context, s *Session, regions []strin
 		case o.err == nil:
 			res.Regions = append(res.Regions, o.region)
 			res.Repositories += o.count
+			for _, name := range o.names {
+				res.Repos = append(res.Repos, RepoRef{Region: o.region, Name: name})
+			}
 			if res.SampleRepository == "" && o.first != "" {
 				res.SampleRepository, res.SampleRegion = o.first, o.region
 			}
@@ -114,29 +132,112 @@ func (c *Client) ListCodeCommit(ctx context.Context, s *Session, regions []strin
 	return res, nil
 }
 
-// ReadCodeCommit reads the top folder of a repository's default branch
-// (codecommit:GetRepository and GetFolder), proving the role can read code,
-// not only list it. An empty repository (no default branch) counts as read.
-func (c *Client) ReadCodeCommit(ctx context.Context, s *Session, region, repository string) error {
+// CodeCommitActions are the four permissions the secret scanner reads code with.
+var CodeCommitActions = []string{"codecommit:GetBranch", "codecommit:GetCommit", "codecommit:GetDifferences", "codecommit:GetBlob"}
+
+// RepoProbe is what reading one repository the way the scanner does found.
+type RepoProbe struct {
+	Region, Repository string
+	Branch             string
+	// Denied lists the permissions AWS refused, in the order the scanner uses them.
+	Denied []string
+	// Files is how many changed files' contents (blobs) could be fetched.
+	Files int
+	// Empty: the repository has no commits to read yet.
+	Empty bool
+	// Err is a failure that is not a missing permission (repository gone, AWS down).
+	Err error
+}
+
+// OK reports that every permission worked (or there was nothing to read).
+func (p RepoProbe) OK() bool { return len(p.Denied) == 0 && p.Err == nil }
+
+// ProbeCodeCommit reads one repository the way the scanner does, with only
+// the four permissions it needs: GetBranch (default branch -> commit id),
+// GetCommit, GetDifferences (the files the commit changed) and GetBlob (one
+// file's contents). A not-found answer still proves the permission: AWS
+// checks the permission before it looks for the thing.
+func (c *Client) ProbeCodeCommit(ctx context.Context, s *Session, region, repository string) RepoProbe {
+	p := RepoProbe{Region: region, Repository: repository}
 	if s == nil {
-		return errors.New("no session")
+		p.Err = errors.New("no session")
+		return p
 	}
 	cfg := s.config.Copy()
 	cfg.Region = region
 	client := codecommit.NewFromConfig(cfg)
-	repo, err := client.GetRepository(ctx, &codecommit.GetRepositoryInput{RepositoryName: aws.String(repository)})
-	if err != nil {
-		return classify(err)
+	denied := func(err error) bool {
+		if err != nil && errors.Is(classify(err), ErrAccessDenied) {
+			return true
+		}
+		return false
 	}
-	if repo.RepositoryMetadata == nil || repo.RepositoryMetadata.DefaultBranch == nil || *repo.RepositoryMetadata.DefaultBranch == "" {
-		return nil
+
+	// The default branch: GetRepository when the role may, else the usual names.
+	branches := []string{"main", "master"}
+	if repo, err := client.GetRepository(ctx, &codecommit.GetRepositoryInput{RepositoryName: aws.String(repository)}); err == nil &&
+		repo.RepositoryMetadata != nil && repo.RepositoryMetadata.DefaultBranch != nil && *repo.RepositoryMetadata.DefaultBranch != "" {
+		branches = []string{*repo.RepositoryMetadata.DefaultBranch}
 	}
-	_, err = client.GetFolder(ctx, &codecommit.GetFolderInput{
-		RepositoryName:  aws.String(repository),
-		CommitSpecifier: repo.RepositoryMetadata.DefaultBranch,
-		FolderPath:      aws.String("/"),
-	})
-	return classify(err)
+	var commitID string
+	for _, branch := range branches {
+		out, err := client.GetBranch(ctx, &codecommit.GetBranchInput{RepositoryName: aws.String(repository), BranchName: aws.String(branch)})
+		if denied(err) {
+			p.Denied = append(p.Denied, CodeCommitActions[0])
+			return p
+		}
+		if err == nil && out.Branch != nil && out.Branch.CommitId != nil {
+			p.Branch, commitID = branch, *out.Branch.CommitId
+			break
+		}
+	}
+	if commitID == "" { // no such branch: an empty repository, or an unusual default
+		p.Empty = true
+		return p
+	}
+
+	commit, err := client.GetCommit(ctx, &codecommit.GetCommitInput{RepositoryName: aws.String(repository), CommitId: aws.String(commitID)})
+	if denied(err) {
+		p.Denied = append(p.Denied, CodeCommitActions[1])
+	} else if err != nil {
+		p.Err = classify(err)
+		return p
+	}
+	in := &codecommit.GetDifferencesInput{
+		RepositoryName:        aws.String(repository),
+		AfterCommitSpecifier:  aws.String(commitID),
+		MaxResults:            aws.Int32(5),
+		BeforeCommitSpecifier: nil,
+	}
+	if commit != nil && commit.Commit != nil && len(commit.Commit.Parents) > 0 {
+		in.BeforeCommitSpecifier = aws.String(commit.Commit.Parents[0])
+	}
+	diff, err := client.GetDifferences(ctx, in)
+	var blobs []string
+	switch {
+	case denied(err):
+		p.Denied = append(p.Denied, CodeCommitActions[2])
+	case err != nil:
+		p.Err = classify(err)
+		return p
+	default:
+		for _, d := range diff.Differences {
+			if d.AfterBlob != nil && d.AfterBlob.BlobId != nil {
+				blobs = append(blobs, *d.AfterBlob.BlobId)
+			}
+		}
+	}
+	for _, id := range blobs {
+		_, err := client.GetBlob(ctx, &codecommit.GetBlobInput{RepositoryName: aws.String(repository), BlobId: aws.String(id)})
+		if denied(err) {
+			p.Denied = append(p.Denied, CodeCommitActions[3])
+			break
+		}
+		if err == nil {
+			p.Files++
+		}
+	}
+	return p
 }
 
 var secretARNRE = regexp.MustCompile(`^arn:(aws[a-z-]*):secretsmanager:([a-z]{2}(-[a-z]+)+-\d):(\d{12}):secret:([A-Za-z0-9/_+=.@-]{1,512})$`)

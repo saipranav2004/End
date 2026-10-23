@@ -37,13 +37,11 @@ var (
 		"aws.ec2", "aws.ecs", "aws.iam", "aws.sts",
 		"aws.lambda", "aws.eks", "aws.secretsmanager", "aws.kms",
 	}
-	// CodeCommit: the AWS managed read-only policy, or these actions inline.
-	codeCommitManagedPolicy = "AWSCodeCommitReadOnly"
-	codeCommitActions       = []string{
-		"codecommit:ListRepositories", "codecommit:BatchGetRepositories", "codecommit:GetRepository",
-		"codecommit:ListBranches", "codecommit:GetBranch", "codecommit:GetCommit",
-		"codecommit:GetDifferences", "codecommit:GetBlob", "codecommit:GetFile",
-		"codecommit:GetFolder", "codecommit:GitPull",
+	// CodeCommit: the four reads the secret scanner uses, as an inline policy on
+	// the role. There is no managed policy for exactly these; listing the
+	// repositories comes from the ViewOnlyAccess the role already has.
+	codeCommitActions = []string{
+		"codecommit:GetBranch", "codecommit:GetCommit", "codecommit:GetDifferences", "codecommit:GetBlob",
 	}
 	// GitHub: read the token secret, nothing else.
 	gitHubSecretActions    = []string{"secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"}
@@ -80,7 +78,7 @@ type AWSVerifier interface {
 	AllowAccountOnBus(ctx context.Context, p awsconnect.Platform, accountID string) error
 	RevokeAccountOnBus(ctx context.Context, p awsconnect.Platform, accountID string) error
 	ListCodeCommit(ctx context.Context, s *awsconnect.Session, regions []string) (awsconnect.CodeCommitResult, error)
-	ReadCodeCommit(ctx context.Context, s *awsconnect.Session, region, repository string) error
+	ProbeCodeCommit(ctx context.Context, s *awsconnect.Session, region, repository string) awsconnect.RepoProbe
 	ReadSecretToken(ctx context.Context, s *awsconnect.Session, arn awsconnect.SecretARN) (string, error)
 }
 
@@ -276,7 +274,7 @@ func (s *AWSIntegrationService) Get(ctx context.Context, caller AWSCaller, canMa
 		Regions:         offeredRegions(settings),
 		Exposure: models.AWSExposureSetup{
 			CodeCommit: models.CodeCommitSetup{
-				ManagedPolicy: codeCommitManagedPolicy,
+				ManagedPolicy: "", // none: the four actions go in an inline policy
 				Actions:       append([]string(nil), codeCommitActions...),
 			},
 			GitHub: models.GitHubSetup{
@@ -569,11 +567,21 @@ func roleUnusable(ctx context.Context, checks []models.AWSCheck, caller AWSCalle
 	}
 }
 
-// checkCodeCommit: list repositories in every allowed region, then read one.
+// Repositories the read check samples: a few per region, a handful overall,
+// each read with the four permissions the scanner uses.
+const (
+	probePerRegion = 3
+	probeTotal     = 9
+	probeStep      = 8 * time.Second
+)
+
+// checkCodeCommit: list repositories in every allowed region, then read a
+// sample of them exactly as the scanner will (GetBranch, GetCommit,
+// GetDifferences, GetBlob) and say, per repository, what could not be read.
 func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSCaller, session *awsconnect.Session, assumeErr error, rec *models.AWSAccountRecord) []models.AWSCheck {
 	checks := []models.AWSCheck{
-		{Key: models.ExposureCheckCodeCommitList, Label: "List your repositories"},
-		{Key: models.ExposureCheckCodeCommitRead, Label: "Read repository contents"},
+		{Key: models.ExposureCheckCodeCommitList, Label: "Find your repositories"},
+		{Key: models.ExposureCheckCodeCommitRead, Label: "Read code from them"},
 	}
 	if assumeErr != nil {
 		roleUnusable(ctx, checks, caller, rec.AccountID, assumeErr)
@@ -584,7 +592,7 @@ func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSC
 	cancel()
 	if err != nil {
 		if errors.Is(err, awsconnect.ErrAccessDenied) {
-			fail(&checks[0], "The role cannot list CodeCommit repositories.", "Attach "+codeCommitManagedPolicy+" to the role")
+			fail(&checks[0], "The role cannot list CodeCommit repositories.", "Keep ViewOnlyAccess attached to the role: it allows codecommit:ListRepositories")
 		} else {
 			logCheckError(ctx, caller.TenantID, rec.AccountID, checks[0].Key, err)
 			unavailable(&checks[0])
@@ -594,30 +602,102 @@ func (s *AWSIntegrationService) checkCodeCommit(ctx context.Context, caller AWSC
 	}
 	msg := fmt.Sprintf("%s in %s.", plural(found.Repositories, "repository", "repositories"), plural(len(found.Regions), "region", "regions"))
 	if found.Repositories == 0 {
-		msg = "No repositories yet in your selected regions. New ones are scanned as they appear."
+		msg = "No repositories yet in your selected regions (" + strings.Join(rec.Regions, ", ") + "). New ones are scanned as they appear."
 	}
 	if len(found.Unavailable) > 0 {
 		msg += " CodeCommit is not available in " + strings.Join(found.Unavailable, ", ") + "."
 	}
 	pass(&checks[0], msg)
 
-	if found.SampleRepository == "" {
+	sample := sampleRepos(found.Repos)
+	if len(sample) == 0 {
 		checks[1].State, checks[1].Message = models.AWSCheckSkipped, "Nothing to read yet."
 		return checks
 	}
-	stepCtx, cancel = context.WithTimeout(ctx, exposureStepTimeout)
-	err = s.verifier.ReadCodeCommit(stepCtx, session, found.SampleRegion, found.SampleRepository)
-	cancel()
-	switch {
-	case err == nil:
-		pass(&checks[1], "Read "+found.SampleRepository+".")
-	case errors.Is(err, awsconnect.ErrAccessDenied):
-		fail(&checks[1], "The role can list repositories but not read their files.", "Attach "+codeCommitManagedPolicy+" to the role")
-	default:
-		logCheckError(ctx, caller.TenantID, rec.AccountID, checks[1].Key, err)
-		unavailable(&checks[1])
+	probes := make([]awsconnect.RepoProbe, len(sample))
+	var wg sync.WaitGroup
+	for i, ref := range sample {
+		wg.Add(1)
+		go func(i int, ref awsconnect.RepoRef) {
+			defer wg.Done()
+			stepCtx, cancel := context.WithTimeout(ctx, probeStep)
+			defer cancel()
+			probes[i] = s.verifier.ProbeCodeCommit(stepCtx, session, ref.Region, ref.Name)
+		}(i, ref)
 	}
+	wg.Wait()
+	summarizeCodeCommitRead(ctx, caller, rec, &checks[1], probes)
 	return checks
+}
+
+// sampleRepos takes up to probePerRegion repositories per region, probeTotal overall.
+func sampleRepos(repos []awsconnect.RepoRef) []awsconnect.RepoRef {
+	perRegion := map[string]int{}
+	var out []awsconnect.RepoRef
+	for _, r := range repos {
+		if perRegion[r.Region] >= probePerRegion || len(out) >= probeTotal {
+			continue
+		}
+		perRegion[r.Region]++
+		out = append(out, r)
+	}
+	return out
+}
+
+// summarizeCodeCommitRead turns the probes into the check's one result: which
+// repositories (and regions) could be read, and for the ones that could not,
+// which of the four permissions to add.
+func summarizeCodeCommitRead(ctx context.Context, caller AWSCaller, rec *models.AWSAccountRecord, check *models.AWSCheck, probes []awsconnect.RepoProbe) {
+	var readable, empty, broken []string
+	var blocked []string
+	missing := map[string]bool{}
+	files := 0
+	for _, p := range probes {
+		label := p.Repository + " (" + p.Region + ")"
+		switch {
+		case len(p.Denied) > 0:
+			blocked = append(blocked, label+": "+strings.Join(p.Denied, ", "))
+			for _, d := range p.Denied {
+				missing[d] = true
+			}
+		case p.Err != nil:
+			logCheckError(ctx, caller.TenantID, rec.AccountID, check.Key, p.Err)
+			broken = append(broken, label)
+		case p.Empty:
+			empty = append(empty, label)
+		default:
+			readable = append(readable, label)
+			files += p.Files
+		}
+	}
+	switch {
+	case len(blocked) > 0:
+		names := make([]string, 0, len(missing))
+		for _, a := range awsconnect.CodeCommitActions {
+			if missing[a] {
+				names = append(names, a)
+			}
+		}
+		okNote := ""
+		if len(readable) > 0 {
+			okNote = fmt.Sprintf(" Readable: %s.", strings.Join(readable, ", "))
+		}
+		fail(check, "The role cannot read: "+strings.Join(blocked, "; ")+"."+okNote,
+			"Add "+strings.Join(names, ", ")+" for those repositories (the policy is on the setup page)")
+	case len(broken) > 0 && len(readable) == 0:
+		unavailable(check)
+	default:
+		msg := fmt.Sprintf("Read code from %s: %s.", plural(len(readable), "repository", "repositories"), strings.Join(readable, ", "))
+		if len(readable) == 0 {
+			msg = "The repositories found have no commits yet, so there is nothing to read. They are scanned once they have code."
+		} else if files > 0 {
+			msg = fmt.Sprintf("Read code from %s (%s fetched): %s.", plural(len(readable), "repository", "repositories"), plural(files, "file", "files"), strings.Join(readable, ", "))
+		}
+		if len(empty) > 0 {
+			msg += " No commits yet: " + strings.Join(empty, ", ") + "."
+		}
+		pass(check, msg)
+	}
 }
 
 // checkGitHub: read the token from the customer's secret with the role, then
