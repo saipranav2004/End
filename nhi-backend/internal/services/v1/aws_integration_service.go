@@ -102,6 +102,36 @@ func (s ClickHouseEventSource) HasEventsFrom(ctx context.Context, _ awsconnect.P
 	return s.Repo.AccountHasEventsSince(ctx, accountID, since)
 }
 
+// FallbackEventSource asks Primary (the SQS queue) first and, when it finds
+// nothing or fails, Secondary (the event store). Either may be nil. An account
+// is connected as soon as either one has seen its events.
+type FallbackEventSource struct{ Primary, Secondary AWSEventSource }
+
+func (s FallbackEventSource) HasEventsFrom(ctx context.Context, p awsconnect.Platform, accountID string, since time.Time) (bool, error) {
+	var firstErr error
+	if s.Primary != nil {
+		found, err := s.Primary.HasEventsFrom(ctx, p, accountID, since)
+		if err == nil && found {
+			return true, nil
+		}
+		if err != nil {
+			firstErr = err
+			logging.FromContext(ctx).Warn("aws integration: event queue check failed, trying the event store", "err", err)
+		}
+	}
+	if s.Secondary != nil {
+		return s.Secondary.HasEventsFrom(ctx, p, accountID, since)
+	}
+	return false, firstErr
+}
+
+// QueueEventSource peeks at the central SQS queue.
+type QueueEventSource struct{ Client *awsconnect.Client }
+
+func (s QueueEventSource) HasEventsFrom(ctx context.Context, p awsconnect.Platform, accountID string, _ time.Time) (bool, error) {
+	return s.Client.PeekEventsFrom(ctx, p, accountID)
+}
+
 // AWSIntegrationOptions are the deployment's names and limits.
 type AWSIntegrationOptions struct {
 	AssumerRoleName    string

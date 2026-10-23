@@ -57,6 +57,7 @@ type Client struct {
 	base              aws.Config
 	assumeAssumerRole bool
 	eventLogGroup     string
+	eventQueueURL     string // SQS queue a rule on the central bus delivers to
 
 	mu        sync.Mutex
 	providers map[string]aws.CredentialsProvider
@@ -73,6 +74,12 @@ func NewClient(base aws.Config, assumeAssumerRole bool, eventLogGroup string) *C
 		eventLogGroup:     strings.TrimSpace(eventLogGroup),
 		providers:         make(map[string]aws.CredentialsProvider),
 	}
+}
+
+// WithEventQueue sets the SQS queue the "events received" check peeks at.
+func (c *Client) WithEventQueue(url string) *Client {
+	c.eventQueueURL = strings.TrimSpace(url)
+	return c
 }
 
 // platformConfig is the configuration for calls made as the platform, in the

@@ -44,5 +44,6 @@ aws_integration:
   forward_rule_name: nhi-forward-events
   github_secret_prefix: nhi/github     # customers' GitHub token secret name must start with this
   github_api_url: https://api.github.com
+  event_queue_url: ""                 # SQS queue the central bus delivers to (NHI_AWS_EVENT_QUEUE_URL); checked first
   event_log_group: ""                 # only when ClickHouse is not configured
   event_lookback_hours: 24

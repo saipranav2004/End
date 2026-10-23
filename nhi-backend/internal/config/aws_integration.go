@@ -43,6 +43,10 @@ type AWSIntegrationConfig struct {
 	// EventLogGroup is a fallback for the "events received" check when
 	// ClickHouse is not configured: the CloudWatch log group our bus writes to.
 	EventLogGroup string `yaml:"event_log_group"`
+	// EventQueueURL is an SQS queue in our account that a rule on the central
+	// bus delivers to. The "events received" check peeks at it (nothing is
+	// deleted) before it asks ClickHouse or the log group.
+	EventQueueURL string `yaml:"event_queue_url"`
 	// EventLookbackHours is how far back that check looks for an event.
 	EventLookbackHours int `yaml:"event_lookback_hours"`
 }
@@ -62,6 +66,7 @@ func (a *AWSIntegrationConfig) load() error {
 	set(&a.GitHubSecretPrefix, "NHI_AWS_GITHUB_SECRET_PREFIX")
 	set(&a.GitHubAPIURL, "NHI_GITHUB_API_URL")
 	set(&a.EventLogGroup, "NHI_AWS_EVENT_LOG_GROUP")
+	set(&a.EventQueueURL, "NHI_AWS_EVENT_QUEUE_URL")
 	if v, ok := os.LookupEnv("NHI_AWS_EVENT_LOOKBACK_HOURS"); ok && strings.TrimSpace(v) != "" {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {

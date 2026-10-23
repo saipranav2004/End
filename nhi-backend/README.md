@@ -467,6 +467,23 @@ databases are joined **by ARN only** (never by UUID):
   `effect`, `resource_arn`, `matched_action`; wildcards such as `ec2:Describe*`
   match, an exact Allow beats a wildcard or a Deny). Nothing matched gives
   `matched: false` and "Policy may have changed since this event".
+- **"Receive your events" check (SQS):** with `NHI_AWS_EVENT_QUEUE_URL` set (an SQS
+  queue in the platform account), the check *peeks* at up to 3 x 10 messages of that
+  queue (`VisibilityTimeout=0`, nothing deleted, so the pipeline loses nothing) and
+  passes when one has `account` = the customer's account. If the queue has nothing
+  for the account or errors, it falls back to ClickHouse, then the CloudWatch log
+  group, so no ClickHouse data is needed for the account to connect. One-time setup
+  in the platform account: an SQS queue; a rule on the central event bus (pattern
+  `{"account":[{"prefix":""}]}` or the same sources as the customer rule) with that queue
+  as target; a queue policy allowing `events.amazonaws.com` `sqs:SendMessage` from
+  the rule's ARN; and `sqs:ReceiveMessage` on the queue for the API's role (the
+  assumer role / task role). Limits: a peek sees a sample, so on a busy shared queue
+  a brand-new account may need a second click; peeks raise each message's receive
+  count (set the DLQ's `maxReceiveCount` high).
+- **Regions on the Integrations page:** the choices are `nhi_global.tenants.collector_regions`
+  (empty = every region); the selected ones are the account's own `accounts.regions`.
+  The "Values to copy" (account id, event bus ARN, region, External ID) are read from
+  the tenant row, not hard-coded; the event sources and rule/role names come from code/config.
 - **Docker:** `docker compose up -d --build` builds the image (multi-stage, non-root,
   read-only, `/health` check) and serves the API on `:8080`; databases are external
   (`.env`). `docker compose --profile tools run --rm migrate` applies the migrations;

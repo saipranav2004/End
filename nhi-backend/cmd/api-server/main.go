@@ -184,19 +184,27 @@ func main() {
 	if err != nil {
 		slog.Warn("aws integration: AWS configuration unavailable, connection checks disabled", "err", err)
 	} else {
-		awsClient = awsconnect.NewClient(awsBase, cfg.AWSIntegration.AssumeAssumerRole, cfg.AWSIntegration.EventLogGroup)
+		awsClient = awsconnect.NewClient(awsBase, cfg.AWSIntegration.AssumeAssumerRole, cfg.AWSIntegration.EventLogGroup).WithEventQueue(cfg.AWSIntegration.EventQueueURL)
 		awsVerifier = awsClient
 	}
 	// "Events received" reads the event store the pipeline fills from the
 	// central bus: ClickHouse, else the bus's CloudWatch log group.
-	var awsEvents svcv1.AWSEventSource
+	var awsStore svcv1.AWSEventSource
 	switch {
 	case chClient != nil:
-		awsEvents = svcv1.ClickHouseEventSource{Repo: chrepo.New(chClient)}
+		awsStore = svcv1.ClickHouseEventSource{Repo: chrepo.New(chClient)}
 	case awsClient != nil && cfg.AWSIntegration.EventLogGroup != "":
-		awsEvents = awsClient
-	default:
-		slog.Warn("aws integration: no event store (ClickHouse or aws_integration.event_log_group); the events check cannot run")
+		awsStore = awsClient
+	}
+	var awsQueue svcv1.AWSEventSource
+	if awsClient != nil && cfg.AWSIntegration.EventQueueURL != "" {
+		awsQueue = svcv1.QueueEventSource{Client: awsClient}
+	}
+	var awsEvents svcv1.AWSEventSource
+	if awsQueue != nil || awsStore != nil {
+		awsEvents = svcv1.FallbackEventSource{Primary: awsQueue, Secondary: awsStore}
+	} else {
+		slog.Warn("aws integration: no event source (aws_integration.event_queue_url, ClickHouse or event_log_group); the events check cannot run")
 	}
 	awsIntegrationHandler := handlerv1.NewAWSIntegrationHandler(svcv1.NewAWSIntegrationService(
 		repository.NewAWSIntegrationRepository(db),
