@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	models "nhi-backend-api/internal/models/v1"
 	repov1 "nhi-backend-api/internal/repository/v1"
@@ -90,4 +91,17 @@ func entityChanges(ctx context.Context, repo *repov1.ScanChangesRepository, reso
 	out.Truncated = truncated
 	out.ChangeTrackingAvailable = available
 	return out, nil
+}
+
+// Status is a scan's id, status and when it finished (scan_id may be "latest").
+func (s *ScanChangesService) Status(ctx context.Context, userID, tenantID, dbName, scanID string) (*models.ScanStatus, error) {
+	resolved, err := s.resolver.Resolve(ctx, userID, tenantID, dbName)
+	if err != nil {
+		return nil, err
+	}
+	info, err := s.repo.Scan(ctx, resolved, scanID)
+	if err != nil {
+		return nil, err
+	}
+	return &models.ScanStatus{ScanID: info.ScanID, Status: strings.ToUpper(strings.TrimSpace(info.Status)), ScanTime: info.CompletedAt}, nil
 }

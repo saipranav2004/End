@@ -77,7 +77,7 @@ func RequestLogger(next http.Handler) http.Handler {
 			level = slog.LevelError
 		case rw.statusCode >= 400:
 			level = slog.LevelWarn
-		case r.URL.Path == "/health":
+		case r.URL.Path == "/api/v1/health":
 			level = slog.LevelDebug
 		}
 		ctx := r.Context()

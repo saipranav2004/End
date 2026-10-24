@@ -42,7 +42,7 @@ func newTestRouter(status int) *mux.Router {
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte("hello"))
 	})
-	r.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	r.HandleFunc("/api/v1/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	return r
 }
 
@@ -92,7 +92,7 @@ func TestRequestLoggerLevelByStatus(t *testing.T) {
 
 func TestRequestLoggerHealthIsDebug(t *testing.T) {
 	buf := captureLogs(t)
-	newTestRouter(200).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	newTestRouter(200).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
 	if got := lastRecord(t, buf)["level"]; got != "DEBUG" {
 		t.Errorf("/health level = %v, want DEBUG", got)
 	}
@@ -101,7 +101,7 @@ func TestRequestLoggerHealthIsDebug(t *testing.T) {
 func TestRequestIDGeneratedWhenMissingOrInvalid(t *testing.T) {
 	for _, in := range []string{"", "short", "has space in it!", strings.Repeat("a", 100), "bad\nid-123456"} {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 		if in != "" {
 			req.Header.Set(requestIDHeader, in)
 		}

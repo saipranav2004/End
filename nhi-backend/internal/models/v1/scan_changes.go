@@ -147,3 +147,10 @@ type EntityChangesResponse struct {
 
 // EntityChangesLimit caps the Changes tabs.
 const EntityChangesLimit = 50
+
+// ScanStatus is the data of GET /scans/{scan_id}/status.
+type ScanStatus struct {
+	ScanID   string     `json:"scan_id"`
+	Status   string     `json:"status"`
+	ScanTime *time.Time `json:"scan_time"`
+}

@@ -81,7 +81,7 @@ Contents: [Quick start](#quick-start) · [APIs by feature](#apis-by-feature) ·
 ## APIs by feature
 
 Every path is under `/api/v1` (most are also served under `/api`). Every
-endpoint except login, refresh and `/health` needs `Authorization: Bearer
+endpoint except login, refresh and `/api/v1/health` needs `Authorization: Bearer
 <access token>`. Unknown query parameters are a 400.
 
 Response shapes: inventory, integrations and change tracking answer
@@ -98,7 +98,7 @@ is not fully set up), every API answers **503 `TENANT_NOT_PROVISIONED`**.
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/health` | Liveness probe (no token). |
+| GET | `/api/v1/health` | Liveness probe (no token). |
 | GET | `/ready` | Readiness probe (no token): 200 when Postgres answers, 503 when not; also reports each ClickHouse as `ok`, `down` or `not_configured`. |
 
 ### Sign-in and session
@@ -133,6 +133,8 @@ Scan changes, the Changes tabs and `recent_changes` also carry the reference con
 | GET | `/dashboard/trends` | Identity and credential totals across completed scans (`nhi_scans_aws.total_identities/total_credentials`), oldest first, for the trend chart. `account_ids` and `regions` (comma-separated) override the saved selection (a region keeps accounts that read it); `limit` 1-200 (default 20); `aggregate=true` (default) gives one point per scan hour with each account's latest totals summed (`accounts` says how many), `aggregate=false` one point per scan with `scan_id` and `account_id`. |
 
 ### Scan change tracking
+
+(`GET /scans/{scan_id}/status` answers `{scan_id, status, scan_time}`, 404 `SCAN_NOT_FOUND` outside your scope; `scan_id` may be `latest`.)
 
 What each discovery scan found had changed since the scan before it. The
 discovery scanner writes `nhi_scans_aws` (one row per run) and `scan_changes`
@@ -217,8 +219,8 @@ server's own port) and `WORKER_SCAN_TOKEN` (its `SCAN_API_TOKEN`); `NHI_WORKER_T
 
 | Method | Path | What it does |
 |---|---|---|
-| POST | `/scans` | **No login.** `{tenant_id, requested_by?}` + the worker's key in `X-API-Key` (or `Authorization: Bearer`, or body `api_key`; never in the URL). 202 with `{data:{job_id, already_running:false}}`, 200 when that tenant is already being scanned. The key is forwarded and checked by the worker. 30 requests/minute per client address. |
-| GET | `/scans/{job_id}` | **No login**, same key. The worker's job (`QUEUED` / `RUNNING` / `COMPLETED` / `PARTIAL` / `FAILED` / `SKIPPED`, per-tenant results). Poll every 3-5 s. |
+| POST | `/ispm-scans` | **No login.** `{tenant_id, requested_by?}` + the worker's key in `X-API-Key` (or `Authorization: Bearer`, or body `api_key`; never in the URL). 202 with `{data:{job_id, already_running:false}}`, 200 when that tenant is already being scanned. The key is forwarded and checked by the worker. 30 requests/minute per client address. |
+| GET | `/ispm-scans/{job_id}` | **No login**, same key. The worker's job (`QUEUED` / `RUNNING` / `COMPLETED` / `PARTIAL` / `FAILED` / `SKIPPED`, per-tenant results). Poll every 3-5 s. |
 | POST | `/ispm/scans` | Console "Run checks again": no body, the tenant is the token's; analyst / manager / admin. Uses `WORKER_SCAN_TOKEN`. |
 | GET | `/ispm/scans/{job_id}` | Status of that job. |
 
@@ -543,7 +545,7 @@ databases are joined **by ARN only** (never by UUID):
   with the role's ViewOnlyAccess. The check lists repositories per selected region, then reads up to 3 per region
   (9 in all) the way the scanner does and names, per repository, which permission is missing.
 - **Docker:** `docker compose up -d --build` builds the image (multi-stage, non-root,
-  read-only, `/health` check) and serves the API on `:8080`; databases are external
+  read-only, `/api/v1/health` check) and serves the API on `:8080`; databases are external
   (`.env`). `docker compose --profile tools run --rm migrate` applies the migrations;
   `--profile web` also builds and runs the console from `../frontend` on `:3000`.
 - **Logging:** structured logs on stdout (`internal/logging`, Go `log/slog`).

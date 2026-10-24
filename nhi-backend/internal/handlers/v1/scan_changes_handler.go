@@ -160,3 +160,34 @@ func contains(list []string, v string) bool {
 	}
 	return false
 }
+
+// Status handles GET /scans/{scan_id}/status: {scan_id, status, scan_time}. A
+// scan outside the caller's scope is 404, never 403.
+func (h *ScanChangesHandler) Status(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		sendJSONResponse(w, http.StatusUnauthorized, models.APIResponse{Success: false, Message: "Unauthorized", Error: "UNAUTHORIZED"})
+		return
+	}
+	scanID := strings.TrimSpace(mux.Vars(r)["scan_id"])
+	if strings.EqualFold(scanID, repov1.LatestScanID) {
+		scanID = repov1.LatestScanID
+	}
+	if !scanIDRegex.MatchString(scanID) {
+		sendJSONResponse(w, http.StatusBadRequest, models.APIResponse{Success: false, Message: "Invalid scan ID", Error: "INVALID_SCAN_ID"})
+		return
+	}
+	if rejectUnknownQuery(w, r, noQueryAllowed) {
+		return
+	}
+	result, err := h.service.Status(r.Context(), claims.UserID, claims.TenantID, claims.DBName, scanID)
+	if err != nil {
+		if errors.Is(err, repov1.ErrScanNotFound) {
+			sendJSONResponse(w, http.StatusNotFound, models.APIResponse{Success: false, Message: "scan '" + scanID + "' not found", Error: "SCAN_NOT_FOUND"})
+			return
+		}
+		sendServerError(w, r, err, "Failed to retrieve scan status", "SCAN_STATUS_LOAD_FAILED")
+		return
+	}
+	sendJSONResponse(w, http.StatusOK, models.APIResponse{Success: true, Message: "Scan status retrieved successfully", Data: result})
+}

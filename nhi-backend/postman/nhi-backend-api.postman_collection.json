@@ -119,11 +119,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/health",
+              "raw": "{{base_url}}/api/v1/api/v1/health",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
+                "api",
+                "v1",
                 "health"
               ]
             },
@@ -731,6 +733,27 @@
               ]
             },
             "description": "Every change of one credential (max 50). Also credential_arn and change_tracking_available."
+          }
+        },
+        {
+          "name": "Scan status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/scans/latest/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "scans",
+                "latest",
+                "status"
+              ]
+            },
+            "description": "{scan_id, status, scan_time}; scan_id may be 'latest'. 404 SCAN_NOT_FOUND outside your scope."
           }
         }
       ]
@@ -3965,14 +3988,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/scans",
+              "raw": "{{base_url}}/api/v1/ispm-scans",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "scans"
+                "ispm-scans"
               ]
             },
             "description": "No login. Key = the worker's SCAN_API_TOKEN. 202 started, 200 already running.",
@@ -4001,14 +4024,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/scans/{{job_id}}",
+              "raw": "{{base_url}}/api/v1/ispm-scans/{{job_id}}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "scans",
+                "ispm-scans",
                 "{{job_id}}"
               ]
             },

@@ -37,8 +37,8 @@ func fakeWorker(t *testing.T) *httptest.Server {
 
 func publicRouter(h *Handler) *mux.Router {
 	r := mux.NewRouter()
-	r.HandleFunc("/api/v1/scans", h.PublicStart).Methods(http.MethodPost)
-	r.HandleFunc("/api/v1/scans/{job_id}", h.PublicJob).Methods(http.MethodGet)
+	r.HandleFunc("/api/v1/ispm-scans", h.PublicStart).Methods(http.MethodPost)
+	r.HandleFunc("/api/v1/ispm-scans/{job_id}", h.PublicJob).Methods(http.MethodGet)
 	return r
 }
 
@@ -58,32 +58,32 @@ func TestPublicScanAPI(t *testing.T) {
 	r := publicRouter(h)
 	const tenant = `{"tenant_id":"de300000-0000-4000-8000-000000000001"}`
 
-	if rec := do(r, "POST", "/api/v1/scans", "good", tenant); rec.Code != 202 || !strings.Contains(rec.Body.String(), `"job_id":"job-1"`) {
+	if rec := do(r, "POST", "/api/v1/ispm-scans", "good", tenant); rec.Code != 202 || !strings.Contains(rec.Body.String(), `"job_id":"job-1"`) {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body)
 	}
-	if rec := do(r, "POST", "/api/v1/scans", "bad", tenant); rec.Code != 401 {
+	if rec := do(r, "POST", "/api/v1/ispm-scans", "bad", tenant); rec.Code != 401 {
 		t.Fatalf("wrong key must be 401 from the worker's answer: %d", rec.Code)
 	}
-	if rec := do(r, "POST", "/api/v1/scans", "", tenant); rec.Code != 401 {
+	if rec := do(r, "POST", "/api/v1/ispm-scans", "", tenant); rec.Code != 401 {
 		t.Fatalf("no key: %d", rec.Code)
 	}
-	if rec := do(r, "POST", "/api/v1/scans", "good", `{"tenant_id":"nope"}`); rec.Code != 400 {
+	if rec := do(r, "POST", "/api/v1/ispm-scans", "good", `{"tenant_id":"nope"}`); rec.Code != 400 {
 		t.Fatalf("tenant_id must be a UUID: %d", rec.Code)
 	}
-	if rec := do(r, "POST", "/api/v1/scans?api_key=good", "good", tenant); rec.Code != 400 || !strings.Contains(rec.Body.String(), "never put the API key in the URL") {
+	if rec := do(r, "POST", "/api/v1/ispm-scans?api_key=good", "good", tenant); rec.Code != 400 || !strings.Contains(rec.Body.String(), "never put the API key in the URL") {
 		t.Fatalf("key in URL: %d %s", rec.Code, rec.Body)
 	}
-	if rec := do(r, "GET", "/api/v1/scans/job-1", "good", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "RUNNING") {
+	if rec := do(r, "GET", "/api/v1/ispm-scans/job-1", "good", ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "RUNNING") {
 		t.Fatalf("job: %d %s", rec.Code, rec.Body)
 	}
-	if rec := do(r, "GET", "/api/v1/scans/job-9", "good", ""); rec.Code != 404 {
+	if rec := do(r, "GET", "/api/v1/ispm-scans/job-9", "good", ""); rec.Code != 404 {
 		t.Fatalf("unknown job: %d", rec.Code)
 	}
 }
 
 func TestScanAPINotConfigured(t *testing.T) {
 	r := publicRouter(NewHandler(WorkerConfig{}))
-	if rec := do(r, "POST", "/api/v1/scans", "good", `{"tenant_id":"de300000-0000-4000-8000-000000000001"}`); rec.Code != 503 {
+	if rec := do(r, "POST", "/api/v1/ispm-scans", "good", `{"tenant_id":"de300000-0000-4000-8000-000000000001"}`); rec.Code != 503 {
 		t.Fatalf("no WORKER_URL: %d", rec.Code)
 	}
 }

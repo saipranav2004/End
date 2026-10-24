@@ -164,6 +164,7 @@ func (r *FindingsRepository) Summary(ctx context.Context, resolved *scope.DataSc
 		&l.Main, &l.Review, &l.Repeated, &l.Noise, &l.Flagged); err != nil {
 		return models.FindingsSummary{}, fmt.Errorf("summarize credential exposure findings: %w", err)
 	}
+	out.ListCounts = out.Lists
 	return out, nil
 }
 

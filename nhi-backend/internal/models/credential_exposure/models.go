@@ -88,6 +88,8 @@ type FindingsSummary struct {
 	// Lists counts every list for the same client/platform filter, whichever
 	// list the other figures describe.
 	Lists ListCounts `json:"lists"`
+	// ListCounts is the same as Lists, under the scanner backend's name.
+	ListCounts ListCounts `json:"list_counts"`
 }
 
 type FindingsSummaryFilter struct {

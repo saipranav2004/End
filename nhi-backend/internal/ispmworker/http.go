@@ -21,8 +21,8 @@ import (
 
 // Two ways in, one worker behind them:
 //
-//	POST /api/v1/scans            public: {"tenant_id","requested_by"} + the worker's API key
-//	GET  /api/v1/scans/{job_id}   public: status of that job
+//	POST /api/v1/ispm-scans       public: {"tenant_id","requested_by"} + the worker's API key
+//	GET  /api/v1/ispm-scans/{job_id}  public: status of that job
 //	POST /api/v1/ispm/scans       login: the tenant comes from the JWT (the Sync button)
 //	GET  /api/v1/ispm/scans/{id}  login: status of that job
 //

@@ -32,9 +32,9 @@ ENV NHI_CONFIG_FILE=/app/configs/config.yaml
 USER nhi
 EXPOSE 8080
 
-# /health needs no database, so a slow Postgres never restarts the container.
+# /api/v1/health needs no database, so a slow Postgres never restarts the container.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
+    CMD wget -qO- http://127.0.0.1:8080/api/v1/health >/dev/null || exit 1
 
 # Direct exec so SIGTERM reaches the server and its 20 s graceful drain runs.
 ENTRYPOINT ["/app/api-server"]

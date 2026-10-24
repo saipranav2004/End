@@ -19,7 +19,7 @@ var (
 
 const (
 	trendsDefaultLimit = 20
-	trendsMaxLimit     = 200
+	trendsMaxLimit     = 100
 )
 
 type DashboardTrendsHandler struct{ service *svcv1.DashboardTrendsService }
@@ -33,7 +33,7 @@ func NewDashboardTrendsHandler(service *svcv1.DashboardTrendsService) *Dashboard
 //
 //	account_ids  comma-separated 12-digit account ids (default: the saved selection)
 //	regions      comma-separated regions; keeps accounts that read one of them
-//	limit        newest points to return, 1-200 (default 20)
+//	limit        newest points to return, 1-100 (default 20)
 //	aggregate    true (default): one point per scan hour, accounts summed;
 //	             false: one point per scan with scan_id and account_id
 func (h *DashboardTrendsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +62,7 @@ func (h *DashboardTrendsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > trendsMaxLimit {
-			bad("limit must be between 1 and 200")
+			bad("limit must be between 1 and 100")
 			return
 		}
 		query.Limit = n

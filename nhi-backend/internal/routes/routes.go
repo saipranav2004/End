@@ -67,7 +67,7 @@ func SetupRoutes(h HandlerContainer) *mux.Router {
 		})
 	})
 
-	r.HandleFunc("/health", func(w http.ResponseWriter, req *http.Request) {
+	r.HandleFunc("/api/v1/health", func(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy", "service": "nhi-backend-api"})
 	}).Methods(http.MethodGet)
 
@@ -80,8 +80,9 @@ func SetupRoutes(h HandlerContainer) *mux.Router {
 		r.HandleFunc("/api/auth/logout", h.AuthHandler.Logout).Methods(http.MethodPost)
 	}
 	if h.Scans != nil { // no login: the worker validates the caller's key
-		r.HandleFunc("/api/v1/scans", h.Scans.PublicStart).Methods(http.MethodPost)
-		r.HandleFunc("/api/v1/scans/{job_id}", h.Scans.PublicJob).Methods(http.MethodGet)
+		// Own prefix: /api/v1/scans is the discovery scan history (and its /changes).
+		r.HandleFunc("/api/v1/ispm-scans", h.Scans.PublicStart).Methods(http.MethodPost)
+		r.HandleFunc("/api/v1/ispm-scans/{job_id}", h.Scans.PublicJob).Methods(http.MethodGet)
 	}
 	if h.AuthMiddleware == nil {
 		return r
@@ -125,6 +126,7 @@ func registerProtected(router *mux.Router, h HandlerContainer, versioned bool) {
 	if h.ScanChangesHandler != nil {
 		router.HandleFunc("/scans", h.ScanChangesHandler.List).Methods(http.MethodGet)
 		router.HandleFunc("/scans/{scan_id}/changes", h.ScanChangesHandler.Changes).Methods(http.MethodGet)
+		router.HandleFunc("/scans/{scan_id}/status", h.ScanChangesHandler.Status).Methods(http.MethodGet)
 	}
 	if h.NewAPIIdentitiesListHandler != nil {
 		router.HandleFunc("/identities", h.NewAPIIdentitiesListHandler.List).Methods(http.MethodGet)

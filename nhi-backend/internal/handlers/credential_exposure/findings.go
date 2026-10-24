@@ -15,10 +15,10 @@ import (
 var (
 	findingsListAllowed = map[string]struct{}{
 		"client_id": {}, "platform": {}, "ml_flagged": {},
-		"limit": {}, "offset": {}, "finding_id": {},
+		"limit": {}, "offset": {}, "finding_id": {}, "list": {},
 	}
 	findingsSummaryAllowed = map[string]struct{}{
-		"client_id": {}, "platform": {}, "ml_flagged": {},
+		"client_id": {}, "platform": {}, "ml_flagged": {}, "list": {},
 	}
 	validPlatforms = map[string]struct{}{
 		"codecommit": {}, "github": {},
@@ -44,6 +44,27 @@ func (h *FindingsHandler) ListNoise(w http.ResponseWriter, r *http.Request) {
 }
 func (h *FindingsHandler) ListFlagged(w http.ResponseWriter, r *http.Request) {
 	h.list(w, r, models.ListFlagged)
+}
+
+// listFromParam reads ?list=main|review|repeated|noise|ml_flagged (the scanner
+// backend's selector); "" when absent.
+func listFromParam(w http.ResponseWriter, raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return "", true
+	case "main":
+		return models.ListMain, true
+	case "review":
+		return models.ListReview, true
+	case "repeated":
+		return models.ListRepeated, true
+	case "noise":
+		return models.ListNoise, true
+	case "ml_flagged", "flagged", "ml-flagged":
+		return models.ListFlagged, true
+	}
+	writeAPIError(w, http.StatusBadRequest, "list must be main, review, repeated, noise or ml_flagged", "INVALID_QUERY")
+	return "", false
 }
 
 // listFromFlag keeps the older ml_flagged=true|false switch working: true
@@ -79,6 +100,11 @@ func (h *FindingsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	list, ok := listFromFlag(w, q.Get("ml_flagged"))
 	if !ok {
 		return
+	}
+	if byName, ok := listFromParam(w, q.Get("list")); !ok {
+		return
+	} else if byName != "" {
+		list = byName
 	}
 	filter.List = list
 	if filter.Platform != "" {
@@ -153,6 +179,11 @@ func (h *FindingsHandler) list(w http.ResponseWriter, r *http.Request, list stri
 		}
 		if flagged != "" {
 			filter.List = flagged
+		}
+		if byName, ok := listFromParam(w, q.Get("list")); !ok {
+			return
+		} else if byName != "" {
+			filter.List = byName
 		}
 	}
 	if raw := q.Get("limit"); raw != "" {
