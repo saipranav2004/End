@@ -119,7 +119,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/api/v1/health",
+              "raw": "{{base_url}}/api/v1/health",
               "host": [
                 "{{base_url}}"
               ],
