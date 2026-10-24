@@ -9,6 +9,7 @@ import { exportRowsToCsv, timestampedName } from '../../lib/csv';
 import { NEUTRAL_SERIES, SERIES_TOKENS } from '../../lib/domain';
 import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { PageHeader } from '../../shell/PageHeader';
+import { AnomaliesPanel } from './AnomaliesPanel';
 import { Button } from '../../ui/Button';
 import { DataGrid } from '../../ui/DataGrid';
 import { SearchInput, Select } from '../../ui/Field';
@@ -257,6 +258,8 @@ export default function GenomePage() {
           <RecentlyBaselined entries={summary.data?.recentlyBaselined} loading={summary.isLoading && !summary.data} />
         </Panel>
       </div>
+
+      <AnomaliesPanel sourceType={sourceType} />
 
       <Panel prominence="lead" flush className="animate-rise overflow-hidden">
         <RecordBar

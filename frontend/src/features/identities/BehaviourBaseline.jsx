@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Dna } from 'lucide-react';
-import { fetchGenomeTimeline } from '../../lib/api/genome';
+import { fetchGenomeTimeline, loadWorkloadTypes } from '../../lib/api/genome';
 import { canonicalGenomeName, genomeRoute, genomeSourceType } from '../../lib/identityLinks';
 import { useQuery } from '../../lib/hooks';
 import { formatDate, formatDateTime, formatNumber, formatRelative } from '../../lib/format';
@@ -14,7 +14,9 @@ import { Tag } from '../../ui/Tag';
  * when the genome does not know the identity in this scope.
  */
 export function BehaviourBaseline({ identity }) {
-  const sourceType = genomeSourceType(identity.identity_type);
+  /* Which workload kinds Genome shows is settled before a link is offered. */
+  const families = useQuery(() => loadWorkloadTypes(), []);
+  const sourceType = families.data ? genomeSourceType(identity.identity_type) : null;
   const identityName = sourceType && identity.arn ? canonicalGenomeName(identity.identity_type, identity.arn) : null;
   const timeline = useQuery(
     (signal) =>

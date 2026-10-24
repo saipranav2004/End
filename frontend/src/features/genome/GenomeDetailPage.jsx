@@ -25,6 +25,7 @@ import { Tag } from '../../ui/Tag';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { TrendChart } from '../../charts/TrendChart';
 import { TooltipCard } from '../../charts/ChartTooltip';
+import { BaselineTab } from './BaselineTab';
 import { ApiShareList, formatShare, ScheduleGrid } from './visuals';
 import {
   anomalyStatusMeta,
@@ -46,7 +47,7 @@ const WINDOWS = [
 const WINDOW_WORDS = { '24h': '24 hours', '7d': '7 days', '14d': '14 days', '30d': '30 days' };
 const DEFAULT_WINDOW = '14d';
 
-const TAB_KEYS = ['genome', 'activity', 'timeline'];
+const TAB_KEYS = ['genome', 'activity', 'baseline', 'timeline'];
 const TIMELINE_PAGE = 50;
 const RECENT_PAGE = 25;
 
@@ -244,6 +245,7 @@ function GenomeIdentity({ sourceType, identityName }) {
   const tabs = [
     { value: 'genome', label: 'Genome' },
     { value: 'activity', label: 'Activity' },
+    { value: 'baseline', label: 'Baseline' },
     { value: 'timeline', label: 'Timeline', count: openCount || undefined },
   ];
 
@@ -359,6 +361,7 @@ function GenomeIdentity({ sourceType, identityName }) {
         <GenomeTab sourceType={sourceType} identityName={identityName} window={window} summary={summary.data} timeline={timeline.items} />
       )}
       {tab === 'activity' && <ActivityTab sourceType={sourceType} identityName={identityName} window={window} />}
+      {tab === 'baseline' && <BaselineTab sourceType={sourceType} identityName={identityName} />}
       {tab === 'timeline' && <TimelineTab timeline={timeline} />}
     </div>
   );

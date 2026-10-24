@@ -18,7 +18,7 @@ const GENOME_FAMILIES = {
   ecs_task: 'ECS',
   ecs_service: 'ECS',
   app_runner_service: 'APP_RUNNER',
-  elastic_beanstalk_environment: 'BEANSTALK',
+  elastic_beanstalk_environment: 'ELASTIC_BEAN',
   ssm_managed_node: 'SSM',
   ssm_automation: 'SSM',
   glue_job: 'GLUE',
@@ -40,28 +40,32 @@ const GENOME_FAMILIES = {
   codedeploy_service_role: 'CODEDEPLOY',
   cloudformation_stack_role: 'CLOUDFORMATION',
   mwaa_environment: 'MWAA',
-  github_actions_workflow: 'GITHUB_ACTIONS',
-  gitlab_ci_job: 'GITLAB_CI',
-  terraform_run: 'TERRAFORM',
   step_function: 'STEP_FUNCTIONS',
   eventbridge_scheduler: 'EVENTBRIDGE',
   synthetics_canary: 'SYNTHETICS',
   iot_role_alias: 'IOT',
-  iot_thing: 'IOT',
-  greengrass_core: 'IOT',
   transfer_server: 'TRANSFER',
   iam_roles_anywhere_session: 'IAM',
   saas_vendor_role: 'IAM',
-  aws_service_linked_role: 'IAM',
+  aws_service_linked_role: 'AWS_SLR',
 };
 
-/** The genome family for a discovery identity type, or null when it is not monitored. */
+/* The families the server shows (NHI_GENOME_WORKLOAD_TYPES); null = all of them. */
+let shownFamilies = null;
+
+/** Called with GET /genome/workload-types once it is known. */
+export function setGenomeFamilies(families, all) {
+  shownFamilies = all || !Array.isArray(families) ? null : new Set(families);
+}
+
+/** The genome family for a discovery identity type, or null when it is not monitored (or switched off). */
 export function genomeSourceType(identityType) {
   const key = String(identityType ?? '')
     .trim()
     .toLowerCase()
     .replace(/[-\s]/g, '_');
-  return GENOME_FAMILIES[key] ?? null;
+  const family = GENOME_FAMILIES[key] ?? null;
+  return family && (!shownFamilies || shownFamilies.has(family)) ? family : null;
 }
 
 /** The ARN the genome service keys an identity by. */

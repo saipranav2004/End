@@ -1,6 +1,6 @@
 import client from './client';
 import { ApiError, params, unwrapGenome, unwrapMain } from './http';
-import { canonicalGenomeName, genomeSourceType } from '../identityLinks';
+import { canonicalGenomeName, genomeSourceType, setGenomeFamilies } from '../identityLinks';
 
 /*
  * NHI Genome (behaviour monitoring), served by the NHI backend under
@@ -12,6 +12,10 @@ import { canonicalGenomeName, genomeSourceType } from '../identityLinks';
  *   GET .../genome                                           ?from &to &limit
  *   GET .../activity                                         ?from &to &bucket &recent_limit &recent_cursor
  *   GET .../timeline                                         ?limit &cursor
+ *   GET .../baseline  .../drift  .../peers                   baseline health, drift evidence, peer comparison
+ *   GET /anomalies  /anomalies/{id}  /anomalies/{id}/evidence
+ *   POST /anomalies/{id}/feedback                            { decision, approved_for_baseline, reason }
+ *   GET /workload-types                                      the workload families shown (NHI_GENOME_WORKLOAD_TYPES)
  *
  * The genome has no list of its own: the monitored fleet is the discovery
  * inventory's workload identities (see fetchMonitoredFleet), addressed by
@@ -91,6 +95,7 @@ export async function fetchGenomeSummary({ window, sourceType, accountId, region
  * missing last_activity_at is unknown rather than "never".
  */
 export async function fetchMonitoredFleet(signal) {
+  await loadWorkloadTypes(); // so identities of a switched-off family get no Genome link
   const items = [];
   let activityAvailable = true;
   for (let page = 1; page <= FLEET_MAX_PAGES; page += 1) {
@@ -196,5 +201,73 @@ export async function resolveDiscoveryIdentity(identityName, signal) {
     rows.find((row) => row.arn === arn) ??
     rows.find((row) => canonicalGenomeName(row.identity_type, row.arn) === arn) ??
     null
+  );
+}
+
+/* ── Workload types, baseline, drift, peers, anomalies ───────────────────── */
+
+let familiesLoad = null;
+
+/**
+ * The workload families NHI Genome shows. Loaded once and handed to
+ * identityLinks so a Genome link is offered only for those kinds. A failure
+ * leaves every family on: the pages then show what the API returns.
+ */
+export function loadWorkloadTypes() {
+  familiesLoad ??= (async () => {
+    try {
+      const { data } = unwrapGenome(await client.get(`${BASE}/workload-types`));
+      setGenomeFamilies(data?.families, Boolean(data?.all));
+      return { families: list(data?.families), all: Boolean(data?.all) };
+    } catch {
+      familiesLoad = null;
+      return { families: [], all: true };
+    }
+  })();
+  return familiesLoad;
+}
+
+const dataOf = (response) => unwrapGenome(response).data ?? {};
+
+export async function fetchGenomeBaseline(sourceType, identityName, signal) {
+  return dataOf(await client.get(identityPath(sourceType, identityName, '/baseline'), { signal }));
+}
+
+export async function fetchGenomeDrift(sourceType, identityName, signal) {
+  return dataOf(await client.get(identityPath(sourceType, identityName, '/drift'), { signal }));
+}
+
+export async function fetchGenomePeers(sourceType, identityName, signal) {
+  const data = dataOf(await client.get(identityPath(sourceType, identityName, '/peers'), { signal }));
+  return list(data.peers);
+}
+
+/** One page of anomalies, newest first: { items, nextCursor }. */
+export async function fetchAnomalies({ state, dimension, sourceType, search, limit = 25, cursor } = {}, signal) {
+  const { data, meta } = unwrapGenome(
+    await client.get(`${BASE}/anomalies`, {
+      params: params({ state, dimension, source_type: sourceType, search, limit, cursor }),
+      signal,
+    }),
+  );
+  return { items: list(data?.items), nextCursor: meta?.next_cursor || null };
+}
+
+export async function fetchAnomaly(id, signal) {
+  return dataOf(await client.get(`${BASE}/anomalies/${encodeURIComponent(id)}`, { signal }));
+}
+
+export async function fetchAnomalyEvidence(id, signal) {
+  return dataOf(await client.get(`${BASE}/anomalies/${encodeURIComponent(id)}/evidence`, { signal }));
+}
+
+/** A reviewer's verdict: decision is legitimate | malicious | unknown. */
+export async function saveAnomalyFeedback(id, { decision, approvedForBaseline = false, reason = '' }) {
+  return dataOf(
+    await client.post(`${BASE}/anomalies/${encodeURIComponent(id)}/feedback`, {
+      decision,
+      approved_for_baseline: Boolean(approvedForBaseline),
+      ...(reason ? { reason } : {}),
+    }),
   );
 }
