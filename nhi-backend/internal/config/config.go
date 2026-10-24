@@ -33,7 +33,9 @@ type Config struct {
 	Logging  LoggingConfig  `yaml:"logging"`
 	// Worker is the separately deployed ISPM rule engine (ispm-worker) that runs
 	// posture scans; this backend only starts a scan there and relays its status.
-	Worker     WorkerConfig     `yaml:"worker"`
+	Worker WorkerConfig `yaml:"worker"`
+	// Genome: which workload kinds NHI Genome shows.
+	Genome     GenomeConfig     `yaml:"genome"`
 	ClickHouse ClickHouseConfig `yaml:"clickhouse"`
 	// AWSIntegration: "Connect AWS Account" (see aws_integration.go).
 	AWSIntegration AWSIntegrationConfig `yaml:"aws_integration"`
@@ -121,6 +123,13 @@ type JWTConfig struct {
 	// SessionMaxHours caps how long one sign-in can be kept alive by
 	// refreshing; after it the user must sign in again.
 	SessionMaxHours int `yaml:"session_max_hours"`
+}
+
+// GenomeConfig (env NHI_GENOME_WORKLOAD_TYPES).
+type GenomeConfig struct {
+	// WorkloadTypes is a comma-separated list of the workload families NHI
+	// Genome shows, e.g. "ECS,EC2,GLUE,LAMBDA,STEPFUNCTION". Empty shows all.
+	WorkloadTypes string `yaml:"workload_types"`
 }
 
 // WorkerConfig locates the ispm-worker (env: WORKER_URL, WORKER_SCAN_TOKEN,
@@ -213,6 +222,7 @@ func (c *Config) applyEnvironment() error {
 	if err := setInt(&c.JWT.SessionMaxHours, "NHI_JWT_SESSION_MAX_HOURS"); err != nil {
 		return err
 	}
+	setString(&c.Genome.WorkloadTypes, "NHI_GENOME_WORKLOAD_TYPES")
 	setString(&c.Worker.BaseURL, "NHI_WORKER_URL")
 	setString(&c.Worker.BaseURL, "WORKER_URL")
 	setString(&c.Worker.ScanToken, "NHI_WORKER_SCAN_TOKEN")

@@ -34,6 +34,10 @@ worker:
   scan_token: ""       # only for the console's Sync button; set it by env, not here
   timeout_seconds: 10
 
+# NHI Genome: workload kinds to show (env NHI_GENOME_WORKLOAD_TYPES). Empty = all.
+genome:
+  workload_types: ""   # e.g. "ECS,EC2,GLUE,LAMBDA,STEPFUNCTION"
+
 cors:
   allowed_origins:
     - http://localhost:3000

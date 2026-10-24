@@ -17,6 +17,7 @@ import (
 	"nhi-backend-api/internal/awsconnect"
 	"nhi-backend-api/internal/clickhouse"
 	"nhi-backend-api/internal/config"
+	genomefullcommon "nhi-backend-api/internal/genomefull/common"
 	"nhi-backend-api/internal/githubcheck"
 	"nhi-backend-api/internal/handlers"
 	"nhi-backend-api/internal/handlers/credential_exposure"
@@ -39,6 +40,7 @@ import (
 	svcgenome "nhi-backend-api/internal/services/genome"
 	svcpostures "nhi-backend-api/internal/services/postures"
 	svcv1 "nhi-backend-api/internal/services/v1"
+	"nhi-backend-api/internal/workloadtypes"
 )
 
 func main() {
@@ -52,6 +54,12 @@ func main() {
 		fatal("load configuration", err)
 	}
 	logging.Setup(cfg.Logging.Level, cfg.Logging.Format)
+	if err := workloadtypes.Configure(cfg.Genome.WorkloadTypes); err != nil {
+		fatal("load configuration", err)
+	}
+	if list, all := workloadtypes.Enabled(); !all {
+		slog.Info("genome: showing only these workload types", "types", list)
+	}
 
 	// DB is the global authentication/tenant registry pool. Tenant pools are
 	// opened only through the registry-validated db_name in a signed token.
@@ -175,6 +183,7 @@ func main() {
 		IdentityGenome:   handlergenome.NewIdentityGenomeHandler(svcgenome.NewIdentityGenomeService(genomeIdentities, monitoringEvents)),
 		IdentityTimeline: handlergenome.NewIdentityTimelineHandler(svcgenome.NewIdentityTimelineService(genomeIdentities, repogenome.NewIdentityTimelineRepository())),
 		IdentitySummary:  handlergenome.NewIdentitySummaryHandler(svcgenome.NewIdentitySummaryService(genomeIdentities, repogenome.NewIdentitySummaryRepository(), monitoringEvents)),
+		Full:             routes.NewGenomeFull(resolver, genomefullcommon.NewMonitoringEvents(monitoringClient, monitoringCfg.Database, monitoringCfg.Table)),
 	}
 
 	// Connect AWS Account. The SDK's default chain supplies this process's

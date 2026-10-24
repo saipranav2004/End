@@ -13,6 +13,7 @@ import (
 	handlerv1 "nhi-backend-api/internal/handlers/v1"
 	"nhi-backend-api/internal/ispmworker"
 	"nhi-backend-api/internal/middleware"
+	"nhi-backend-api/internal/workloadtypes"
 )
 
 type HandlerContainer struct {
@@ -261,6 +262,8 @@ type GenomeHandlers struct {
 	IdentityGenome   *genome.IdentityGenomeHandler
 	IdentityTimeline *genome.IdentityTimelineHandler
 	IdentitySummary  *genome.IdentitySummaryHandler
+	// Full is the rest of the contract (anomalies, baseline, peers, drift, containment...).
+	Full *GenomeFull
 }
 
 // registerGenome mounts the genome endpoints. identity_name is an ARN (it
@@ -275,6 +278,13 @@ func registerGenome(router *mux.Router, g *GenomeHandlers) {
 	if g.DashboardSummary != nil {
 		get("/dashboard/summary", g.DashboardSummary.Get)
 	}
+	// Which workload kinds NHI Genome shows (NHI_GENOME_WORKLOAD_TYPES), so the
+	// console offers Genome links only for those.
+	get("/workload-types", func(w http.ResponseWriter, _ *http.Request) {
+		families, all := workloadtypes.Enabled()
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"families": families, "all": all}})
+	})
+	g.Full.register(r) // before the greedy identity route below
 	if g.IdentityActivity != nil {
 		get("/identities/{source_type}/{identity_name:.+}/activity", g.IdentityActivity.Get)
 	}

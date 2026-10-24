@@ -6,6 +6,7 @@ import (
 
 	models "nhi-backend-api/internal/models/genome"
 	repo "nhi-backend-api/internal/repository/genome"
+	"nhi-backend-api/internal/workloadtypes"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,46 +21,11 @@ import (
 // pipeline code is a change to this block only. source_type values must fit
 // the VARCHAR(16) monitoring columns.
 
-// monitoringFamilies maps the 39 active NHI subtypes to the persisted
-// source_type family. Deferred EKS types and human/resource-only types are
-// deliberately absent, so they are never counted, listed or joined.
-var monitoringFamilies = map[string]string{
-	"ec2_instance": "EC2", "lambda_function": "LAMBDA", "ecs_task": "ECS",
-	"app_runner_service": "APP_RUNNER", "elastic_beanstalk_environment": "BEANSTALK",
-	"ssm_managed_node": "SSM", "ssm_automation": "SSM",
-	"glue_job": "GLUE", "glue_crawler": "GLUE", "emr_cluster": "EMR", "batch_job": "BATCH",
-	"dms_replication_instance": "DMS", "kinesis_firehose": "KINESIS", "kinesis_analytics_app": "KINESIS",
-	"datasync_task":      "DATASYNC",
-	"sagemaker_notebook": "SAGEMAKER", "sagemaker_training_job": "SAGEMAKER",
-	"sagemaker_processing_job": "SAGEMAKER", "sagemaker_endpoint": "SAGEMAKER",
-	"bedrock_agent": "BEDROCK", "bedrock_knowledge_base": "BEDROCK",
-	"codebuild_project": "CODEBUILD", "codepipeline": "CODEPIPELINE", "codedeploy_service_role": "CODEDEPLOY",
-	"cloudformation_stack_role": "CLOUDFORMATION", "mwaa_environment": "MWAA",
-	"github_actions_workflow": "GITHUB_ACTIONS", "gitlab_ci_job": "GITLAB_CI", "terraform_run": "TERRAFORM",
-	"step_function": "STEP_FUNCTIONS", "eventbridge_scheduler": "EVENTBRIDGE", "synthetics_canary": "SYNTHETICS",
-	"iot_role_alias": "IOT", "iot_thing": "IOT", "greengrass_core": "IOT", "transfer_server": "TRANSFER",
-	"iam_roles_anywhere_session": "IAM", "saas_vendor_role": "IAM", "aws_service_linked_role": "IAM",
-}
-
-// monitoringAliases maps other spellings seen in scanner output (for example
-// CloudFormation resource types) to the subtype.
-var monitoringAliases = map[string]string{
-	"aws::ec2::instance": "ec2_instance", "aws::lambda::function": "lambda_function",
-	"aws::ecs::task": "ecs_task", "aws::ecs::service": "ecs_task", "ecs_service": "ecs_task",
-	"aws::stepfunctions::statemachine": "step_function", "step_functions": "step_function",
-	"aws::glue::job": "glue_job", "aws::glue::crawler": "glue_crawler",
-	"aws::codebuild::project": "codebuild_project", "aws::codepipeline::pipeline": "codepipeline",
-	"aws::sagemaker::notebookinstance": "sagemaker_notebook", "aws::ssm::managedinstance": "ssm_managed_node",
-	"aws::apprunner::service": "app_runner_service", "aws::iot::thing": "iot_thing",
-}
-
+// resolveMonitoringType maps a discovery identity type to its monitoring
+// subtype and source_type family. Types that are not monitored, and families
+// switched off with NHI_GENOME_WORKLOAD_TYPES, are not monitoring identities.
 func resolveMonitoringType(identityType string) (subtype, family string, ok bool) {
-	key := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(identityType)))
-	if alias, found := monitoringAliases[key]; found {
-		key = alias
-	}
-	family, ok = monitoringFamilies[key]
-	return key, family, ok
+	return workloadtypes.Resolve(identityType)
 }
 
 // monitoredIdentity is the normalized shape of one discovery row.
