@@ -40,7 +40,7 @@ func (e *MonitoringEvents) Volume(ctx context.Context, accounts []string, source
 	}
 	q := `SELECT ` + fn + `(event_time) AS bucket, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY bucket
 	      ORDER BY bucket`
 	ctx, cancel := e.queryContext(ctx)
@@ -107,7 +107,7 @@ func (e *MonitoringEvents) RecentCalls(ctx context.Context, accounts []string, s
 	args = append(args, ch.Named("limit", uint32(limit)))
 	q := `SELECT event_id, event_time, event_name, event_source, source_ip, region, resource_arns, risk_status, event_risk_score
 	      FROM ` + e.tbl(ctx) + ` FINAL
-	      WHERE` + identityWindowSQL + cursor + `
+	      WHERE` + identityWindowSQL(sourceType) + cursor + `
 	      ORDER BY event_time DESC, event_id DESC
 	      LIMIT {limit:UInt32}`
 	ctx, cancel := e.queryContext(ctx)

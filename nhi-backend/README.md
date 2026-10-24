@@ -273,6 +273,8 @@ the contract (backend_api_contract.md) follows below. Everything answers `{data,
 | GET | `/genome/identities/{source_type}/{identity_name}/drift` | Drift status, confidence, retraining and per-dimension change. |
 | GET | `/genome/identities/{source_type}/{identity_name}/peers` | Similar identities (same family, account, region) with calls, risk and the dimension where this one stands out. |
 | GET | `/genome/identities/{source_type}/{identity_name}/containment` | Containment state (not available until the pipeline persists actions). |
+
+**ECS and log_events.** An ECS identity is its task role. When the events table is read for an ECS identity, its calls are matched on `request_parameters.roleArn` (the `AssumeRole` call), then on the `role_arn` column, then on `identity_name`; every other workload family matches on `identity_name` as before (`internal/clickhouse/event_identity.go`).
 | POST | `/genome/identities/{source_type}/{identity_name}/containment/freeze` | Credential freeze request: 501 until an action worker exists. |
 | GET | `/genome/anomalies` | Departures, newest first (`state`, `dimension`, `source_type`, `search`, `limit`, `cursor`). |
 | GET | `/genome/anomalies/{alert_id}` | One departure: what changed, why it was graded, evidence ids. |

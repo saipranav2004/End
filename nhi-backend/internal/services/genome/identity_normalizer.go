@@ -46,6 +46,16 @@ type monitoredIdentity struct {
 	WorkloadKey    string
 }
 
+// eventName is the identity_name log_events knows this identity by: an ECS
+// identity is its task role (read from request_parameters.roleArn there),
+// every other family its own key.
+func (i monitoredIdentity) eventName() string {
+	if i.Key.SourceType == "ECS" && i.RoleARN != "" {
+		return i.RoleARN
+	}
+	return i.Key.IdentityName
+}
+
 func (i monitoredIdentity) ref() models.DashboardIdentityRef {
 	return models.DashboardIdentityRef{ID: i.Key.SourceType + ":" + i.Key.IdentityName, SourceType: i.Key.SourceType, IdentityName: i.Key.IdentityName, DisplayName: i.DisplayName}
 }

@@ -40,9 +40,9 @@ function buildSteps(run) {
   return [
     {
       key: 'start',
-      title: 'Start the scan',
+      title: 'Start the sync',
       state: stateOf('start', run.stage !== 'start', run.stage === 'start'),
-      text: d.attached ? 'A scan of your workspace was already running, so we are following it.' : 'Asking the scanner to read your AWS accounts.',
+      text: d.attached ? 'A sync of your workspace was already running, so we are following it.' : 'Asking the scanner to read your AWS accounts.',
       fields: fields([
         { label: 'Scan ID', value: d.scanId, mono: true },
         { label: 'Workspace', value: d.schema, mono: true },
@@ -86,7 +86,7 @@ function buildSteps(run) {
       key: 'refresh',
       title: 'Update your dashboard',
       state: done ? 'done' : 'pending',
-      text: done ? 'Dashboard, identities, credentials, access graph, genome and posture now show this scan.' : 'Reloading every page with the new data.',
+      text: done ? 'Dashboard, identities, credentials, access graph, genome and posture now show this sync.' : 'Reloading every page with the new data.',
       fields: [],
     },
   ];
@@ -122,7 +122,7 @@ function Step({ step, last }) {
 }
 
 /**
- * The scan, step by step. Closing it never stops the run: the top bar keeps
+ * The sync, step by step. Closing it never stops the run: the top bar keeps
  * showing where it is, and a notice appears when it ends.
  */
 export function SyncPanel({ open, onClose }) {
@@ -146,7 +146,7 @@ export function SyncPanel({ open, onClose }) {
 
   let subtitle = 'Reads your AWS accounts, then scores what it finds. About 5 to 10 minutes.';
   if (running) subtitle = `Step ${Math.min(4, doneStep + 1)} of 4 · running for ${clock(now - run.startedAt)}`;
-  if (failed) subtitle = 'The scan did not finish.';
+  if (failed) subtitle = 'The sync did not finish.';
   if (finished) subtitle = `Finished in ${clock((run.finishedAt ?? now) - run.startedAt)}.`;
 
   const tryAgain = async () => {
@@ -165,17 +165,17 @@ export function SyncPanel({ open, onClose }) {
       open={open}
       onClose={onClose}
       width="md"
-      eyebrow="Scan"
-      title="Scan your AWS accounts"
+      eyebrow="Sync"
+      title="Sync your AWS accounts"
       subtitle={subtitle}
       footer={
         <>
-          {running && <p className="mr-auto text-[12px] text-ink-3">You can close this. The scan keeps running.</p>}
+          {running && <p className="mr-auto text-[12px] text-ink-3">You can close this. The sync keeps running.</p>}
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
           {failed && canScan && (
-            <Button variant="primary" icon={RefreshCw} onClick={tryAgain} disabled={!run.postureRetry && !run.resumable && waitMs > 0} title={!run.postureRetry && !run.resumable && waitMs > 0 ? `Scans can run again in ${clock(waitMs)}` : undefined}>
+            <Button variant="primary" icon={RefreshCw} onClick={tryAgain} disabled={!run.postureRetry && !run.resumable && waitMs > 0} title={!run.postureRetry && !run.resumable && waitMs > 0 ? `A sync can run again in ${clock(waitMs)}` : undefined}>
               {run.postureRetry ? 'Score again' : run.resumable ? 'Check again' : 'Try again'}
             </Button>
           )}
@@ -191,7 +191,7 @@ export function SyncPanel({ open, onClose }) {
           )}
           {!run && canScan && (
             <Button variant="primary" icon={Play} onClick={() => sync.start()} disabled={waitMs > 0}>
-              Start scan
+              Start sync
             </Button>
           )}
         </>
@@ -201,14 +201,14 @@ export function SyncPanel({ open, onClose }) {
         {!run && (
           <>
             <p className="text-[13px] leading-relaxed text-ink-2">
-              One scan reads every connected AWS account, then checks what it found against the security rules. When it finishes, every page shows the new results.
+              One sync reads every connected AWS account, then checks what it found against the security rules. When it finishes, every page shows the new results.
             </p>
             {waitMs > 0 && (
               <p className="rounded-[var(--radius-control)] border border-line bg-surface-2 px-3.5 py-3 text-[12.5px] text-ink-2" role="status">
-                A scan finished recently. To keep your AWS accounts from being read too often, the next scan can start in <b className="font-semibold text-ink">{clock(waitMs)}</b>.
+                A sync finished recently. To keep your AWS accounts from being read too often, the next sync can start in <b className="font-semibold text-ink">{clock(waitMs)}</b>.
               </p>
             )}
-            {!canScan && <p className="text-[12.5px] text-ink-3">Your role can see scan results but not start a scan.</p>}
+            {!canScan && <p className="text-[12.5px] text-ink-3">Your role can see the results but not start a sync.</p>}
             <ol className="flex flex-col">
               {buildSteps({ stage: 'start', discovery: {}, posture: {}, startedAt: now }).map((step, index, list) => (
                 <Step key={step.key} step={{ ...step, state: 'pending' }} last={index === list.length - 1} />
@@ -230,7 +230,7 @@ export function SyncPanel({ open, onClose }) {
               ))}
             </ol>
             {finished && run.posture?.state === 'partial' && (
-              <p className="text-[12.5px] text-ink-3">Some posture checks could not run, so a few scores may be missing until the next scan.</p>
+              <p className="text-[12.5px] text-ink-3">Some posture checks could not run, so a few scores may be missing until the next sync.</p>
             )}
           </>
         )}

@@ -23,10 +23,10 @@ The dev server proxies `/api` to the backend (see `vite.config.js`). In
 production nginx does the same (`nginx/nginx.conf.template`); the image takes
 `API_UPSTREAM` and `DNS_RESOLVER` at run time (see `Dockerfile`).
 
-## The Scan button
+## The Sync now button
 
-The top bar's **Scan now** (and Integrations → Scan now) runs one four-step
-scan, shown step by step in a side panel and kept across page changes and
+The top bar's **Sync now** (and the one in the Integrations header) runs one four-step
+sync, shown step by step in a side panel and kept across page changes and
 reloads:
 
 1. `POST /api/v1/scan/start` on the discovery scan service (already running →

@@ -79,7 +79,7 @@ type startRequest struct {
 	RequestedBy string `json:"requested_by"`
 }
 
-// PublicStart handles POST /api/v1/scans.
+// PublicStart handles POST /api/v1/ispm-scans.
 func (h *Handler) PublicStart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !h.client.Configured() {
@@ -115,7 +115,7 @@ func (h *Handler) PublicStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PublicJob handles GET /api/v1/scans/{job_id}.
+// PublicJob handles GET /api/v1/ispm-scans/{job_id}.
 func (h *Handler) PublicJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !h.client.Configured() {
@@ -143,10 +143,11 @@ func (h *Handler) PublicJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, Response{Data: job})
 }
 
-// canScan: the roles that may start a scan from the console.
+// canScan: the roles that may start a scan from the console (the console's
+// super admin is stored as super_admin or superadmin).
 func canScan(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "analyst", "manager", "admin":
+	case "analyst", "manager", "admin", "super_admin", "superadmin":
 		return true
 	}
 	return false

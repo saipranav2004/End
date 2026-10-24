@@ -138,13 +138,15 @@ func (e *MonitoringEvents) queryContext(ctx context.Context) (context.Context, c
 	return context.WithTimeout(ctx, e.timeout)
 }
 
-// identityWindowSQL is the per-identity predicate: one identity, half-open
+// identityWindowSQL(sourceType) is the per-identity predicate: one identity, half-open
 // [from, to) on event_time. Values are bound as server-side query
 // parameters, never interpolated.
-const identityWindowSQL = ` source_type = {source_type:String}
-	  AND identity_name = {identity_name:String}
+func identityWindowSQL(sourceType string) string {
+	return ` source_type = {source_type:String}
+	  AND ` + chclient.IdentityEquals(sourceType) + `
 	  AND event_time >= {from:DateTime64(3)}
 	  AND event_time < {to:DateTime64(3)} `
+}
 
 func identityWindowArgs(sourceType, identityName string, from, to time.Time) []any {
 	return []any{
@@ -164,7 +166,7 @@ func (e *MonitoringEvents) TotalCalls(ctx context.Context, sourceType, identityN
 	if !e.Enabled() {
 		return 0, ErrMonitoringEventsNotConfigured
 	}
-	q := `SELECT uniqExact(event_id) FROM ` + e.tbl(ctx) + ` WHERE` + identityWindowSQL
+	q := `SELECT uniqExact(event_id) FROM ` + e.tbl(ctx) + ` WHERE` + identityWindowSQL(sourceType)
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	var total uint64
@@ -334,17 +336,17 @@ func (e *MonitoringEvents) LastSeenByIdentity(ctx context.Context, keys []Monito
 	if len(keys) == 0 {
 		return out, nil
 	}
-	q := `SELECT source_type, identity_name, max(event_time)
+	q := `SELECT source_type, ident, max(event_time)
 	      FROM (
-	          SELECT source_type, identity_name, event_id,
+	          SELECT source_type, ` + chclient.EventIdentity + ` AS ident, event_id,
 	                 argMax(event_time, ingested_at)  AS event_time,
 	                 argMax(is_resolved, ingested_at) AS is_resolved
 	          FROM ` + e.tbl(ctx) + `
 	          WHERE` + KeyFilterSQL + `
-	          GROUP BY source_type, identity_name, event_id
+	          GROUP BY source_type, ident, event_id
 	      )
 	      WHERE is_resolved = 1
-	      GROUP BY source_type, identity_name`
+	      GROUP BY source_type, ident`
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	rows, err := e.conn.Query(ctx, q, KeyFilterArgs(keys)...)
@@ -384,7 +386,7 @@ func (e *MonitoringEvents) LastSeen(ctx context.Context, sourceType, identityNam
 	                 argMax(event_time, ingested_at)  AS event_time,
 	                 argMax(is_resolved, ingested_at) AS is_resolved
 	          FROM ` + e.tbl(ctx) + `
-	          WHERE source_type = {source_type:String} AND identity_name = {identity_name:String}
+	          WHERE source_type = {source_type:String} AND ` + chclient.IdentityEquals(sourceType) + `
 	          GROUP BY event_id
 	      )
 	      WHERE is_resolved = 1`
@@ -426,7 +428,7 @@ func (e *MonitoringEvents) Volume(ctx context.Context, sourceType, identityName 
 	}
 	q := `SELECT ` + fn + `(event_time) AS bucket, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY bucket
 	      ORDER BY bucket`
 	ctx, cancel := e.queryContext(ctx)
@@ -494,7 +496,7 @@ func (e *MonitoringEvents) RecentCalls(ctx context.Context, sourceType, identity
 	args = append(args, ch.Named("limit", uint32(limit)))
 	q := `SELECT event_id, event_time, event_name, event_source, source_ip, region, resource_arns, risk_status, event_risk_score
 	      FROM ` + e.tbl(ctx) + ` FINAL
-	      WHERE` + identityWindowSQL + cursor + `
+	      WHERE` + identityWindowSQL(sourceType) + cursor + `
 	      ORDER BY event_time DESC, event_id DESC
 	      LIMIT {limit:UInt32}`
 	ctx, cancel := e.queryContext(ctx)
@@ -538,7 +540,7 @@ func (e *MonitoringEvents) TypicalActions(ctx context.Context, sourceType, ident
 	}
 	q := `SELECT event_source, event_name, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY event_source, event_name
 	      ORDER BY calls DESC, event_source, event_name
 	      LIMIT {limit:UInt32}`
@@ -587,7 +589,7 @@ func (e *MonitoringEvents) TypicalResources(ctx context.Context, sourceType, ide
 	                     trim(arrayJoin(splitByChar(',', resource_arns))) AS resource_arn,
 	                     JSONExtractString(dimensions_json, 'resource_type') AS resource_type
 	              FROM ` + e.tbl(ctx) + `
-	              WHERE` + identityWindowSQL + `
+	              WHERE` + identityWindowSQL(sourceType) + `
 	                AND resource_arns != ''
 	          )
 	          WHERE resource_arn != ''
@@ -632,7 +634,7 @@ func (e *MonitoringEvents) ActivitySchedule(ctx context.Context, sourceType, ide
 	}
 	q := `SELECT toDayOfWeek(event_time) AS day_of_week, toHour(event_time) AS hour, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY day_of_week, hour
 	      ORDER BY day_of_week, hour`
 	ctx, cancel := e.queryContext(ctx)
@@ -682,7 +684,7 @@ func (e *MonitoringEvents) Fingerprint(ctx context.Context, sourceType, identity
 	          FROM (
 	              SELECT event_id, arrayJoin(JSONExtractKeysAndValuesRaw(dimensions_json)) AS kv
 	              FROM ` + e.tbl(ctx) + `
-	              WHERE` + identityWindowSQL + `
+	              WHERE` + identityWindowSQL(sourceType) + `
 	          )
 	          WHERE has({dimensions:Array(String)}, kv.1)
 	      )
@@ -728,12 +730,12 @@ func (e *MonitoringEvents) CallCountsByIdentity(ctx context.Context, keys []Moni
 	if len(keys) == 0 {
 		return out, nil
 	}
-	q := `SELECT source_type, identity_name, uniqExact(event_id)
+	q := `SELECT source_type, ` + chclient.EventIdentity + ` AS ident, uniqExact(event_id)
 	      FROM ` + e.tbl(ctx) + `
 	      WHERE` + KeyFilterSQL + `
 	        AND event_time >= {from:DateTime64(3)}
 	        AND event_time < {to:DateTime64(3)}
-	      GROUP BY source_type, identity_name`
+	      GROUP BY source_type, ident`
 	args := append(KeyFilterArgs(keys),
 		ch.DateNamed("from", from.UTC(), ch.MilliSeconds),
 		ch.DateNamed("to", to.UTC(), ch.MilliSeconds))
@@ -774,9 +776,9 @@ func (e *MonitoringEvents) MeanProvenanceConfidence(ctx context.Context, keys []
 	if len(keys) == 0 || len(accounts) == 0 || len(regions) == 0 {
 		return nil, nil
 	}
-	q := `SELECT source_type, identity_name, avg(confidence), count()
+	q := `SELECT source_type, ident, avg(confidence), count()
 	      FROM (
-	          SELECT event_id, source_type, identity_name,
+	          SELECT event_id, source_type, ` + chclient.EventIdentity + ` AS ident,
 	                 argMax(provenance_confidence, ingested_at) AS confidence,
 	                 argMax(is_resolved, ingested_at) AS is_resolved
 	          FROM ` + e.tbl(ctx) + `
@@ -785,10 +787,10 @@ func (e *MonitoringEvents) MeanProvenanceConfidence(ctx context.Context, keys []
 	            AND has({accounts:Array(String)}, account_id)
 	            AND has({regions:Array(String)}, region)
 	            AND` + KeyFilterSQL + `
-	          GROUP BY event_id, source_type, identity_name
+	          GROUP BY event_id, source_type, ident
 	      )
 	      WHERE is_resolved = 1
-	      GROUP BY source_type, identity_name`
+	      GROUP BY source_type, ident`
 	args := []any{
 		ch.DateNamed("from", from.UTC(), ch.MilliSeconds),
 		ch.DateNamed("to", to.UTC(), ch.MilliSeconds),

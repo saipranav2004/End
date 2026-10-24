@@ -36,7 +36,7 @@ export function SyncProvider({ children }) {
           const d = run.discovery;
           notify({
             variant: 'success',
-            title: 'Scan finished',
+            title: 'Sync finished',
             description: [
               Number.isFinite(d.changes) ? `${d.changes} ${d.changes === 1 ? 'change' : 'changes'} since the last scan` : null,
               run.posture?.state === 'skipped' ? 'Posture scores were not refreshed.' : null,
@@ -47,7 +47,7 @@ export function SyncProvider({ children }) {
             duration: 12000,
           });
         } else if (type === 'failed') {
-          notify({ variant: 'error', title: "The scan didn't finish", description: run.error, action: { label: 'Open', onSelect: () => setPanelOpen(true) }, duration: 12000 });
+          notify({ variant: 'error', title: "The sync didn't finish", description: run.error, action: { label: 'Open', onSelect: () => setPanelOpen(true) }, duration: 12000 });
         }
       }),
     [notify, navigate],

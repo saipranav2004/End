@@ -8,7 +8,6 @@ import {
   Loader2,
   MapPin,
   PanelRightOpen,
-  RefreshCw,
   SearchX,
   ShieldCheck,
   Trash2,
@@ -53,21 +52,21 @@ export function syncDetail(account, { withActor = false } = {}) {
   return account.status !== 'connected' ? 'After the checks pass' : 'Starts automatically';
 }
 
-/** Why "Scan now" is not available, or '' when it is. */
+/** Why "Sync now" is not available, or '' when it is. */
 export function syncBlockedReason(account) {
-  if (account.status !== 'connected') return 'Fix the connection before scanning';
+  if (account.status !== 'connected') return 'Fix the connection before syncing';
   if (account.regions.length === 0) return 'Choose regions to read first';
   return '';
 }
 
-/** Scan now and Re-check connection for one account, with their toasts. */
+/** Sync now and Re-check connection for one account, with their toasts. */
 export function useAccountActions(account, { onChanged, onEditRegions } = {}) {
   const { notify } = useToast();
   const scan = useSync();
   const [busy, setBusy] = useState('');
 
   /* One scan covers the whole workspace: this opens the same progress panel as the
-     top bar's Scan now, and follows a scan that is already running. */
+     top bar's Sync now, and follows a scan that is already running. */
   const sync = async () => {
     setBusy('sync');
     try {
@@ -177,7 +176,7 @@ export function AccountsTable({ accounts, catalogue, inventory, canManage, onCha
         <span>Discovered</span>
         <span>Last sync</span>
         <span>Code scanning</span>
-        <span className="w-[148px]" />
+        <span className="w-9" />
       </div>
       {shown.length === 0 ? (
         <EmptyState
@@ -234,13 +233,15 @@ export function AccountsTable({ accounts, catalogue, inventory, canManage, onCha
 }
 
 function AccountRow({ account, names, counts, inventoryKnown, canManage, onChanged, onOpen, onEdit, onRemove, onExposure }) {
-  const { busy, sync: runSync, recheck } = useAccountActions(account, { onChanged, onEditRegions: onEdit });
+  const { busy, recheck } = useAccountActions(account, { onChanged, onEditRegions: onEdit });
+  const { run } = useSync();
+  // A sync covers every connected account, so while one runs each of them reads as syncing.
+  const syncing = account.status === 'connected' && Boolean(run) && run.stage !== 'done' && run.stage !== 'failed';
   const meta = ACCOUNT_STATUS[account.status] ?? ACCOUNT_STATUS.action_needed;
-  const sync = SYNC[account.sync.status] ?? SYNC.idle;
+  const sync = syncing ? SYNC.running : (SYNC[account.sync.status] ?? SYNC.idle);
   const SyncIcon = sync.icon;
   const passed = account.checks.filter((check) => check.state === 'pass').length;
   const failing = account.checks.find((check) => check.state === 'fail' || check.state === 'error');
-  const blocked = syncBlockedReason(account);
 
   return (
     <li
@@ -327,7 +328,7 @@ function AccountRow({ account, names, counts, inventoryKnown, canManage, onChang
             {sync.label}
           </span>
           <span className="block truncate text-[11.5px] text-ink-3" title={account.sync.lastError || syncDetail(account, { withActor: true })}>
-            {syncDetail(account)}
+            {syncing ? 'Part of the sync in progress' : syncDetail(account)}
           </span>
         </div>
 
@@ -337,22 +338,7 @@ function AccountRow({ account, names, counts, inventoryKnown, canManage, onChang
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1.5 @min-[66rem]:w-[148px] @min-[66rem]:justify-end">
-          {canManage && (
-            <span title={blocked || undefined}>
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={RefreshCw}
-                loading={busy === 'sync'}
-                disabled={Boolean(blocked) || Boolean(busy)}
-                onClick={runSync}
-                aria-label={`Sync ${account.accountId} now`}
-              >
-                Scan now
-              </Button>
-            </span>
-          )}
+        <div className="flex items-center gap-1.5 @min-[66rem]:justify-end">
           <Menu
             outlined
             label={`More actions for ${account.accountId}`}

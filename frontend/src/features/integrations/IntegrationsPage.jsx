@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock3, FlaskConical, KeyRound, LayoutDashboard, Plus, RotateCw, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../../app/AuthContext';
@@ -10,6 +10,8 @@ import { fetchFilters } from '../../lib/api/inventory';
 import { useQuery } from '../../lib/hooks';
 import { formatDateTime, formatRelative } from '../../lib/format';
 import { PageHeader } from '../../shell/PageHeader';
+import { SyncNowButton } from '../sync/SyncButton';
+import { getEpoch, subscribeEpoch } from '../../lib/sync/engine';
 import { Button, IconButton } from '../../ui/Button';
 import { Panel } from '../../ui/Panel';
 import { Skeleton } from '../../ui/Skeleton';
@@ -98,6 +100,12 @@ export default function IntegrationsPage() {
     return () => clearInterval(id);
   }, [syncing, refresh]);
 
+  /* A sync from this console ended: read the accounts' own sync state again. */
+  const syncEpoch = useSyncExternalStore(subscribeEpoch, getEpoch);
+  useEffect(() => {
+    if (syncEpoch > 0) refresh();
+  }, [syncEpoch, refresh]);
+
   const reload = async () => {
     setRefreshing(true);
     try {
@@ -166,9 +174,10 @@ export default function IntegrationsPage() {
           lede="The cloud accounts and code repositories this console reads. Every connection is read-only."
           actions={
             <>
-              <Button variant="secondary" icon={RotateCw} loading={refreshing} onClick={reload}>
+              <Button variant="secondary" icon={RotateCw} loading={refreshing} onClick={reload} title="Reload this page. It does not read your AWS accounts again - Sync now does.">
                 Refresh
               </Button>
+              {data.setup && <SyncNowButton />}
               {data.canManage && data.setup && (
                 <Button variant="primary" icon={Plus} onClick={() => setParam('add', '1')} disabled={adding}>
                   Connect AWS account

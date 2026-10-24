@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	chclient "nhi-backend-api/internal/clickhouse"
 	"strings"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
@@ -197,7 +198,7 @@ func KeyPreferenceJoin(alias string) string { return fmt.Sprintf(keyPreferenceJo
 // two has() tests form a superset (every requested source_type combined
 // with every requested identity_name); callers keep only exact pairs.
 const KeyFilterSQL = ` has({types:Array(String)}, source_type)
-	  AND has({names:Array(String)}, identity_name) `
+	  AND has({names:Array(String)}, ` + chclient.EventIdentity + `) `
 
 // KeyFilterArgs are the ClickHouse named parameters of KeyFilterSQL.
 func KeyFilterArgs(keys []MonitoringKey) []any {

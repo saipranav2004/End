@@ -87,3 +87,16 @@ func TestScanAPINotConfigured(t *testing.T) {
 		t.Fatalf("no WORKER_URL: %d", rec.Code)
 	}
 }
+
+func TestCanScanRoles(t *testing.T) {
+	for _, role := range []string{"analyst", "Manager", "admin", "super_admin", "superadmin"} {
+		if !canScan(role) {
+			t.Errorf("%s should be allowed to start a scan", role)
+		}
+	}
+	for _, role := range []string{"viewer", "", "guest"} {
+		if canScan(role) {
+			t.Errorf("%q should not be allowed to start a scan", role)
+		}
+	}
+}

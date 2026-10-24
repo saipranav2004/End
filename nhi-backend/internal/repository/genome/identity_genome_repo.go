@@ -28,7 +28,7 @@ func (e *MonitoringEvents) TypicalActions(ctx context.Context, accounts []string
 	}
 	q := `SELECT event_source, event_name, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY event_source, event_name
 	      ORDER BY calls DESC, event_source, event_name
 	      LIMIT {limit:UInt32}`
@@ -77,7 +77,7 @@ func (e *MonitoringEvents) TypicalResources(ctx context.Context, accounts []stri
 	                     trim(arrayJoin(splitByChar(',', resource_arns))) AS resource_arn,
 	                     JSONExtractString(dimensions_json, 'resource_type') AS resource_type
 	              FROM ` + e.tbl(ctx) + `
-	              WHERE` + identityWindowSQL + `
+	              WHERE` + identityWindowSQL(sourceType) + `
 	                AND resource_arns != ''
 	          )
 	          WHERE resource_arn != ''
@@ -122,7 +122,7 @@ func (e *MonitoringEvents) ActivitySchedule(ctx context.Context, accounts []stri
 	}
 	q := `SELECT toDayOfWeek(event_time) AS day_of_week, toHour(event_time) AS hour, uniqExact(event_id) AS calls
 	      FROM ` + e.tbl(ctx) + `
-	      WHERE` + identityWindowSQL + `
+	      WHERE` + identityWindowSQL(sourceType) + `
 	      GROUP BY day_of_week, hour
 	      ORDER BY day_of_week, hour`
 	ctx, cancel := e.queryContext(ctx)
@@ -172,7 +172,7 @@ func (e *MonitoringEvents) Fingerprint(ctx context.Context, accounts []string, s
 	          FROM (
 	              SELECT event_id, arrayJoin(JSONExtractKeysAndValuesRaw(dimensions_json)) AS kv
 	              FROM ` + e.tbl(ctx) + `
-	              WHERE` + identityWindowSQL + `
+	              WHERE` + identityWindowSQL(sourceType) + `
 	          )
 	          WHERE has({dimensions:Array(String)}, kv.1)
 	      )

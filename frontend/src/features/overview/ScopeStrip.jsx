@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Database, Globe2, SlidersHorizontal } from 'lucide-react';
+import { Database, SlidersHorizontal } from 'lucide-react';
 import { useWorkspace } from '../../app/WorkspaceContext';
 import { INTEGRATIONS_PREVIEW } from '../../lib/api/integrationsPreview';
 import { fetchScopeOptions, updateScopeSettings } from '../../lib/api/overview';
@@ -22,7 +22,7 @@ import { cn } from '../../ui/cn';
  * the scope in force, with the control to change it. A stale snapshot or a
  * narrowed scope is never mistaken for the whole estate.
  */
-export function ScopeStrip({ scope, kpis, lastScanAt, onScopeSaved }) {
+export function ScopeStrip({ scope, lastScanAt, onScopeSaved }) {
   const { integration } = useWorkspace();
   const [editing, setEditing] = useState(false);
 
@@ -40,7 +40,8 @@ export function ScopeStrip({ scope, kpis, lastScanAt, onScopeSaved }) {
       if (account.sync?.status === 'running') running += 1;
       if (account.sync?.status === 'queued') queued += 1;
     }
-    return { last: lastScanAt || last, running, queued, known: accounts.length > 0 };
+    const newest = lastScanAt || last;
+    return { last: newest, ageDays: newest ? (Date.now() - new Date(newest).getTime()) / 86_400_000 : null, running, queued, known: accounts.length > 0 };
   }, [integration, lastScanAt]);
 
   if (scope.isLoading && !scope.data) {
@@ -74,74 +75,53 @@ export function ScopeStrip({ scope, kpis, lastScanAt, onScopeSaved }) {
   const settings = scope.data;
   const isDefault = settings.accountsDefault && settings.regionsDefault;
 
-  const facts = [
-    {
-      label: 'Accounts',
-      value: settings.accounts.length ? settings.accounts.join(', ') : 'None selected',
-      mono: settings.accounts.length > 0,
-    },
-    {
-      label: 'Regions',
-      value: settings.regions.length ? settings.regions.join(', ') : 'None selected',
-      mono: settings.regions.length > 0,
-    },
-    kpis && { label: 'Accounts with data', value: formatNumber(kpis.accountsScanned) },
-    {
-      label: 'Last discovery sync',
-      value: sync.last
-        ? formatRelative(sync.last)
-        : sync.running
-          ? 'Running now'
-          : sync.queued
-            ? 'Queued'
-            : sync.known
-            ? 'Not synced yet'
-            : '-',
-      title: sync.last ? formatDateTime(sync.last) : undefined,
-    },
-  ].filter(Boolean);
+  const { ageDays } = sync;
+  const dot = ageDays === null ? 'bg-ink-3' : ageDays <= 1 ? 'bg-low' : ageDays <= 7 ? 'bg-ink-3' : 'bg-medium';
+  const syncText = sync.last
+    ? `Synced ${formatRelative(sync.last)}`
+    : sync.running
+      ? 'Syncing now'
+      : sync.queued
+        ? 'Sync queued'
+        : sync.known
+          ? 'Not synced yet'
+          : 'No sync yet';
+  const count = (list, one) => `${formatNumber(list.length)} ${one}${list.length === 1 ? '' : 's'}`;
 
+  /* One quiet line, not a card: when the figures are from, and what they cover. */
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-[var(--radius-panel)] border border-line bg-surface px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md border border-line bg-surface-2 text-brand">
-            <Globe2 aria-hidden="true" className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">Data scope</p>
-            <p className="text-[12.5px] font-semibold text-ink">
-              {isDefault ? 'All accounts and regions' : 'Your saved scope'}
-              <span className="font-normal text-ink-3"> · applies to inventory figures</span>
-            </p>
-          </div>
-        </div>
-
-        <dl className="flex min-w-0 flex-wrap items-start gap-x-7 gap-y-3">
-          {facts.map((fact) => (
-            <div key={fact.label} className="min-w-0">
-              <dt className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">{fact.label}</dt>
-              <dd
-                className={cn('mt-0.5 max-w-56 truncate text-[12.5px] font-medium text-ink', fact.mono && 'font-mono')}
-                data-numeric=""
-                title={fact.title ?? String(fact.value)}
-              >
-                {fact.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-
-        <div className="ml-auto flex items-center gap-2">
-          {(sync.running > 0 || sync.queued > 0) && (
-            <Tag tone="info" dot size="sm">
-              {sync.running > 0 ? 'Sync running' : 'Sync queued'}
-            </Tag>
-          )}
-          <Button variant="secondary" size="sm" icon={SlidersHorizontal} onClick={() => setEditing(true)}>
-            Change scope
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[12.5px] text-ink-2">
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink" title={sync.last ? formatDateTime(sync.last) : undefined}>
+          <span aria-hidden="true" className={cn('size-2 rounded-full', dot)} />
+          {syncText}
+        </span>
+        <span aria-hidden="true" className="text-ink-3">
+          ·
+        </span>
+        <span title={settings.accounts.join('\n')} data-numeric="">
+          {settings.accounts.length ? count(settings.accounts, 'account') : 'No accounts selected'}
+        </span>
+        <span aria-hidden="true" className="text-ink-3">
+          ·
+        </span>
+        <span title={settings.regions.join('\n')} data-numeric="">
+          {settings.regions.length ? count(settings.regions, 'region') : 'No regions selected'}
+        </span>
+        {isDefault && <span className="text-ink-3">(all)</span>}
+        {(sync.running > 0 || sync.queued > 0) && (
+          <Tag tone="info" dot size="sm">
+            {sync.running > 0 ? 'Sync running' : 'Sync queued'}
+          </Tag>
+        )}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="inline-flex items-center gap-1 rounded font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+          Change scope
+        </button>
       </div>
 
       <ScopeEditor

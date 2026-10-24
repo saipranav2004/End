@@ -101,7 +101,7 @@ func (s *Service) GetPeers(ctx context.Context, userID, tenantID, dbName, source
 	alertsOK := common.ReadOK("identity peers open alerts", err)
 	identityKeys := make([]common.MonitoringKey, 0, len(peers))
 	for _, pe := range peers {
-		identityKeys = append(identityKeys, pe.id.Key)
+		identityKeys = append(identityKeys, pe.id.EventKey())
 	}
 	calls, err := s.events.CallCountsByIdentity(ctx, identityKeys, p.Window.From, p.Window.To)
 	callsOK := common.EventsReadOK("identity peers call counts", err)
@@ -115,7 +115,7 @@ func (s *Service) GetPeers(ctx context.Context, userID, tenantID, dbName, source
 			peer.OutlierDimension = common.OptionalString(outlier)
 		}
 		if callsOK {
-			n := calls[pe.id.Key]
+			n := calls[pe.id.EventKey()]
 			peer.RecentCallCount = &n
 		}
 		out.Peers = append(out.Peers, peer)

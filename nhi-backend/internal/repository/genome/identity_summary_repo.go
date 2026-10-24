@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	chclient "nhi-backend-api/internal/clickhouse"
 	"nhi-backend-api/internal/scope"
 	"time"
 
@@ -95,7 +96,7 @@ func (e *MonitoringEvents) LastSeen(ctx context.Context, accounts []string, sour
 	                 argMax(event_time, ingested_at)  AS event_time,
 	                 argMax(is_resolved, ingested_at) AS is_resolved
 	          FROM ` + e.tbl(ctx) + `
-	          WHERE source_type = {source_type:String} AND identity_name = {identity_name:String}
+	          WHERE source_type = {source_type:String} AND ` + chclient.IdentityEquals(sourceType) + `
 	            AND has({accounts:Array(String)}, account_id)
 	          GROUP BY event_id
 	      )

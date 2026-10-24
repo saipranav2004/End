@@ -5,6 +5,7 @@ import { Button } from '../../ui/Button';
 import { cn } from '../../ui/cn';
 import { exposureState } from './ExposureBadges';
 import { AwsMark, CodeCommitMark, GitHubMark } from './parts';
+import { useSync } from '../sync/SyncContext';
 
 /*
  * The top of the Integrations page once an account is connected: four facts a
@@ -49,10 +50,12 @@ export function OverviewTiles({ accounts, inventory, regionNames }) {
 
   const pending = accounts.filter((account) => account.sync.status === 'queued' || account.sync.status === 'running');
   const failed = accounts.filter((account) => account.sync.status === 'failed');
-  const lastSynced = accounts
-    .map((account) => account.sync.lastSyncedAt)
+  const { run, lastScanAt } = useSync();
+  const running = Boolean(run) && run.stage !== 'done' && run.stage !== 'failed';
+  // The newest of what each account reports and what the last sync from this console finished.
+  const lastSynced = [...accounts.map((account) => account.sync.lastSyncedAt), lastScanAt]
     .filter(Boolean)
-    .sort()
+    .sort((a, b) => new Date(a) - new Date(b))
     .at(-1);
 
   return (
@@ -89,11 +92,13 @@ export function OverviewTiles({ accounts, inventory, regionNames }) {
       <Tile
         icon={Clock3}
         label="Data freshness"
-        value={lastSynced ? formatRelative(lastSynced) : pending.length ? 'Queued' : '-'}
+        value={running ? 'Syncing now' : lastSynced ? formatRelative(lastSynced) : pending.length ? 'Queued' : '-'}
         tone={failed.length ? 'medium' : 'neutral'}
         title={lastSynced ? `Last sync finished ${formatDateTime(lastSynced)}` : undefined}
         caption={
-          failed.length
+          running
+            ? 'Reading your accounts and scoring what is found. Open the progress from Sync now.'
+            : failed.length
             ? `The last sync failed for ${failed.map((account) => account.accountId).join(', ')}.`
             : pending.length
               ? `${syncWords(pending)} This page updates on its own.`

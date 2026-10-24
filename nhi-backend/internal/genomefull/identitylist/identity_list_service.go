@@ -94,7 +94,7 @@ func (s *Service) List(ctx context.Context, userID, tenantID, dbName string, p P
 	}
 	for i := range entries {
 		entries[i].score = riskScore(risk, entries[i].id)
-		if t, ok := lastSeen[entries[i].id.Key]; ok {
+		if t, ok := lastSeen[entries[i].id.EventKey()]; ok {
 			entries[i].lastSeen = &t
 		}
 	}
@@ -153,7 +153,7 @@ func (s *Service) List(ctx context.Context, userID, tenantID, dbName string, p P
 				break
 			}
 		}
-		if t, ok := lastSeen[id.Key]; ok {
+		if t, ok := lastSeen[id.EventKey()]; ok {
 			item.LastSeen = &t
 		}
 		if alertsOK {
@@ -216,7 +216,7 @@ func (s *Service) riskFor(ctx context.Context, sc *scope.DataScope, entries []li
 func (s *Service) lastSeenFor(ctx context.Context, entries []listEntry) map[common.MonitoringKey]time.Time {
 	keys := make([]common.MonitoringKey, 0, len(entries))
 	for _, e := range entries {
-		keys = append(keys, e.id.Key)
+		keys = append(keys, e.id.EventKey())
 	}
 	last, err := s.events.LastSeenByIdentity(ctx, keys)
 	if !common.EventsReadOK("identity list last seen", err) {

@@ -26,7 +26,7 @@ import {
   fetchScopeSettings,
 } from '../../lib/api/overview';
 import { useQuery } from '../../lib/hooks';
-import { NEUTRAL_SERIES, SERIES_TOKENS, severityMeta } from '../../lib/domain';
+import { NEUTRAL_SERIES, SERIES_TOKENS } from '../../lib/domain';
 import { formatDate, formatDateTime, formatNumber, formatRelative, humanizeToken, parseDate, percentValue } from '../../lib/format';
 import { genomeRoute } from '../../lib/identityLinks';
 import { PageHeader } from '../../shell/PageHeader';
@@ -38,6 +38,7 @@ import { Meter } from '../../ui/Meter';
 import { Panel, PanelHeader } from '../../ui/Panel';
 import { MetricTile } from '../../ui/Stat';
 import { Select } from '../../ui/Field';
+import { SegmentedControl } from '../../ui/Tabs';
 import { Tag } from '../../ui/Tag';
 import { cn } from '../../ui/cn';
 import { ChartSkeleton, DonutSkeleton, ListSkeleton, LoadingAnnouncement, Skeleton, StatStripSkeleton } from '../../ui/Skeleton';
@@ -46,7 +47,6 @@ import { postureRoute, windowPhrase } from '../../lib/api/posture';
 import { RecentChangesCard } from '../changes/RecentChangesCard';
 import { BandTag, Delta, ScoreRing } from '../posture/parts';
 import { credentialTypeMeta, environmentLabel, functionalClassMeta, identityTypeLabel, lifecycleMeta } from '../identities/meta';
-import { edgeKindMeta } from '../access/graphModel';
 import { describeExposureError, summariseFindings } from '../exposure/scannerState';
 import { sourceTypeLabel } from '../genome/meta';
 import { ScopeStrip } from './ScopeStrip';
@@ -112,10 +112,10 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Dashboard"
-        lede="The workloads, services and automations that act in your AWS accounts: what is at risk now, what the last discovery scan changed, what you have, and where to look next."
+        lede="What is at risk across your AWS accounts, what changed in the last sync, and where to look first."
         actions={
           <Button variant="secondary" icon={RotateCw} onClick={refreshAll} loading={refreshing}>
             Refresh figures
@@ -124,7 +124,6 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
         meta={
           <ScopeStrip
             scope={scopeQuery}
-            kpis={kpis}
             lastScanAt={overview?.lastScanAt}
             onScopeSaved={() => {
               scopeQuery.refetch();
@@ -134,116 +133,55 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
         }
       />
 
-      {/* ── 1. At risk now: the score, the headline counts and the signals ── */}
-      <DashboardSection title="At risk now">
-        <PostureBanner query={postureQuery} />
+      {/* ── The answer first: one score, then the four numbers behind it ── */}
+      <PostureBanner query={postureQuery} />
 
-        {loadingOverview ? (
-          <>
-            <LoadingAnnouncement label="Loading inventory figures" />
-            <StatStripSkeleton count={4} />
-          </>
-        ) : overviewFailed ? (
-          <InlineError error={overviewQuery.error} onRetry={overviewQuery.refetch} label="Inventory figures could not be loaded" />
-        ) : (
-          <HeadlineTiles kpis={kpis} charts={charts} activity={overview.activityDataAvailable} exposure={exposure} findingsQuery={findingsQuery} findingSummary={findingSummary} />
-        )}
-
-        <div className={cn('grid gap-4', exposure && '@min-[52rem]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]')}>
-          <Panel prominence="lead" className="animate-rise" data-stagger="" style={{ '--stagger': 3 }}>
-            <PanelHeader
-              prominence="lead"
-              title="What needs attention"
-              subtitle="Each line is a share of all your identities or credentials, largest share first. Select one to open the list."
-            />
-            <div className="mt-3">
-              {overviewFailed ? (
-                <Unavailable source="discovery" />
-              ) : (
-                <SignalsBody overview={overview} loading={loadingOverview} />
-              )}
-            </div>
-          </Panel>
-
-          {exposure && (
-            <Panel prominence="default" className="animate-rise" data-stagger="" style={{ '--stagger': 4 }}>
-              <PanelHeader
-                title="Exposed secrets"
-                subtitle="Secrets found in code in your connected repositories."
-                actions={
-                  <Button as={Link} to="/exposure" variant="secondary" size="sm" iconRight={ArrowRight}>
-                    Review exposed secrets
-                  </Button>
-                }
-              />
-              <div className="mt-4">
-                <FindingsMiniPanel query={findingsQuery} summary={findingSummary} />
-              </div>
-            </Panel>
-          )}
-        </div>
-      </DashboardSection>
-
-      {/* ── 2. What the latest discovery scan changed ─────────────────────── */}
-      {!loadingOverview && !overviewFailed && overview?.recentChanges && (
-        <DashboardSection title="What changed">
-          <RecentChangesCard recent={overview.recentChanges} />
-        </DashboardSection>
+      {loadingOverview ? (
+        <>
+          <LoadingAnnouncement label="Loading inventory figures" />
+          <StatStripSkeleton count={4} />
+        </>
+      ) : overviewFailed ? (
+        <InlineError error={overviewQuery.error} onRetry={overviewQuery.refetch} label="Inventory figures could not be loaded" />
+      ) : (
+        <HeadlineTiles kpis={kpis} charts={charts} activity={overview.activityDataAvailable} exposure={exposure} findingsQuery={findingsQuery} findingSummary={findingSummary} />
       )}
 
-      {/* ── 3. What you have: identities, credentials, trust ────────────────── */}
-      <DashboardSection title="What you have">
-        <div className="grid gap-4 @min-[52rem]:grid-cols-2">
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 5 }}>
-            <IdentityMix overview={overview} loading={loadingOverview} failed={overviewFailed} />
-          </Panel>
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 6 }}>
-            <CredentialSurface overview={overview} loading={loadingOverview} failed={overviewFailed} />
-          </Panel>
-          {hasTrust(overview) && (
-            <Panel prominence="quiet" className="animate-rise @min-[52rem]:col-span-2" data-stagger="" style={{ '--stagger': 7 }}>
-              <TrustEdges overview={overview} />
-            </Panel>
-          )}
-        </div>
-      </DashboardSection>
+      {/* ── Why: what needs attention, next to what the estate is made of ── */}
+      <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        <Panel prominence="lead" className="animate-rise" data-stagger="" style={{ '--stagger': 3 }}>
+          <PanelHeader
+            prominence="lead"
+            title="What needs attention"
+            subtitle="Each line is a share of all your identities or credentials, largest first. Select one to open the list."
+          />
+          <div className="mt-3">
+            {overviewFailed ? <Unavailable source="discovery" /> : <SignalsBody overview={overview} loading={loadingOverview} />}
+          </div>
+        </Panel>
 
-      {/* ── 4. Trends: growth, use, activity, normal behaviour ─────────────── */}
-      <DashboardSection title="Trends and activity">
-        <div className="grid gap-4 @min-[52rem]:grid-cols-2">
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 8 }}>
-            <InventoryGrowth overview={overview} trends={trendsQuery.data} loading={loadingOverview} failed={overviewFailed} />
-          </Panel>
-          {showsEvents(overview) && (
-            <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 9 }}>
-              <EventVolume overview={overview} />
-            </Panel>
-          )}
-          {showsUse(overview) && (
-            <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 10 }}>
-              <CredentialUse overview={overview} />
-            </Panel>
-          )}
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 11 }}>
-            <BehaviourPanel query={genomeQuery} />
-          </Panel>
-        </div>
-      </DashboardSection>
+        <Panel prominence="default" className="animate-rise" data-stagger="" style={{ '--stagger': 4 }}>
+          <EstateMix overview={overview} loading={loadingOverview} failed={overviewFailed} />
+        </Panel>
+      </div>
 
-      {/* ── 5. Where to look next ───────────────────────────────────────────── */}
-      <DashboardSection title="Where to look next">
-        <div className="grid gap-4 @min-[44rem]:grid-cols-2 @min-[60rem]:grid-cols-3">
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 12 }}>
-            <WeakestIdentities query={postureQuery} />
-          </Panel>
-          <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 13 }}>
-            <ExpiringCredentials overview={overview} loading={loadingOverview} failed={overviewFailed} />
-          </Panel>
-          <Panel prominence="quiet" className="animate-rise @min-[44rem]:col-span-2 @min-[60rem]:col-span-1" data-stagger="" style={{ '--stagger': 14 }}>
-            <TopOwners overview={overview} loading={loadingOverview} failed={overviewFailed} />
-          </Panel>
-        </div>
-      </DashboardSection>
+      {/* ── What the last sync changed ─────────────────────────────────────── */}
+      {!loadingOverview && !overviewFailed && overview?.recentChanges && <RecentChangesCard recent={overview.recentChanges} />}
+
+      {/* ── Over time, and how the workloads behave ────────────────────────── */}
+      <div className="grid gap-4 @min-[60rem]:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 5 }}>
+          <OverTime overview={overview} trends={trendsQuery.data} loading={loadingOverview} failed={overviewFailed} />
+        </Panel>
+        <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 6 }}>
+          <BehaviourPanel query={genomeQuery} />
+        </Panel>
+      </div>
+
+      {/* ── Where to start ─────────────────────────────────────────────────── */}
+      <Panel prominence="quiet" className="animate-rise" data-stagger="" style={{ '--stagger': 7 }}>
+        <StartHere postureQuery={postureQuery} overview={overview} loading={loadingOverview} failed={overviewFailed} />
+      </Panel>
 
       {offerExposureSetup && (
         <p className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
@@ -258,18 +196,8 @@ function OrganisationDashboard({ exposure, offerExposureSetup }) {
   );
 }
 
-/** One group of the dashboard, under a small heading that names the question it answers. */
-function DashboardSection({ title, children }) {
-  return (
-    <section aria-label={title} className="flex flex-col gap-4">
-      <h2 className="text-[11px] font-semibold tracking-[0.12em] text-ink-3 uppercase">{title}</h2>
-      {children}
-    </section>
-  );
-}
 
 /* Each of these panels shows only when the API serves its figures; older builds do not. */
-const hasTrust = (overview) => Boolean(overview) && (overview.charts.trustEdgesByType !== null || overview.kpis.trustEdges !== null);
 const showsUse = (overview) => Boolean(overview) && overview.charts.credentialUtilization !== null;
 const showsEvents = (overview) => Boolean(overview) && overview.charts.eventVolume !== null;
 
@@ -470,33 +398,37 @@ function SignalsBody({ overview, loading }) {
     },
   ];
 
+  return <SignalList rows={rows} />;
+}
+
+/** Of all the actions identities are allowed to take, the share the activity log saw them use. */
+function PermissionShare({ overview }) {
+  if (!overview) return null;
+  const { kpis, activityDataAvailable: activity } = overview;
   const utilisation = kpis.permissionUtilizationPct;
   return (
-    <>
-      <SignalList rows={rows} />
-      <div className="mt-3 border-t border-line pt-3">
-        {activity && utilisation !== null ? (
-          <div className="flex items-center gap-4">
-            <span className="min-w-0 flex-1">
-              <span className="block text-[12.5px] font-semibold text-ink">Share of permissions actually used</span>
-              <span className="mt-0.5 block text-[11.5px] text-ink-3">
-                Of all the actions your identities are allowed to take, the share the AWS activity log (CloudTrail) saw them
-                use. The rest is access nobody uses, which could be removed.
-              </span>
-              <Meter value={Math.min(100, utilisation)} tone="info" height={4} className="mt-2" label="Share of permissions actually used" />
+    <div className="mt-4 border-t border-line pt-3">
+      {activity && utilisation !== null ? (
+        <div className="flex items-center gap-4">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12.5px] font-semibold text-ink">Share of permissions actually used</span>
+            <span className="mt-0.5 block text-[11.5px] text-ink-3">
+              Of all the actions your identities are allowed to take, the share the AWS activity log (CloudTrail) saw them use.
+              The rest is access nobody uses, which could be removed.
             </span>
-            <span data-numeric="" className="w-24 shrink-0 text-right font-display text-[19px] leading-none font-extrabold text-ink">
-              {utilisation.toFixed(1)}%
-            </span>
-          </div>
-        ) : (
-          <p className="text-[11.5px] leading-relaxed text-ink-3">
-            The AWS activity log (CloudTrail) could not be read for these accounts, so the share of permissions used is
-            not measured and the 90-day counts above go by creation date only.
-          </p>
-        )}
-      </div>
-    </>
+            <Meter value={Math.min(100, utilisation)} tone="info" height={4} className="mt-2" label="Share of permissions actually used" />
+          </span>
+          <span data-numeric="" className="w-20 shrink-0 text-right font-display text-[19px] leading-none font-extrabold text-ink">
+            {utilisation.toFixed(1)}%
+          </span>
+        </div>
+      ) : (
+        <p className="text-[11.5px] leading-relaxed text-ink-3">
+          The AWS activity log (CloudTrail) could not be read for these accounts, so the share of permissions used is not
+          measured and the 90-day counts go by creation date only.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -532,13 +464,27 @@ function rankedSlices(items, labelOf, param) {
   return head;
 }
 
-function IdentityMix({ overview, loading, failed }) {
+const WHAT_OPTIONS = [
+  { value: 'identities', label: 'Identities' },
+  { value: 'credentials', label: 'Credentials' },
+];
+
+/** What the estate is made of: identities by purpose, type, account...; or credentials by kind. */
+function EstateMix({ overview, loading, failed }) {
   const navigate = useNavigate();
+  const [what, setWhat] = useState('identities');
   const [view, setView] = useState('class');
 
   const slices = useMemo(() => {
     if (!overview) return [];
     const { charts } = overview;
+    if (what === 'credentials') {
+      const kinds = charts.credentialTypes.map((item) => ({ key: item.key, value: item.value }));
+      return rankedSlices(kinds, (key) => credentialTypeMeta(key).label, 'credential_type').map((slice) => ({
+        ...slice,
+        to: slice.to ? slice.to.replace('/identities?', '/credentials?') : undefined,
+      }));
+    }
     if (view === 'type') return rankedSlices(charts.byType, identityTypeLabel, 'identity_type');
     if (view === 'environment') return rankedSlices(charts.byEnvironment, environmentLabel, 'environment');
     if (view === 'account') return rankedSlices(charts.byAccount, asIs, null);
@@ -563,30 +509,29 @@ function IdentityMix({ overview, loading, failed }) {
           to: `/identities?functional_class=${encodeURIComponent(item.key)}`,
         };
       });
-  }, [overview, view]);
+  }, [overview, view, what]);
 
+  const credentials = what === 'credentials';
   const typeCount = overview?.charts.byType.filter((item) => item.value > 0).length ?? 0;
 
   return (
     <>
       <PanelHeader
-        prominence="quiet"
-        title="What kinds of identities you have"
+        title={credentials ? 'Credential mix' : 'Identity mix'}
         subtitle={
-          typeCount > 0
-            ? `${formatNumber(typeCount)} AWS type${typeCount === 1 ? '' : 's'} in all. Select a slice to list those identities.`
-            : undefined
+          credentials
+            ? 'What your identities sign in with. Select a slice to list those credentials.'
+            : typeCount > 0
+              ? `${formatNumber(typeCount)} AWS type${typeCount === 1 ? '' : 's'} in all. Select a slice to list those identities.`
+              : undefined
         }
-        actions={
-          <Select
-            size="sm"
-            aria-label="Break down by"
-            options={MIX_VIEWS}
-            value={view}
-            onChange={(event) => setView(event.target.value)}
-          />
-        }
+        actions={<SegmentedControl label="Show" options={WHAT_OPTIONS} value={what} onChange={setWhat} />}
       />
+      {!credentials && (
+        <div className="mt-3">
+          <Select size="sm" aria-label="Break down by" options={MIX_VIEWS} value={view} onChange={(event) => setView(event.target.value)} />
+        </div>
+      )}
       <div className="mt-4">
         {loading ? (
           <DonutSkeleton />
@@ -595,85 +540,26 @@ function IdentityMix({ overview, loading, failed }) {
         ) : slices.length === 0 ? (
           <EmptyState
             compact
-            title="No identities yet"
-            description="Discovery has not found any identity in the accounts and regions these figures cover."
+            title={credentials ? 'No credentials yet' : 'No identities yet'}
+            description="Discovery has not found any in the accounts and regions these figures cover."
           />
         ) : (
           <CompositionDonut
             data={slices}
-            total={overview.kpis.totalIdentities}
-            centerLabel="Identities"
+            total={credentials ? overview.kpis.totalCredentials : overview.kpis.totalIdentities}
+            centerLabel={credentials ? 'Credentials' : 'Identities'}
             onSelect={(slice) => slice?.to && navigate(slice.to)}
           />
         )}
       </div>
+      {!loading && !failed && <PermissionShare overview={overview} />}
     </>
   );
 }
 
 /* ── Credential surface ───────────────────────────────────────────────────── */
 
-function CredentialSurface({ overview, loading, failed }) {
-  const navigate = useNavigate();
-  const items = useMemo(
-    () =>
-      (overview?.charts.credentialTypes ?? [])
-        .filter((item) => item.value > 0)
-        .map((item) => ({ key: item.key, label: credentialTypeMeta(item.key).label, value: item.value }))
-        .sort((a, b) => b.value - a.value),
-    [overview],
-  );
 
-  return (
-    <>
-      <PanelHeader
-        prominence="quiet"
-        title="What identities sign in with"
-        subtitle="Credentials by kind. Select a bar to list them."
-        actions={
-          <Button as={Link} to="/credentials" variant="secondary" size="sm" iconRight={ArrowRight}>
-            All credentials
-          </Button>
-        }
-      />
-      <div className="mt-3">
-        {loading ? (
-          <ChartSkeleton height={220} bars={6} />
-        ) : failed ? (
-          <Unavailable source="discovery" />
-        ) : items.length === 0 ? (
-          <ClearState
-            compact
-            title="No credentials recorded"
-            description="No identity in these accounts and regions uses a role, access key, secret or certificate."
-          />
-        ) : (
-          <>
-            <BarList
-              items={items}
-              onSelect={(item) => navigate(`/credentials?credential_type=${encodeURIComponent(item.key)}`)}
-            />
-            <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-line pt-3">
-              <Figure label="Total credentials" value={formatNumber(overview.kpis.totalCredentials)} />
-              <Figure label="Kinds of credential" value={formatNumber(items.length)} />
-            </dl>
-          </>
-        )}
-      </div>
-    </>
-  );
-}
-
-function Figure({ label, value }) {
-  return (
-    <div>
-      <dt className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">{label}</dt>
-      <dd data-numeric="" className="mt-0.5 font-display text-[19px] leading-none font-bold text-ink">
-        {value}
-      </dd>
-    </div>
-  );
-}
 
 /* ── Inventory growth ─────────────────────────────────────────────────────── */
 
@@ -715,7 +601,7 @@ function scanPoints(trends) {
   }));
 }
 
-function InventoryGrowth({ overview, trends, loading, failed }) {
+function InventoryGrowth({ overview, trends, loading, failed, embedded }) {
   /* Real scan totals once there are enough scans to draw a line; the
      discovery-date history otherwise. */
   const fromScans = (trends?.length ?? 0) >= 3;
@@ -726,9 +612,7 @@ function InventoryGrowth({ overview, trends, loading, failed }) {
 
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="Inventory over time"
+      <Head embedded={embedded} title="Inventory over time"
         subtitle={
           fromScans
             ? 'How many identities and credentials each discovery scan found, across the accounts you selected.'
@@ -795,68 +679,74 @@ function InventoryGrowth({ overview, trends, loading, failed }) {
   );
 }
 
-/* ── Trust, credential use, activity ──────────────────────────────────────── */
+/** A panel's title block; inside a tabbed panel the tab is the title, so only the note and action remain. */
+function Head({ embedded, title, subtitle, actions }) {
+  if (!embedded) return <PanelHeader prominence="quiet" title={title} subtitle={subtitle} actions={actions} />;
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      {subtitle ? <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-3">{subtitle}</p> : <span />}
+      {actions}
+    </div>
+  );
+}
 
-/* Canonical order, so an edge type keeps its hue whatever else is present.
-   Types outside it fold into the neutral "Other" slice. */
-const TRUST_EDGE_ORDER = ['service_trust', 'assume_role', 'cross_account', 'federated_saml', 'federated_oidc', 'pass_role', 'trusts'];
+const OVER_TIME_TABS = [
+  { value: 'inventory', label: 'Inventory' },
+  { value: 'activity', label: 'AWS activity' },
+  { value: 'use', label: 'Credential use' },
+];
 
-/* The console's plain words for each kind of trust; anything else keeps the access graph's label. */
-const TRUST_EDGE_LABELS = {
-  service_trust: 'An AWS service may use it',
-  assume_role: 'Can switch to (assume) another role',
-  cross_account: 'Reaches another AWS account',
-  federated_saml: 'Signs in through company single sign-on',
-  federated_oidc: 'Signs in through web identity',
-  pass_role: 'Can hand a role to a service',
-};
-
-function TrustEdges({ overview }) {
-  const { kpis, charts } = overview;
-  const slices = useMemo(() => {
-    const items = (charts.trustEdgesByType ?? []).filter((item) => item.value > 0);
-    const known = TRUST_EDGE_ORDER.flatMap((type, index) => {
-      const item = items.find((entry) => entry.key === type);
-      return item
-        ? [{ key: type, label: TRUST_EDGE_LABELS[type] ?? edgeKindMeta(type).label, value: item.value, color: SERIES_TOKENS[index] }]
-        : [];
-    });
-    const rest = items.filter((item) => !TRUST_EDGE_ORDER.includes(item.key)).reduce((sum, item) => sum + item.value, 0);
-    if (rest > 0) known.push({ key: '__other', label: 'Other', value: rest, color: NEUTRAL_SERIES });
-    return known;
-  }, [charts.trustEdgesByType]);
-
+/** Growth, daily activity and credential use share one panel: one question ("how is it moving?"), three views. */
+function OverTime({ overview, trends, loading, failed }) {
+  const available = OVER_TIME_TABS.filter((tab) => tab.value === 'inventory' || !overview || (tab.value === 'activity' ? showsEvents(overview) : showsUse(overview)));
+  const [tab, setTab] = useState('inventory');
+  const current = available.some((item) => item.value === tab) ? tab : 'inventory';
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="Trust relationships"
-        subtitle="Who is allowed to use or become what, by kind."
-        actions={
-          <Button as={Link} to="/access-graph" variant="secondary" size="sm" iconRight={ArrowRight}>
-            Open access graph
-          </Button>
-        }
-      />
-      <div className="mt-4">
-        {charts.trustEdgesByType !== null &&
-          (slices.length === 0 ? (
-            <ClearState compact title="No trust relationships" description="No role in these accounts lets another identity or service use it." />
-          ) : (
-            <CompositionDonut data={slices} total={kpis.trustEdges ?? undefined} centerLabel="Relationships" size={164} />
-          ))}
-        {(kpis.trustEdges !== null || kpis.crossAccountTrustEdges !== null) && (
-          <dl className={cn('grid grid-cols-2 gap-4', charts.trustEdgesByType !== null && 'mt-4 border-t border-line pt-3')}>
-            {kpis.trustEdges !== null && <Figure label="Trust relationships" value={formatNumber(kpis.trustEdges)} />}
-            {kpis.crossAccountTrustEdges !== null && (
-              <Figure label="Reach another AWS account" value={formatNumber(kpis.crossAccountTrustEdges)} />
-            )}
-          </dl>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[14.5px] font-semibold text-ink">Over time</h2>
+        {available.length > 1 && <SegmentedControl label="Over time view" options={available} value={current} onChange={setTab} />}
+      </div>
+      <div className="mt-3">
+        {current === 'inventory' && <InventoryGrowth embedded overview={overview} trends={trends} loading={loading} failed={failed} />}
+        {current === 'activity' && overview && <EventVolume embedded overview={overview} />}
+        {current === 'use' && overview && <CredentialUse embedded overview={overview} />}
       </div>
     </>
   );
 }
+
+const START_TABS = [
+  { value: 'weakest', label: 'Lowest security scores' },
+  { value: 'expiring', label: 'Expiring soon' },
+  { value: 'owners', label: 'Who owns them' },
+];
+
+/** The three short lists that answer "where do I begin?", one at a time. */
+function StartHere({ postureQuery, overview, loading, failed }) {
+  const [tab, setTab] = useState('weakest');
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[14.5px] font-semibold text-ink">Where to start</h2>
+        <SegmentedControl label="Where to start view" options={START_TABS} value={tab} onChange={setTab} />
+      </div>
+      <div className="mt-3">
+        {tab === 'weakest' && <WeakestIdentities embedded query={postureQuery} />}
+        {tab === 'expiring' && <ExpiringCredentials embedded overview={overview} loading={loading} failed={failed} />}
+        {tab === 'owners' && <TopOwners embedded overview={overview} loading={loading} failed={failed} />}
+      </div>
+    </>
+  );
+}
+
+/* ── Credential use, activity ─────────────────────────────────────────────── */
+
+/* Canonical order, so an edge type keeps its hue whatever else is present.
+   Types outside it fold into the neutral "Other" slice. */
+
+/* The console's plain words for each kind of trust; anything else keeps the access graph's label. */
+
 
 const USE_BUCKETS = {
   used_7d: 'Used in the last 7 days',
@@ -866,7 +756,7 @@ const USE_BUCKETS = {
   never_used: 'Never used',
 };
 
-function CredentialUse({ overview }) {
+function CredentialUse({ overview, embedded }) {
   const { charts, activityDataAvailable: activity } = overview;
   /* Ordinal buckets keep the API's order (recent to never), not value order. */
   const items = (charts.credentialUtilization ?? []).map((item) => ({
@@ -878,9 +768,7 @@ function CredentialUse({ overview }) {
 
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="When credentials were last used"
+      <Head embedded={embedded} title="When credentials were last used"
         subtitle="Each credential by when it was last used: the later of the AWS activity log (CloudTrail) and AWS's own last-used date."
       />
       <div className="mt-3">
@@ -904,7 +792,7 @@ const dayLabel = (value) => {
   return date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : String(value);
 };
 
-function EventVolume({ overview }) {
+function EventVolume({ overview, embedded }) {
   const { charts, activityDataAvailable: activity } = overview;
   const data = useMemo(
     () =>
@@ -919,9 +807,7 @@ function EventVolume({ overview }) {
 
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="AWS activity per day"
+      <Head embedded={embedded} title="AWS activity per day"
         subtitle={`Events recorded in the AWS activity log (CloudTrail) each day for the last 30 days${
           activity && total > 0 ? `, ${formatNumber(total)} in all` : ''
         }.`}
@@ -1067,97 +953,14 @@ function BehaviourPanel({ query }) {
 
 /* ── Credential exposure ──────────────────────────────────────────────────── */
 
-function FindingsMiniPanel({ query, summary }) {
-  if (query.isLoading && !query.data) {
-    return <ChartSkeleton height={180} bars={4} />;
-  }
-
-  if (query.isError && !query.data) {
-    const detail = describeExposureError(query.error);
-    return <InlineError error={{ message: detail.message }} onRetry={query.refetch} label={detail.title} />;
-  }
-
-  if (summary.total === 0) {
-    return (
-      <ClearState
-        compact
-        title="No exposed secrets"
-        description="Nothing is flagged in the connected repositories right now, or everything found has been reviewed and marked safe."
-      />
-    );
-  }
-
-  const tiers = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-    .map((tier) => ({ tier, count: summary.byTier[tier] || 0 }))
-    .filter((row) => row.count > 0);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <ul className="flex flex-col divide-y divide-line">
-        {tiers.map(({ tier, count }) => {
-          const meta = severityMeta(tier);
-          return (
-            <li key={tier} className="flex items-center gap-3 py-2.5">
-              <Tag tone={meta.tone} dot size="sm" className="w-24 justify-center">
-                {meta.label}
-              </Tag>
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-track">
-                <span
-                  className="block h-full rounded-full transition-[width] duration-[900ms] ease-[var(--ease-out-quint)]"
-                  style={{ width: `${percentValue(count, summary.total)}%`, background: `var(--t-${meta.tone})` }}
-                />
-              </span>
-              <span data-numeric="" className="w-10 text-right font-display text-[15px] font-bold text-ink">
-                {formatNumber(count)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
-        <div>
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">In GitHub</p>
-          <p data-numeric="" className="mt-0.5 font-display text-[17px] font-bold text-ink">
-            {formatNumber(summary.byPlatform.github)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">In CodeCommit</p>
-          <p data-numeric="" className="mt-0.5 font-display text-[17px] font-bold text-ink">
-            {formatNumber(summary.byPlatform.codecommit)}
-          </p>
-        </div>
-      </div>
-
-      {summary.detectors.length > 0 && (
-        <div className="border-t border-line pt-3">
-          <p className="text-[10.5px] font-semibold tracking-[0.11em] text-ink-3 uppercase">Most common kinds of secret</p>
-          <ul className="mt-2 flex flex-col gap-1.5">
-            {summary.detectors.slice(0, 4).map((entry) => (
-              <li key={entry.key} className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate text-[12.5px] text-ink-2">{humanizeToken(entry.key)}</span>
-                <span data-numeric="" className="text-[12.5px] font-semibold text-ink">
-                  {formatNumber(entry.value)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ── Lists: weakest posture, expiring credentials, owners ─────────────────── */
 
-function WeakestIdentities({ query }) {
+function WeakestIdentities({ query, embedded }) {
   const data = query.data;
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="Lowest security scores"
+      <Head embedded={embedded} title="Lowest security scores"
         subtitle="Start fixing here."
         actions={
           <Button as={Link} to="/posture" variant="secondary" size="sm" iconRight={ArrowRight}>
@@ -1213,13 +1016,11 @@ function WeakestIdentities({ query }) {
   );
 }
 
-function ExpiringCredentials({ overview, loading, failed }) {
+function ExpiringCredentials({ overview, loading, failed, embedded }) {
   const rows = overview?.charts.expiringSoon ?? [];
   return (
     <>
-      <PanelHeader
-        prominence="quiet"
-        title="Expiring in the next 30 days"
+      <Head embedded={embedded} title="Expiring in the next 30 days"
         subtitle="Credentials to replace before they stop working."
         actions={
           <Button as={Link} to="/credentials?max_days_until_expiry=30" variant="secondary" size="sm" iconRight={ArrowRight}>
@@ -1272,13 +1073,13 @@ function ExpiringCredentials({ overview, loading, failed }) {
   );
 }
 
-function TopOwners({ overview, loading, failed }) {
+function TopOwners({ overview, loading, failed, embedded }) {
   const navigate = useNavigate();
   const items = (overview?.charts.topOwners ?? []).map((item) => ({ key: item.key, label: item.key, value: item.value }));
   const owned = items.reduce((sum, item) => sum + item.value, 0);
   return (
     <>
-      <PanelHeader prominence="quiet" title="Who owns them" subtitle="Identities by their owner tag. Select an owner to list them." />
+      <Head embedded={embedded} title="Who owns them" subtitle="Identities by their owner tag. Select an owner to list them." />
       <div className="mt-3">
         {loading ? (
           <ChartSkeleton height={180} bars={5} />

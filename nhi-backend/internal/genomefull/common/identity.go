@@ -72,6 +72,16 @@ func (i MonitoredIdentity) Ref() DashboardIdentityRef {
 
 // PeerKey is the MVP peer key:
 // source_type + account_id + region + service_name + cluster_name + role_type.
+// EventKey is the key log_events knows this identity by: an ECS identity is
+// its task role (read from request_parameters.roleArn there), every other
+// family its own key.
+func (i MonitoredIdentity) EventKey() MonitoringKey {
+	if i.Key.SourceType == "ECS" && i.RoleARN != "" {
+		return MonitoringKey{SourceType: i.Key.SourceType, IdentityName: i.RoleARN}
+	}
+	return i.Key
+}
+
 func (i MonitoredIdentity) PeerKey() string {
 	return strings.Join([]string{i.Key.SourceType, i.AccountID, i.Region, i.ServiceName, i.ClusterName, i.RoleType}, "|")
 }

@@ -78,15 +78,17 @@ func (e *MonitoringEvents) queryContext(ctx context.Context) (context.Context, c
 	return context.WithTimeout(ctx, e.timeout)
 }
 
-// identityWindowSQL is the contract's per-identity predicate (§5.3/§5.4):
+// identityWindowSQL(sourceType) is the contract's per-identity predicate (§5.3/§5.4):
 // one identity of the caller's accounts, half-open [from, to) on
 // event_time. The account predicate keeps two tenants with a same-named role
 // apart. Values are bound as server-side query parameters, never interpolated.
-const identityWindowSQL = ` source_type = {source_type:String}
-	  AND identity_name = {identity_name:String}
+func identityWindowSQL(sourceType string) string {
+	return ` source_type = {source_type:String}
+	  AND ` + chclient.IdentityEquals(sourceType) + `
 	  AND has({accounts:Array(String)}, account_id)
 	  AND event_time >= {from:DateTime64(3)}
 	  AND event_time < {to:DateTime64(3)} `
+}
 
 func identityWindowArgs(accounts []string, sourceType, identityName string, from, to time.Time) []any {
 	return []any{
@@ -105,7 +107,7 @@ func (e *MonitoringEvents) TotalCalls(ctx context.Context, accounts []string, so
 	if !e.Enabled() {
 		return 0, ErrMonitoringEventsNotConfigured
 	}
-	q := `SELECT uniqExact(event_id) FROM ` + e.tbl(ctx) + ` WHERE` + identityWindowSQL
+	q := `SELECT uniqExact(event_id) FROM ` + e.tbl(ctx) + ` WHERE` + identityWindowSQL(sourceType)
 	ctx, cancel := e.queryContext(ctx)
 	defer cancel()
 	var total uint64
