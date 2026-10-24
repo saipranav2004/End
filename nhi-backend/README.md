@@ -126,6 +126,12 @@ Scan changes, the Changes tabs and `recent_changes` also carry the reference con
 |---|---|---|
 | GET | `/dashboard/overview` | KPIs and charts for the selected scope, plus `recent_changes`: what the latest discovery scan changed (null before the first scan). Includes `kpis.active_credentials` (total minus stale), `kpis.trust_edges` / `cross_account_trust_edges` (active `trust_edges` in the selected accounts), `charts.trust_edges_by_type`, `charts.event_volume` (CloudTrail events per UTC day, last 30 days, selected accounts, zero-filled; empty when CloudTrail cannot be read; regions do not apply because IAM calls are recorded in us-east-1) and `charts.credential_utilization` (credentials by last use - CloudTrail or AWS's own last-used date, whichever is later: `used_7d`, `used_30d`, `used_90d`, `idle_90d`, `never_used`). |
 
+### Dashboard trends
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/dashboard/trends` | Identity and credential totals across completed scans (`nhi_scans_aws.total_identities/total_credentials`), oldest first, for the trend chart. `account_ids` and `regions` (comma-separated) override the saved selection (a region keeps accounts that read it); `limit` 1-200 (default 20); `aggregate=true` (default) gives one point per scan hour with each account's latest totals summed (`accounts` says how many), `aggregate=false` one point per scan with `scan_id` and `account_id`. |
+
 ### Scan change tracking
 
 What each discovery scan found had changed since the scan before it. The
@@ -203,6 +209,22 @@ Reads for every signed-in user; changes for admins.
 | POST | `/credential-exposure/deep-scan` | Requests a full-history walk of one repository (`{client_id, repository, platform?}`, 202). Written to the tenant's `secscan_deepscan_<platform>` row for the scanner worker - no external call. Answers `{accepted: true, status: "running", ...}`. 400 `INVALID_REPOSITORY` when a GitHub repository is not `owner/repo` or a CodeCommit repository is not one of the client's onboarded repositories; 404 `CLIENT_NOT_FOUND` when this workspace's scanner has never seen the client on that platform. A walk already waiting or running is left alone (`already_running: true`). |
 | GET | `/credential-exposure/deep-scan/status` | Progress of that rescan; the same object with `status: "not_started"` when none was requested. |
 
+### Posture scans (ISPM rule engine)
+
+The posture rules run in the separately deployed **ispm-worker**; this backend only asks it to scan
+and relays the job status (`internal/ispmworker`). Set `WORKER_URL` (its `ENGINE_HEALTH_PORT`, never this
+server's own port) and `WORKER_SCAN_TOKEN` (its `SCAN_API_TOKEN`); `NHI_WORKER_TIMEOUT_SECONDS` (default 10).
+
+| Method | Path | What it does |
+|---|---|---|
+| POST | `/scans` | **No login.** `{tenant_id, requested_by?}` + the worker's key in `X-API-Key` (or `Authorization: Bearer`, or body `api_key`; never in the URL). 202 with `{data:{job_id, already_running:false}}`, 200 when that tenant is already being scanned. The key is forwarded and checked by the worker. 30 requests/minute per client address. |
+| GET | `/scans/{job_id}` | **No login**, same key. The worker's job (`QUEUED` / `RUNNING` / `COMPLETED` / `PARTIAL` / `FAILED` / `SKIPPED`, per-tenant results). Poll every 3-5 s. |
+| POST | `/ispm/scans` | Console "Run checks again": no body, the tenant is the token's; analyst / manager / admin. Uses `WORKER_SCAN_TOKEN`. |
+| GET | `/ispm/scans/{job_id}` | Status of that job. |
+
+Errors: `{error:{code,message,field}}`: 400 `invalid_parameter`, 401 `unauthorized`, 404 `not_found`, 429
+`rate_limited`, 502/503 `scan_unavailable` (the real reason is in the server log).
+
 ### Posture (ISPM) - `/ispm/...`
 
 Scores every identity from 100 down by the checks it fails. Precomputed by the
@@ -230,8 +252,8 @@ posture worker for the whole tenant.
 ### NHI Genome - `/genome/...`
 
 Each workload identity learns its normal behaviour (a baseline); departures
-from it are raised as anomalies. These five endpoints are read-only - there is
-no anomaly list, review or feedback API.
+from it are raised as anomalies. The first five endpoints are the console's core views; the rest of
+the contract (backend_api_contract.md) follows below. Everything answers `{data, meta}` / `{error}` with a request id.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -241,7 +263,32 @@ no anomaly list, review or feedback API.
 | GET | `/genome/identities/{source_type}/{identity_name}/activity` | Calls per day / hour, recent calls (cursor) and the total. |
 | GET | `/genome/identities/{source_type}/{identity_name}/timeline` | Learning started, baseline established, versions published, and anomalies grouped per detection window ("1 active anomaly"). |
 
+| GET | `/genome/workload-types` | The workload families shown (`NHI_GENOME_WORKLOAD_TYPES`): `{families, all}`. The console offers Genome links only for these. |
+| GET | `/genome/dashboard/activity` | Fleet call volume per day (ClickHouse) and anomalies per day. |
+| GET | `/genome/dashboard/drift` | Fleet baseline-health / drift / model-confidence snapshots. |
+| GET | `/genome/identities` | The watched fleet with baseline, risk and open-anomaly figures (`source_type`, `status`, `search`, `limit`, `cursor`). |
+| GET | `/genome/identities/{source_type}/{identity_name}/baseline` | Learning progress, versions and the profile of each version. |
+| GET | `/genome/identities/{source_type}/{identity_name}/drift` | Drift status, confidence, retraining and per-dimension change. |
+| GET | `/genome/identities/{source_type}/{identity_name}/peers` | Similar identities (same family, account, region) with calls, risk and the dimension where this one stands out. |
+| GET | `/genome/identities/{source_type}/{identity_name}/containment` | Containment state (not available until the pipeline persists actions). |
+| POST | `/genome/identities/{source_type}/{identity_name}/containment/freeze` | Credential freeze request: 501 until an action worker exists. |
+| GET | `/genome/anomalies` | Departures, newest first (`state`, `dimension`, `source_type`, `search`, `limit`, `cursor`). |
+| GET | `/genome/anomalies/{alert_id}` | One departure: what changed, why it was graded, evidence ids. |
+| GET | `/genome/anomalies/{alert_id}/evidence` | The call behind it (ClickHouse), baseline-vs-observed, call risk and the reviewer's feedback. |
+| POST | `/genome/anomalies/{alert_id}/feedback` | `{decision: legitimate\|malicious\|unknown, approved_for_baseline, reason}`; the reviewer is the signed-in user. Needs `alert_feedback` keyed by `(account_id, source_type, event_id)` as in the pipeline schema. |
+| POST | `/genome/anomalies/{alert_id}/disposition` | 501: no disposition table yet (contract section 6.5). |
+| GET | `/genome/containment` | Containment requests (empty, `available:false`). |
+
 `identity_name` is URL-encoded (an ARN's `/` as `%2F`).
+
+**Which workloads are shown.** `NHI_GENOME_WORKLOAD_TYPES` is a comma list of source families,
+for example `ECS,EC2,GLUE,LAMBDA,STEPFUNCTION` (`STEP_FUNCTIONS` also works). Empty shows every
+family. A kind that is switched off is not counted, listed, drifted or reviewable: its identities
+answer `IDENTITY_NOT_FOUND`, its anomalies `ANOMALY_NOT_FOUND`. An unknown name stops the server
+at start with the list of valid ones, so a typo cannot hide everything. Families: `APP_RUNNER, AWS_SLR,
+BATCH, BEDROCK, CLOUDFORMATION, CODEBUILD, CODEDEPLOY, CODEPIPELINE, DATASYNC, DMS, EC2, ECS,
+ELASTIC_BEAN, EMR, EVENTBRIDGE, GLUE, IAM, IOT, KINESIS, LAMBDA, MWAA, SAGEMAKER, SSM, STEP_FUNCTIONS,
+SYNTHETICS, TRANSFER` (code: `internal/workloadtypes`).
 
 ---
 
@@ -484,6 +531,17 @@ databases are joined **by ARN only** (never by UUID):
   (empty = every region); the selected ones are the account's own `accounts.regions`.
   The "Values to copy" (account id, event bus ARN, region, External ID) are read from
   the tenant row, not hard-coded; the event sources and rule/role names come from code/config.
+- **ClickHouse database per tenant:** leave `NHI_CLICKHOUSE_DATABASE` (and
+  `NHI_MONITORING_CLICKHOUSE_DATABASE`) empty and every tenant reads its own database,
+  `<nhi_global.tenants.db_name><suffix>` (suffix `NHI_CLICKHOUSE_DATABASE_SUFFIX`, default `_clickhouse`; for
+  tenant `bimasugam`: `bimasugam_clickhouse`). The tenant comes from the signed token, never from the request;
+  the ClickHouse user needs read access to each. Set the variable to pin one fixed database instead.
+- **Account status:** `accounts.account_status` is `pending` / `active` / `action_needed`; a connected account is
+  stored as `active` (migration `006_account_status_active.sql` converts old `connected` rows). The API still reports it as `connected`.
+- **CodeCommit check:** the policy shown on the setup page is an inline policy with the four reads the scanner uses
+  (`codecommit:GetBranch`, `GetCommit`, `GetDifferences`, `GetBlob`) for the account's regions; repositories are listed
+  with the role's ViewOnlyAccess. The check lists repositories per selected region, then reads up to 3 per region
+  (9 in all) the way the scanner does and names, per repository, which permission is missing.
 - **Docker:** `docker compose up -d --build` builds the image (multi-stage, non-root,
   read-only, `/health` check) and serves the API on `:8080`; databases are external
   (`.env`). `docker compose --profile tools run --rm migrate` applies the migrations;

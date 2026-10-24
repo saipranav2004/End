@@ -82,6 +82,30 @@
     {
       "key": "scan_id",
       "value": "latest"
+    },
+    {
+      "key": "tenant_id",
+      "value": ""
+    },
+    {
+      "key": "worker_api_key",
+      "value": ""
+    },
+    {
+      "key": "job_id",
+      "value": ""
+    },
+    {
+      "key": "alert_id",
+      "value": "900001"
+    },
+    {
+      "key": "source_type",
+      "value": "ECS"
+    },
+    {
+      "key": "identity_name",
+      "value": ""
     }
   ],
   "item": [
@@ -3868,6 +3892,641 @@
                 }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard trends",
+      "item": [
+        {
+          "name": "Trends - scan history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/dashboard/trends",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "dashboard",
+                "trends"
+              ],
+              "query": [
+                {
+                  "key": "account_ids",
+                  "value": "{{account_id}}",
+                  "description": "comma-separated 12-digit ids",
+                  "disabled": true
+                },
+                {
+                  "key": "regions",
+                  "value": "ap-south-1",
+                  "description": "comma-separated",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "1-200",
+                  "disabled": true
+                },
+                {
+                  "key": "aggregate",
+                  "value": "true",
+                  "description": "true | false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Totals per scan hour (aggregate=true) or per scan (aggregate=false)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Posture scans (ISPM rule engine)",
+      "item": [
+        {
+          "name": "Start scan (public, API key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{worker_api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/scans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "scans"
+              ]
+            },
+            "description": "No login. Key = the worker's SCAN_API_TOKEN. 202 started, 200 already running.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"{{tenant_id}}\",\n  \"requested_by\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Scan job status (public, API key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{worker_api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/scans/{{job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "scans",
+                "{{job_id}}"
+              ]
+            },
+            "description": "Poll every 3-5 s until COMPLETED / PARTIAL / FAILED.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Start scan (console, login)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/scans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "scans"
+              ]
+            },
+            "description": "Tenant from the token; analyst / manager / admin.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Scan job status (console, login)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ispm/scans/{{job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ispm",
+                "scans",
+                "{{job_id}}"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "NHI Genome - full contract",
+      "item": [
+        {
+          "name": "Workload types shown",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/workload-types",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "workload-types"
+              ]
+            },
+            "description": "NHI_GENOME_WORKLOAD_TYPES: {families, all}."
+          }
+        },
+        {
+          "name": "Dashboard - activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/dashboard/activity",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "dashboard",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "",
+                  "description": "ISO-8601",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "description": "ISO-8601",
+                  "disabled": true
+                },
+                {
+                  "key": "source_type",
+                  "value": "ECS",
+                  "description": "family",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Fleet call volume per day and anomalies per day."
+          }
+        },
+        {
+          "name": "Dashboard - drift",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/dashboard/drift",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "dashboard",
+                "drift"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Identities - fleet list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities"
+              ],
+              "query": [
+                {
+                  "key": "source_type",
+                  "value": "LAMBDA",
+                  "description": "family",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "page size",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "from meta.next_cursor",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Watched identities with baseline, risk, open anomalies."
+          }
+        },
+        {
+          "name": "Identity - baseline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{source_type}}/{{identity_name}}/baseline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{source_type}}",
+                "{{identity_name}}",
+                "baseline"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Identity - drift",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{source_type}}/{{identity_name}}/drift",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{source_type}}",
+                "{{identity_name}}",
+                "drift"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Identity - peers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{source_type}}/{{identity_name}}/peers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{source_type}}",
+                "{{identity_name}}",
+                "peers"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Identity - containment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{source_type}}/{{identity_name}}/containment",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{source_type}}",
+                "{{identity_name}}",
+                "containment"
+              ]
+            },
+            "description": "available:false until actions are persisted."
+          }
+        },
+        {
+          "name": "Identity - freeze credential (501)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/identities/{{source_type}}/{{identity_name}}/containment/freeze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "identities",
+                "{{source_type}}",
+                "{{identity_name}}",
+                "containment",
+                "freeze"
+              ]
+            },
+            "description": "Not implemented yet.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"suspected leak\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Anomalies - list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies"
+              ],
+              "query": [
+                {
+                  "key": "state",
+                  "value": "open",
+                  "description": "open | acknowledged | expected | suppressed",
+                  "disabled": true
+                },
+                {
+                  "key": "dimension",
+                  "value": "",
+                  "description": "e.g. api_operation",
+                  "disabled": true
+                },
+                {
+                  "key": "source_type",
+                  "value": "",
+                  "description": "family",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "identity text",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "page size",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "description": "from meta.next_cursor",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest first."
+          }
+        },
+        {
+          "name": "Anomaly - detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies/{{alert_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies",
+                "{{alert_id}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Anomaly - evidence",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies/{{alert_id}}/evidence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies",
+                "{{alert_id}}",
+                "evidence"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Anomaly - feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies/{{alert_id}}/feedback",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies",
+                "{{alert_id}}",
+                "feedback"
+              ]
+            },
+            "description": "Reviewer = the signed-in user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"legitimate\",\n  \"approved_for_baseline\": false,\n  \"reason\": \"Approved deployment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Anomaly - disposition (501)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/anomalies/{{alert_id}}/disposition",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "anomalies",
+                "{{alert_id}}",
+                "disposition"
+              ]
+            },
+            "description": "Not implemented: no disposition table.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"acknowledge\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Containment - list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/genome/containment",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "genome",
+                "containment"
+              ]
+            },
+            "description": ""
           }
         }
       ]

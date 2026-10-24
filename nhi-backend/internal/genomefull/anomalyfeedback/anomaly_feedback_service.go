@@ -3,6 +3,7 @@ package anomalyfeedback
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"nhi-backend-api/internal/genomefull/common"
 )
@@ -49,6 +50,12 @@ func (s *Service) Save(ctx context.Context, userID, tenantID, dbName string, ale
 		return nil, common.ErrAnomalyNotFound
 	}
 	accountID := common.AnomalyAccountID(*a, nil)
+	if accountID == nil { // an alert without account metadata: the identity's ARN carries the account
+		if parts := strings.Split(a.Key.IdentityName, ":"); len(parts) > 5 && parts[0] == "arn" && len(parts[4]) == 12 {
+			acct := parts[4]
+			accountID = &acct
+		}
+	}
 	if accountID == nil {
 		return nil, &common.StoreUnavailableError{
 			Op:  "resolve alert feedback account_id",
