@@ -47,6 +47,9 @@ services:
     restart: unless-stopped
     environment:
       API_UPSTREAM: http://api:8080
+      # The separately deployed discovery scan service behind the Scan button.
+      DISCOVERY_UPSTREAM: ${DISCOVERY_UPSTREAM:-http://discovery-scan:8080}
+      DISCOVERY_API_KEY: ${DISCOVERY_API_KEY:-}
     ports:
       - "${NHI_WEB_PORT:-3000}:3000"
     depends_on:

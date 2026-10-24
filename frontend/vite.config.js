@@ -27,6 +27,12 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       proxy: {
         '/api': { target: upstream('API_UPSTREAM', 'http://localhost:8080'), changeOrigin: true },
+        // The discovery scanner's own scan API (start / status), kept same-origin.
+        '/scan-api': {
+          target: upstream('DISCOVERY_UPSTREAM', 'http://localhost:8081'),
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/scan-api/, ''),
+        },
       },
     },
     build: { outDir: 'dist', sourcemap: false },

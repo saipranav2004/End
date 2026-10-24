@@ -14,7 +14,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { removeAwsAccount, syncAwsAccount, updateAwsAccountRegions, verifyAwsConnection } from '../../lib/api/integrations';
+import { removeAwsAccount, updateAwsAccountRegions, verifyAwsConnection } from '../../lib/api/integrations';
 import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { Button } from '../../ui/Button';
 import { Field, Input, SearchInput } from '../../ui/Field';
@@ -23,6 +23,7 @@ import { Modal } from '../../ui/Overlay';
 import { Panel } from '../../ui/Panel';
 import { EmptyState, InlineError } from '../../ui/States';
 import { SegmentedControl } from '../../ui/Tabs';
+import { useSync } from '../sync/SyncContext';
 import { useToast } from '../../ui/Toast';
 import { cn } from '../../ui/cn';
 import { ACCOUNT_STATUS } from './awsSetup';
@@ -52,35 +53,26 @@ export function syncDetail(account, { withActor = false } = {}) {
   return account.status !== 'connected' ? 'After the checks pass' : 'Starts automatically';
 }
 
-/** Why "Sync now" is not available, or '' when it is. */
+/** Why "Scan now" is not available, or '' when it is. */
 export function syncBlockedReason(account) {
-  if (account.status !== 'connected') return 'Fix the connection before syncing';
-  if (account.sync.status === 'queued' || account.sync.status === 'running') return 'A sync is already queued or running';
+  if (account.status !== 'connected') return 'Fix the connection before scanning';
   if (account.regions.length === 0) return 'Choose regions to read first';
   return '';
 }
 
-/** Sync now and Re-check connection for one account, with their toasts. */
+/** Scan now and Re-check connection for one account, with their toasts. */
 export function useAccountActions(account, { onChanged, onEditRegions } = {}) {
   const { notify } = useToast();
+  const scan = useSync();
   const [busy, setBusy] = useState('');
 
+  /* One scan covers the whole workspace: this opens the same progress panel as the
+     top bar's Scan now, and follows a scan that is already running. */
   const sync = async () => {
     setBusy('sync');
     try {
-      const result = await syncAwsAccount({ accountId: account.accountId });
-      notify(
-        result.alreadyQueued
-          ? { variant: 'info', title: 'A sync is already on its way', description: `${account.accountId} is queued or syncing now.` }
-          : {
-              variant: 'success',
-              title: `Sync requested for ${account.accountId}`,
-              description: `The discovery service re-reads ${account.regions.length} ${account.regions.length === 1 ? 'region' : 'regions'} and global IAM. This page updates as it runs.`,
-            },
-      );
+      await scan.start();
       onChanged?.();
-    } catch (error) {
-      notify({ variant: 'error', title: 'Could not start the sync', description: error?.message });
     } finally {
       setBusy('');
     }
@@ -357,7 +349,7 @@ function AccountRow({ account, names, counts, inventoryKnown, canManage, onChang
                 onClick={runSync}
                 aria-label={`Sync ${account.accountId} now`}
               >
-                Sync now
+                Scan now
               </Button>
             </span>
           )}
@@ -417,7 +409,7 @@ function EditRegionsBody({ account, catalogue, onClose, onSaved }) {
       notify({
         variant: 'success',
         title: 'Regions updated',
-        description: added.length ? 'Sync now to read the new regions.' : 'The next sync reads only these regions.',
+        description: added.length ? 'Scan now to read the new regions.' : 'The next sync reads only these regions.',
       });
       onSaved();
     } catch (failure) {

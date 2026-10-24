@@ -23,6 +23,32 @@ The dev server proxies `/api` to the backend (see `vite.config.js`). In
 production nginx does the same (`nginx/nginx.conf.template`); the image takes
 `API_UPSTREAM` and `DNS_RESOLVER` at run time (see `Dockerfile`).
 
+## The Scan button
+
+The top bar's **Scan now** (and Integrations → Scan now) runs one four-step
+scan, shown step by step in a side panel and kept across page changes and
+reloads:
+
+1. `POST /api/v1/scan/start` on the discovery scan service (already running →
+   follows that scan; "wait N minutes" → countdown);
+2. `GET /api/v1/scan/status?scan_id=…` every 10 s until `COMPLETED`;
+3. `POST /api/v1/ispm/scans` on the NHI backend (which calls the ISPM rule
+   engine), then `GET /api/v1/ispm/scans/{job_id}` every 4 s;
+4. every open screen reloads its data.
+
+The browser reaches the scan service through the same-origin `/scan-api/`
+proxy, so it needs no CORS and no key in the bundle:
+
+| Variable | Where | Meaning |
+| --- | --- | --- |
+| `DISCOVERY_UPSTREAM` | web container (dev: `.env`) | base URL of the discovery scan service, e.g. `http://discovery-scan:8080` |
+| `DISCOVERY_API_KEY` | web container, optional | sent as `X-API-Key` when the service wants one; empty = none |
+| `VITE_DISCOVERY_SCAN_URL` | build, optional | call the service on another origin directly instead of `/scan-api` (needs CORS) |
+
+The user's bearer token is forwarded. Poll intervals and the 30-minute ceiling
+are constants in `src/lib/sync/engine.js`. The permission is `scan.run`
+(super admin, admin, analyst).
+
 ## Integrations preview (before the AWS side is deployed)
 
 Verifying a real AWS account needs the platform's AWS side deployed. To review

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { getEpoch, subscribeEpoch } from '../sync/engine';
 
 /**
  * Minimal data-fetching primitive: aborts superseded requests, distinguishes
@@ -13,6 +14,9 @@ export function useQuery(fetcher, deps = [], { enabled = true, keepPrevious = tr
     error: null,
     status: enabled ? 'loading' : 'idle',
   });
+
+  /* A finished scan (lib/sync/engine.js) reloads every query on screen. */
+  const dataEpoch = useSyncExternalStore(subscribeEpoch, getEpoch);
 
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
@@ -62,7 +66,7 @@ export function useQuery(fetcher, deps = [], { enabled = true, keepPrevious = tr
     }
     run('refresh');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, run, ...deps]);
+  }, [enabled, run, dataEpoch, ...deps]);
 
   const refetch = useCallback(() => run('initial'), [run]);
 

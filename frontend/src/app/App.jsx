@@ -5,6 +5,7 @@ import { homeFor } from '../lib/roles';
 import { ThemeProvider } from './ThemeContext';
 import { WorkspaceProvider } from './WorkspaceContext';
 import { ConnectionGate } from './ConnectionGate';
+import { SyncProvider } from '../features/sync/SyncContext';
 import { RequireAuth } from './RequireAuth';
 import { RequireFeature } from './RequireFeature';
 import { ToastProvider } from '../ui/Toast';
@@ -47,7 +48,9 @@ export default function App() {
                 element={
                   <RequireAuth>
                     <WorkspaceProvider>
+                      <SyncProvider>
                         <ConnectionGate />
+                      </SyncProvider>
                     </WorkspaceProvider>
                   </RequireAuth>
                 }

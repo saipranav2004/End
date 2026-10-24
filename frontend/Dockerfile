@@ -11,6 +11,7 @@
 # Run - the backend upstream is chosen at RUN time:
 #   docker run --rm -p 3000:3000 \
 #     -e API_UPSTREAM=http://nhi-api:8080 \
+#     -e DISCOVERY_UPSTREAM=http://discovery-scan:8080 \
 #     nhi-console:latest
 #
 # The image holds no secrets: the browser signs in against the discovery API
@@ -59,12 +60,18 @@ FROM nginx:1.27-alpine AS runtime
 # start. Restricted to these names so that nginx's own $variables - $uri,
 # $host, $proxy_host and the rest - are left alone.
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d \
-    NGINX_ENVSUBST_FILTER='(API_UPSTREAM|DNS_RESOLVER)$'
+    NGINX_ENVSUBST_FILTER='(API_UPSTREAM|DNS_RESOLVER|DISCOVERY_UPSTREAM|DISCOVERY_API_KEY)$'
 
 # Defaults for a compose stack with the backend service named nhi-api. Docker's
 # embedded DNS lives at 127.0.0.11; override DNS_RESOLVER on Kubernetes.
+# DISCOVERY_UPSTREAM is the separately deployed discovery scan service that the
+# Scan button calls (through /scan-api/). DISCOVERY_API_KEY is optional: when
+# set, nginx adds it as X-API-Key; leave empty if the service needs only the
+# user's bearer token.
 ENV API_UPSTREAM="http://nhi-api:8080" \
-    DNS_RESOLVER="127.0.0.11"
+    DNS_RESOLVER="127.0.0.11" \
+    DISCOVERY_UPSTREAM="http://discovery-scan:8080" \
+    DISCOVERY_API_KEY=""
 
 # The default site would otherwise be served alongside ours on the same port.
 RUN rm -f /etc/nginx/conf.d/default.conf

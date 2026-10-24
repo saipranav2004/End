@@ -63,7 +63,7 @@ export function AccountDrawer({ account, setup, catalogue, counts, canManage, on
             </Button>
             <span title={blocked || undefined}>
               <Button variant="primary" icon={RefreshCw} loading={busy === 'sync'} disabled={Boolean(blocked) || Boolean(busy)} onClick={sync}>
-                Sync now
+                Scan now
               </Button>
             </span>
           </>
@@ -227,11 +227,10 @@ function SyncTab({ account, blocked }) {
         </div>
       </div>
       <p className="text-[12.5px] leading-relaxed text-ink-2">
-        A sync re-reads every allowed region and global IAM. Sync now asks the discovery service to run one; it picks the request up in
-        order, and the dashboards change when it finishes.
-        {sync.status === 'queued' ? ' While it waits, this page checks for progress on its own.' : ''}
+        A scan re-reads every allowed region and global IAM for all connected accounts, then scores what it finds. Scan now starts one
+        and shows its progress; the dashboards change when it finishes.
       </p>
-      {blocked && <p className="text-[12px] text-ink-3">Sync now is not available: {blocked.toLowerCase()}.</p>}
+      {blocked && <p className="text-[12px] text-ink-3">Scan now is not available: {blocked.toLowerCase()}.</p>}
       <DetailList>
         <DetailRow label="Last requested">
           {sync.requestedAt ? `${formatDateTime(sync.requestedAt)}${sync.requestedBy ? ` by ${sync.requestedBy}` : ''}` : <span className="text-ink-3">Never</span>}

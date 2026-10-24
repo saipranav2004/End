@@ -76,6 +76,7 @@ export const PERMISSIONS = [
   { key: 'reports.schedule', group: 'Reports', label: 'Create, pause and delete schedules, and delete past runs', roles: ['super_admin', 'admin'] },
 
   { key: 'integrations.operate', group: 'Administration', label: 'Re-check connections and request a sync', roles: ['super_admin', 'admin'] },
+  { key: 'scan.run', group: 'Administration', label: 'Run a scan of the AWS accounts', roles: ['super_admin', 'admin', 'analyst'] },
   { key: 'integrations.manage', group: 'Administration', label: 'Connect and remove AWS accounts, enable credential scanning', roles: ['super_admin', 'admin'] },
   { key: 'users.manage', group: 'Administration', label: 'Invite users, change roles, deactivate accounts', roles: ['super_admin'] },
 ];
