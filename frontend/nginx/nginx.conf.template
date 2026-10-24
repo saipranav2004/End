@@ -8,10 +8,12 @@
 # Substituted at start (see NGINX_ENVSUBST_FILTER in the Dockerfile, which
 # limits substitution to exactly these names so nginx's own $variables survive
 # untouched):
-#   ${API_UPSTREAM}       the NHI backend, e.g. http://nhi-api:8080
-#   ${DNS_RESOLVER}       127.0.0.11 under Docker, the cluster DNS on K8s
-#   ${DISCOVERY_UPSTREAM} the discovery scan service behind the Scan button
-#   ${DISCOVERY_API_KEY}  optional X-API-Key sent to it (empty = none)
+#   API_UPSTREAM          the NHI backend, e.g. http://nhi-api:8080
+#   DNS_RESOLVER          127.0.0.11 under Docker, the cluster DNS on K8s
+#   DISCOVERY_UPSTREAM    the discovery scan service behind the Sync button
+#   DISCOVERY_API_KEY     optional X-API-Key sent to it (empty = none)
+# (Written without the dollar-brace form on purpose: envsubst would also
+# replace it inside this comment, and a key must never be echoed into the file.)
 #
 # One backend serves every API: discovery under /api/v1, posture under
 # /api/v1/ispm and genome under /api/v1/genome. The browser's bearer token is

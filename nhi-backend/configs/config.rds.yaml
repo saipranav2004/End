@@ -14,7 +14,7 @@ server:
 # tenant's data lives in its own schema of this same database; the schema name
 # travels in the signed JWT as db_name.
 database:
-  host: "psql-database-1.ciojqma6hzc8.ap-south-1.rds.amazonaws.com"
+  host: ""              # REQUIRED: set NHI_DB_HOST (e.g. your RDS endpoint). Never commit a real host here.
   database_name: nhi_db
   user: postgres
   password: ""   # prefer the NHI_DB_PASSWORD env var; do not commit secrets

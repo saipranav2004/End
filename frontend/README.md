@@ -42,7 +42,7 @@ proxy, so it needs no CORS and no key in the bundle:
 | Variable | Where | Meaning |
 | --- | --- | --- |
 | `DISCOVERY_UPSTREAM` | web container (dev: `.env`) | base URL of the discovery scan service, e.g. `http://discovery-scan:8080` |
-| `DISCOVERY_API_KEY` | web container, optional | sent as `X-API-Key` when the service wants one; empty = none |
+| `DISCOVERY_API_KEY` | web container, optional, **run time only** | sent as `X-API-Key` when the service wants one; empty = none. Never put it in the image: pass it with `-e`, a compose `environment:` entry or a Kubernetes Secret |
 | `VITE_DISCOVERY_SCAN_URL` | build, optional | call the service on another origin directly instead of `/scan-api` (needs CORS) |
 
 The user's bearer token is forwarded. Poll intervals and the 30-minute ceiling

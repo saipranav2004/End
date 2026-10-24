@@ -8,7 +8,7 @@ server:
 # nhi_global.tenant.db_name and travels in the signed JWT as db_name.
 # Port 5432 and sslmode=require are fixed in code (see GetConnectionString).
 database:
-  host: "psql-database-1.ciojqma6hzc8.ap-south-1.rds.amazonaws.com"
+  host: ""              # REQUIRED: set NHI_DB_HOST (e.g. your RDS endpoint). Never commit a real host here.
   database_name: nhi_db
   user: postgres
   password: ""          # or NHI_DB_PASSWORD

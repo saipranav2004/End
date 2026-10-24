@@ -65,19 +65,22 @@ ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d \
 # Defaults for a compose stack with the backend service named nhi-api. Docker's
 # embedded DNS lives at 127.0.0.11; override DNS_RESOLVER on Kubernetes.
 # DISCOVERY_UPSTREAM is the separately deployed discovery scan service that the
-# Scan button calls (through /scan-api/). DISCOVERY_API_KEY is optional: when
-# set, nginx adds it as X-API-Key; leave empty if the service needs only the
-# user's bearer token.
+# Sync button calls (through /scan-api/).
+# DISCOVERY_API_KEY is deliberately NOT set here: a key must never be written
+# into an image layer, not even an empty one. Pass it at run time (-e, a compose
+# `environment:` entry, or a Kubernetes Secret). When it is absent,
+# docker/18-default-env.envsh below sets it empty so the proxy sends no key.
 ENV API_UPSTREAM="http://nhi-api:8080" \
     DNS_RESOLVER="127.0.0.11" \
-    DISCOVERY_UPSTREAM="http://discovery-scan:8080" \
-    DISCOVERY_API_KEY=""
+    DISCOVERY_UPSTREAM="http://discovery-scan:8080"
 
 # The default site would otherwise be served alongside ours on the same port.
 RUN rm -f /etc/nginx/conf.d/default.conf
 
 COPY nginx/nginx.conf.template /etc/nginx/templates/nhi-console.conf.template
 COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# Sourced by the nginx entrypoint before the template is rendered.
+COPY --chmod=0755 docker/18-default-env.envsh /docker-entrypoint.d/18-default-env.envsh
 
 COPY --from=build /app/dist /usr/share/nginx/html
 

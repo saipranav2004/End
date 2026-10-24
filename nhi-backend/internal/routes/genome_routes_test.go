@@ -20,7 +20,7 @@ func TestGenomeRoutesMatchSubResourcesFirst(t *testing.T) {
 		IdentityTimeline: &genome.IdentityTimelineHandler{},
 		IdentitySummary:  &genome.IdentitySummaryHandler{},
 	})
-	arn := "arn:aws:ecs:ap-south-2:884264984984:task%2Fcluster%2Fabc"
+	arn := "arn:aws:ecs:ap-south-2:111122223333:task%2Fcluster%2Fabc"
 	for path, want := range map[string]string{
 		"/genome/identities/ECS/" + arn + "/activity": "/genome/identities/{source_type}/{identity_name:.+}/activity",
 		"/genome/identities/ECS/" + arn + "/genome":   "/genome/identities/{source_type}/{identity_name:.+}/genome",

@@ -1,0 +1,10 @@
+# Sourced by the nginx image's entrypoint (files named *.envsh run in the
+# entrypoint's own shell, so exports reach envsubst) before the nginx template
+# is rendered.
+#
+# envsubst only substitutes variables that exist. DISCOVERY_API_KEY is optional
+# and is never baked into the image, so when the operator did not pass one it
+# is defined here as empty. An empty value makes nginx drop the X-API-Key
+# header instead of sending the literal text "${DISCOVERY_API_KEY}".
+: "${DISCOVERY_API_KEY:=}"
+export DISCOVERY_API_KEY
