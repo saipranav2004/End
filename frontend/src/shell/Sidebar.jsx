@@ -52,8 +52,8 @@ function SidebarLink({ item, collapsed, onNavigate, badge }) {
 }
 
 
-/* The group a fresh sign-in opens. Everything else starts closed so the rail
-   reads as a short table of contents rather than a wall of links. */
+/* The group that is always open. Everything else starts closed, one at a time,
+   so the rail reads as a short table of contents rather than a wall of links. */
 const DEFAULT_OPEN = 'overview';
 
 /**
@@ -106,25 +106,19 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
   const activeGroup = groups.find((group) => group.items.some((item) => isActiveItem(item, pathname)))?.key ?? null;
 
   /* Groups open and close on click, not hover: hover menus open by accident,
-     do nothing on touch screens and are hard to reach by keyboard. A session
-     starts with only Overview open (plus the group of a deep-linked page);
-     the group holding the current screen opens when you arrive on it, and
-     the rest stay as you left them until you sign out. */
-  const [openGroups, setOpenGroups] = useState(() => new Set([DEFAULT_OPEN, activeGroup].filter(Boolean)));
+     do nothing on touch screens and are hard to reach by keyboard. It is an
+     accordion: Overview is always open, and of the rest only one is open at a
+     time - opening a group closes the previous one. The group holding the
+     current screen opens when you arrive on it. */
+  const [openGroup, setOpenGroup] = useState(activeGroup !== DEFAULT_OPEN ? activeGroup : null);
   const [lastActive, setLastActive] = useState(activeGroup);
   if (activeGroup !== lastActive) {
     setLastActive(activeGroup);
-    if (activeGroup && !openGroups.has(activeGroup)) setOpenGroups(new Set([...openGroups, activeGroup]));
+    if (activeGroup && activeGroup !== DEFAULT_OPEN) setOpenGroup(activeGroup);
   }
   const navRef = useRef(null);
   const scroll = useScrollAffordance(navRef);
-  const toggleGroup = (key) =>
-    setOpenGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const toggleGroup = (key) => setOpenGroup((current) => (current === key ? null : key));
 
   const content = (
     <>
@@ -186,26 +180,32 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
               </div>
             );
           }
-          const open = openGroups.has(group.key);
+          const pinned = group.key === DEFAULT_OPEN;
+          const open = pinned || openGroup === group.key;
           const panelId = `nav-group-${group.key}`;
           const holdsActive = group.key === activeGroup;
           return (
             <div key={group.key} className="mb-1 last:mb-0">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.key)}
-                aria-expanded={open}
-                aria-controls={panelId}
-                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] font-semibold tracking-[0.14em] text-ink-3 uppercase transition-colors hover:bg-surface-3 hover:text-ink-2"
-              >
-                <span className="min-w-0 flex-1 truncate">{group.label}</span>
-                {/* A closed group that holds the current screen says so. */}
-                {holdsActive && !open && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-brand" />}
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn('size-3.5 shrink-0 transition-transform duration-200', open ? 'rotate-0' : '-rotate-90')}
-                />
-              </button>
+              {pinned ? (
+                /* Overview is always open: a label, not a control. */
+                <p className="px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.14em] text-ink-3 uppercase">{group.label}</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.key)}
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[10px] font-semibold tracking-[0.14em] text-ink-3 uppercase transition-colors hover:bg-surface-3 hover:text-ink-2"
+                >
+                  <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                  {/* A closed group that holds the current screen says so. */}
+                  {holdsActive && !open && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-brand" />}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn('size-3.5 shrink-0 transition-transform duration-200', open ? 'rotate-0' : '-rotate-90')}
+                  />
+                </button>
+              )}
               {/* Height animates through grid rows, which needs no measured
                   height. `inert` keeps the links of a closed group out of the
                   tab order and away from screen readers. */}
